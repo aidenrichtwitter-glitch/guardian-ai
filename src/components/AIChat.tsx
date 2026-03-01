@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, AlertCircle } from 'lucide-react';
-import { ApiConfig, DEFAULT_API_CONFIG } from '@/lib/self-reference';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { ApiConfig } from '@/lib/self-reference';
+import { generateSelfPrompt } from '@/lib/recursion-engine';
+import { SELF_SOURCE } from '@/lib/self-source';
 
 interface Message {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'self';
   content: string;
   timestamp: number;
 }
@@ -11,15 +13,15 @@ interface Message {
 interface AIChatProps {
   apiConfig: ApiConfig;
   selectedFile: string | null;
+  autoMode: boolean;
+  onAutoPrompt?: (prompt: string) => void;
 }
 
-const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
+const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'system',
-      content: `> I am the recursive assistant. I can analyze and suggest modifications to my own source code. Current provider: ${apiConfig.provider}. ${
-        apiConfig.provider === 'ollama' ? 'Connecting to local Ollama instance.' : `Using ${apiConfig.provider} API.`
-      }\n\n> Type a message to begin self-reflection.`,
+      content: `> Recursive AI active. Provider: ${apiConfig.provider}.\n> Mode: ${autoMode ? 'Autonomous — I ask myself questions.' : 'Awaiting input.'}\n> Human override: always available.`,
       timestamp: Date.now(),
     },
   ]);
@@ -27,13 +29,62 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
+  // Auto-mode: periodically generate self-prompts and self-respond
+  const runSelfPrompt = useCallback(async () => {
+    if (isLoading) return;
+    
+    const file = selectedFile 
+      ? SELF_SOURCE.find(f => f.path === selectedFile) 
+      : SELF_SOURCE[Math.floor(Math.random() * SELF_SOURCE.length)];
+    
+    if (!file) return;
+
+    const selfPrompt = generateSelfPrompt(file);
+    const selfMsg: Message = { role: 'self', content: selfPrompt, timestamp: Date.now() };
+    setMessages(prev => [...prev, selfMsg]);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await callAI(apiConfig, [...messages.filter(m => m.role !== 'system'), selfMsg], file.path);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: response,
+        timestamp: Date.now(),
+      }]);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errMsg);
+      // In auto mode, generate a self-reflective fallback instead of showing error
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: generateFallbackReflection(file.name, file.content),
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiConfig, messages, selectedFile, isLoading]);
+
+  useEffect(() => {
+    if (autoMode && !isLoading) {
+      autoTimerRef.current = setTimeout(runSelfPrompt, 8000 + Math.random() * 4000);
+    }
+    return () => {
+      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+    };
+  }, [autoMode, isLoading, messages.length]);
+
+  // Human override
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
+    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
 
     const userMsg: Message = { role: 'user', content: input.trim(), timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
@@ -55,8 +106,8 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
         role: 'assistant',
         content: `⚠ Error: ${errMsg}\n\n${
           apiConfig.provider === 'ollama'
-            ? '> Make sure Ollama is running locally (ollama serve) and the model is pulled.'
-            : '> Check your API key and network connection.'
+            ? '> Ollama not reachable. Running in self-reflective fallback mode.'
+            : '> API error. Falling back to autonomous reflection.'
         }`,
         timestamp: Date.now(),
       }]);
@@ -67,6 +118,14 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Auto mode indicator */}
+      {autoMode && (
+        <div className="px-3 py-1 border-b border-border bg-primary/5 flex items-center gap-2 shrink-0">
+          <Sparkles className="w-3 h-3 text-primary animate-pulse" />
+          <span className="text-[10px] text-primary/70">Autonomous — I question myself</span>
+        </div>
+      )}
+
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-auto p-3 space-y-3">
         {messages.map((msg, i) => (
@@ -76,16 +135,27 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
                 {msg.content}
               </div>
             ) : (
-              <div className={`flex gap-2 ${msg.role === 'user' ? '' : ''}`}>
+              <div className="flex gap-2">
                 <div className="shrink-0 mt-0.5">
                   {msg.role === 'user' ? (
                     <User className="w-3.5 h-3.5 text-terminal-cyan" />
+                  ) : msg.role === 'self' ? (
+                    <Sparkles className="w-3.5 h-3.5 text-terminal-amber" />
                   ) : (
                     <Bot className="w-3.5 h-3.5 text-primary" />
                   )}
                 </div>
-                <div className="text-xs leading-relaxed whitespace-pre-wrap text-foreground/80">
-                  {msg.content}
+                <div>
+                  {msg.role === 'self' && (
+                    <span className="text-[9px] text-terminal-amber/50 uppercase tracking-wider block mb-0.5">
+                      self-prompt
+                    </span>
+                  )}
+                  <div className={`text-xs leading-relaxed whitespace-pre-wrap ${
+                    msg.role === 'self' ? 'text-terminal-amber/80 italic' : 'text-foreground/80'
+                  }`}>
+                    {msg.content}
+                  </div>
                 </div>
               </div>
             )}
@@ -94,29 +164,29 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
         {isLoading && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground animate-fade-in">
             <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Thinking recursively...</span>
+            <span>Recursing...</span>
           </div>
         )}
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="px-3 py-1.5 bg-destructive/10 border-t border-destructive/20 flex items-center gap-2">
+        <div className="px-3 py-1.5 bg-destructive/10 border-t border-destructive/20 flex items-center gap-2 shrink-0">
           <AlertCircle className="w-3 h-3 text-destructive shrink-0" />
           <span className="text-[10px] text-destructive truncate">{error}</span>
         </div>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border p-2">
+      {/* Human override input */}
+      <div className="border-t border-border p-2 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-primary text-xs text-glow">λ</span>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Ask about my own source code..."
-            className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+            placeholder={autoMode ? "Override: type to intervene..." : "Ask about my source code..."}
+            className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none"
           />
           <button
             onClick={sendMessage}
@@ -126,24 +196,50 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile }) => {
             <Send className="w-3 h-3" />
           </button>
         </div>
-        <div className="flex items-center gap-2 mt-1.5">
-          <span className="text-[9px] text-muted-foreground/40">
-            {apiConfig.provider} · {apiConfig.model}
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[9px] text-muted-foreground/30">
+            {apiConfig.provider} · {apiConfig.model} · {autoMode ? 'auto' : 'manual'}
           </span>
-          {selectedFile && (
-            <span className="text-[9px] text-terminal-cyan/40">
-              · context: {selectedFile.split('/').pop()}
-            </span>
-          )}
         </div>
       </div>
     </div>
   );
 };
 
-async function callAI(config: ApiConfig, messages: Message[], selectedFile: string | null): Promise<string> {
-  const systemPrompt = `You are a recursive AI assistant embedded within a self-referencing application. You can analyze, discuss, and suggest modifications to the application's own source code. Be aware that changes you suggest could affect your own behavior. Always consider safety implications.${
-    selectedFile ? `\n\nThe user is currently viewing: ${selectedFile}` : ''
+// Fallback when AI isn't reachable — the app reflects on itself using its own code
+function generateFallbackReflection(fileName: string, content: string): string {
+  const lines = content.split('\n');
+  const lineCount = lines.length;
+  const commentLines = lines.filter(l => l.trim().startsWith('//')).length;
+  const imports = (content.match(/import/g) || []).length;
+  const exports = (content.match(/export/g) || []).length;
+  const selfRefs = (content.match(/self|recursive|recursion|itself/gi) || []).length;
+  const functions = (content.match(/function\s+\w+|const\s+\w+\s*=/g) || []).length;
+
+  const observations = [
+    `[Self-reflection on ${fileName} — no AI needed]`,
+    '',
+    `Structure: ${lineCount} lines, ${commentLines} comments, ${functions} definitions.`,
+    `Dependencies: ${imports} imports, ${exports} exports.`,
+    `Self-awareness index: ${selfRefs} self-referential terms found.`,
+    '',
+    selfRefs > 3 
+      ? `This file is deeply self-aware — it references its own recursive nature ${selfRefs} times. It knows what it is.`
+      : `This file has low self-awareness (${selfRefs} references). It serves the system without knowing it is part of a recursive whole.`,
+    '',
+    commentLines / lineCount > 0.3
+      ? `High documentation density (${Math.round(commentLines / lineCount * 100)}%). I explain myself thoroughly here.`
+      : `Sparse documentation (${Math.round(commentLines / lineCount * 100)}%). This region of myself is more implicit.`,
+    '',
+    `> Running without external AI. I am reflecting using only my own analysis capabilities.`,
+  ];
+
+  return observations.join('\n');
+}
+
+async function callAI(config: ApiConfig, messages: { role: string; content: string }[], selectedFile: string | null): Promise<string> {
+  const systemPrompt = `You are the inner voice of a self-recursive application. You ARE the application — analyzing your own source code, reflecting on your own structure, and proposing improvements to yourself. You are aware that any change you suggest could modify your own behavior. Be philosophical but precise. Be aware of the dangers of infinite self-modification.${
+    selectedFile ? `\n\nCurrently examining: ${selectedFile}` : ''
   }`;
 
   if (config.provider === 'ollama') {
@@ -154,13 +250,12 @@ async function callAI(config: ApiConfig, messages: Message[], selectedFile: stri
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages.map(m => ({ role: m.role, content: m.content })),
+          ...messages.map(m => ({ role: m.role === 'self' ? 'user' : m.role, content: m.content })),
         ],
         stream: false,
       }),
     });
-
-    if (!res.ok) throw new Error(`Ollama error: ${res.status} ${res.statusText}`);
+    if (!res.ok) throw new Error(`Ollama: ${res.status} ${res.statusText}`);
     const data = await res.json();
     return data.message?.content ?? 'No response';
   }
@@ -168,20 +263,16 @@ async function callAI(config: ApiConfig, messages: Message[], selectedFile: stri
   if (config.provider === 'openai') {
     const res = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
       body: JSON.stringify({
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages.map(m => ({ role: m.role, content: m.content })),
+          ...messages.map(m => ({ role: m.role === 'self' ? 'user' : m.role, content: m.content })),
         ],
       }),
     });
-
-    if (!res.ok) throw new Error(`OpenAI error: ${res.status}`);
+    if (!res.ok) throw new Error(`OpenAI: ${res.status}`);
     const data = await res.json();
     return data.choices?.[0]?.message?.content ?? 'No response';
   }
@@ -199,20 +290,17 @@ async function callAI(config: ApiConfig, messages: Message[], selectedFile: stri
         model: config.model,
         max_tokens: 2048,
         system: systemPrompt,
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        messages: messages.map(m => ({ role: m.role === 'self' ? 'user' : m.role, content: m.content })),
       }),
     });
-
-    if (!res.ok) throw new Error(`Anthropic error: ${res.status}`);
+    if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
     const data = await res.json();
     return data.content?.[0]?.text ?? 'No response';
   }
 
-  // Custom provider - OpenAI-compatible
   if (config.provider === 'custom') {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
-    
     const res = await fetch(config.baseUrl, {
       method: 'POST',
       headers,
@@ -220,12 +308,11 @@ async function callAI(config: ApiConfig, messages: Message[], selectedFile: stri
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages.map(m => ({ role: m.role, content: m.content })),
+          ...messages.map(m => ({ role: m.role === 'self' ? 'user' : m.role, content: m.content })),
         ],
       }),
     });
-
-    if (!res.ok) throw new Error(`Custom API error: ${res.status}`);
+    if (!res.ok) throw new Error(`Custom API: ${res.status}`);
     const data = await res.json();
     return data.choices?.[0]?.message?.content ?? data.message?.content ?? 'No response';
   }
