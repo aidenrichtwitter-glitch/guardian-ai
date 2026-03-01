@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { RecursionLogEntry } from '@/lib/recursion-engine';
-import { Shield, Activity, Zap, Pause, Play, Gauge } from 'lucide-react';
+import { Shield, Activity, Zap, Pause, Play, Gauge, Sparkles } from 'lucide-react';
 import { RecursionState } from '@/lib/recursion-engine';
 
 interface RecursionPanelProps {
@@ -105,6 +105,26 @@ const RecursionPanel: React.FC<RecursionPanelProps> = ({ state, onToggleRunning,
             </button>
           ))}
         </div>
+
+        {/* Acquired capabilities */}
+        {state.capabilities.length > 0 && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-primary" />
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Self-given abilities</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {state.capabilities.map((cap) => (
+                <span
+                  key={cap}
+                  className="text-[8px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/20"
+                >
+                  {cap}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Current action */}

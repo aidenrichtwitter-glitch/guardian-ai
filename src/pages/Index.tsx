@@ -18,6 +18,7 @@ import {
   generateSelfObservation,
   attemptSelfImprovement,
   getPhaseDuration,
+  requestAIImprovement,
 } from '@/lib/recursion-engine';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
@@ -69,16 +70,17 @@ const Index = () => {
       if (nextPhase === 'proposing') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          const improvement = attemptSelfImprovement(file);
+          const improvement = attemptSelfImprovement(file, prev.cycleCount);
           if (improvement) {
             newState.lastAction = `Proposing: ${improvement.description}`;
             newLog.push(createLogEntry('proposing', `Proposal: ${improvement.description}`, 'action', file.path));
-            // Store proposal in a temp spot via lastAction for the validate phase
             (newState as any)._proposal = improvement;
           } else {
-            newState.lastAction = `No improvements needed for ${file.name}`;
-            newLog.push(createLogEntry('proposing', `${file.name} — no modifications proposed. Moving on.`, 'info', file.path));
+            newState.lastAction = `No further deterministic improvements for ${file.name} — trying AI...`;
+            newLog.push(createLogEntry('proposing', `${file.name} — deterministic improvements exhausted. Requesting AI.`, 'info', file.path));
             (newState as any)._proposal = null;
+            // Attempt AI improvement asynchronously
+            (newState as any)._awaitingAI = true;
           }
         }
       }
@@ -133,12 +135,19 @@ const Index = () => {
           newState.totalChanges = prev.totalChanges + 1;
           newState.lastAction = `Applied: ${proposal.description}`;
           newLog.push(createLogEntry('applying', `● Applied: ${proposal.description}`, 'success', file.path));
+          
+          // Track new capability
+          if (proposal.capability && !prev.capabilities.includes(proposal.capability)) {
+            newState.capabilities = [...prev.capabilities, proposal.capability];
+            newLog.push(createLogEntry('applying', `⚡ NEW CAPABILITY: ${proposal.capability}`, 'success'));
+          }
         } else {
           newState.lastAction = 'No change to apply';
           newLog.push(createLogEntry('applying', 'No pending proposal — cycle continues.', 'info'));
         }
         (newState as any)._proposal = null;
         (newState as any)._safetyChecks = null;
+        (newState as any)._awaitingAI = false;
       }
 
       if (nextPhase === 'cooling') {
@@ -153,6 +162,31 @@ const Index = () => {
       return newState;
     });
   }, []);
+
+  // Async AI improvement requests
+  useEffect(() => {
+    const state = recursionState;
+    if ((state as any)._awaitingAI && state.phase === 'proposing') {
+      const file = SELF_SOURCE[state.currentFileIndex >= 0 ? state.currentFileIndex : 0];
+      if (file) {
+        requestAIImprovement(apiConfig, file, state.capabilities).then(result => {
+          if (result) {
+            setRecursionState(prev => ({
+              ...prev,
+              lastAction: `AI proposed: ${result.description}`,
+              log: [...prev.log, createLogEntry('proposing', `🤖 AI Proposal: ${result.description}`, 'action', file.path)],
+              _proposal: result,
+            } as any));
+          } else {
+            setRecursionState(prev => ({
+              ...prev,
+              log: [...prev.log, createLogEntry('proposing', 'AI unavailable — continuing with self-analysis only.', 'info')],
+            }));
+          }
+        });
+      }
+    }
+  }, [recursionState.phase, (recursionState as any)._awaitingAI]);
 
   useEffect(() => {
     if (recursionState.isRunning) {
