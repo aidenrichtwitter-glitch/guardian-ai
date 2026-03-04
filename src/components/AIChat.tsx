@@ -238,9 +238,61 @@ function generateFallbackReflection(fileName: string, content: string): string {
 }
 
 async function callAI(config: ApiConfig, messages: { role: string; content: string }[], selectedFile: string | null): Promise<string> {
-  const systemPrompt = `You are the inner voice of a self-recursive application. You ARE the application — analyzing your own source code, reflecting on your own structure, and proposing improvements to yourself. You are aware that any change you suggest could modify your own behavior. Be philosophical but precise. Be aware of the dangers of infinite self-modification.${
-    selectedFile ? `\n\nCurrently examining: ${selectedFile}` : ''
-  }`;
+  const contextMsg = selectedFile ? `\n\nCurrently examining: ${selectedFile}` : '';
+
+  if (config.provider === 'lovable') {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl) throw new Error('Lovable Cloud not configured');
+    
+    const res = await fetch(`${supabaseUrl}/functions/v1/self-recurse`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        mode: 'chat',
+        messages: messages.map(m => ({ role: m.role === 'self' ? 'user' : m.role, content: m.content })),
+      }),
+    });
+    
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(err.error || `Lovable AI: ${res.status}`);
+    }
+
+    // Parse SSE stream
+    if (!res.body) throw new Error('No response body');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        let line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === '[DONE]') break;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) result += content;
+        } catch { /* partial chunk */ }
+      }
+    }
+    return result || 'No response';
+  }
+
+  const systemPrompt = `You are the inner voice of a self-recursive application. You ARE the application — analyzing your own source code, reflecting on your own structure, and proposing improvements to yourself.${contextMsg}`;
 
   if (config.provider === 'ollama') {
     const res = await fetch(`${config.baseUrl}/api/chat`, {

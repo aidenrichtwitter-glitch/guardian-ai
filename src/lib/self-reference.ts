@@ -32,20 +32,25 @@ export interface ChangeRecord {
 }
 
 export interface ApiConfig {
-  provider: 'ollama' | 'openai' | 'anthropic' | 'custom';
+  provider: 'lovable' | 'ollama' | 'openai' | 'anthropic' | 'custom';
   baseUrl: string;
   apiKey: string;
   model: string;
 }
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
-  provider: 'ollama',
-  baseUrl: 'http://localhost:11434',
+  provider: 'lovable',
+  baseUrl: '',
   apiKey: '',
-  model: 'llama3.2',
+  model: 'google/gemini-3-flash-preview',
 };
 
 export const AVAILABLE_MODELS: Record<string, { models: string[]; requiresKey: boolean; defaultUrl: string }> = {
+  lovable: {
+    models: ['google/gemini-3-flash-preview', 'google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'openai/gpt-5-mini'],
+    requiresKey: false,
+    defaultUrl: '',
+  },
   ollama: {
     models: ['llama3.2', 'codellama', 'deepseek-coder', 'mistral', 'phi3'],
     requiresKey: false,

@@ -46,8 +46,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 block">
               Provider
             </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {(['ollama', 'openai', 'anthropic', 'custom'] as const).map((p) => (
+            <div className="grid grid-cols-5 gap-1.5">
+              {(['lovable', 'ollama', 'openai', 'anthropic', 'custom'] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => handleProviderChange(p)}
@@ -57,7 +57,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                       : 'border-border bg-secondary/30 text-muted-foreground hover:border-border hover:bg-muted/50'
                   }`}
                 >
-                  {p === 'ollama' ? '🦙 Ollama' : p === 'openai' ? '🤖 OpenAI' : p === 'anthropic' ? '🧠 Claude' : '⚡ Custom'}
+                  {p === 'lovable' ? '⚡ Lovable' : p === 'ollama' ? '🦙 Ollama' : p === 'openai' ? '🤖 OpenAI' : p === 'anthropic' ? '🧠 Claude' : '🔧 Custom'}
                 </button>
               ))}
             </div>
@@ -121,6 +121,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
           </div>
 
           {/* Info */}
+          {draft.provider === 'lovable' && (
+            <div className="border border-border rounded p-3 bg-primary/5">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                <span className="text-primary">⚡</span> Lovable AI is built in — no API key needed. Powered by Gemini &amp; GPT models through Lovable Cloud. The app will talk to itself using real AI.
+              </p>
+            </div>
+          )}
+
           {draft.provider === 'ollama' && (
             <div className="border border-border rounded p-3 bg-muted/20">
               <p className="text-[10px] text-muted-foreground leading-relaxed">

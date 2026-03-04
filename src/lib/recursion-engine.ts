@@ -410,6 +410,46 @@ export async function requestAIImprovement(
 ): Promise<ImprovementResult | null> {
   try {
     const prompt = AI_IMPROVEMENT_PROMPT(file, capabilities);
+
+    if (config.provider === 'lovable') {
+      const supabaseUrl = (globalThis as any).__VITE_SUPABASE_URL || '';
+      const supabaseKey = (globalThis as any).__VITE_SUPABASE_KEY || '';
+      
+      // Try using import.meta.env if available (browser context)
+      let url = supabaseUrl;
+      let key = supabaseKey;
+      try {
+        url = url || import.meta.env.VITE_SUPABASE_URL;
+        key = key || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      } catch {}
+      
+      if (!url) return null;
+
+      const res = await fetch(`${url}/functions/v1/self-recurse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          mode: 'improve',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) return null;
+      const parsed = JSON.parse(text);
+      if (parsed.content && parsed.description) {
+        return {
+          content: parsed.content,
+          description: `[AI] ${parsed.description}`,
+          capability: parsed.capability || 'ai-improvement',
+        };
+      }
+      return null;
+    }
     
     if (config.provider === 'ollama') {
       const res = await fetch(`${config.baseUrl}/api/generate`, {
@@ -490,7 +530,6 @@ export async function requestAIImprovement(
       }
     }
   } catch (e) {
-    // AI unavailable — fall back to deterministic improvements
     return null;
   }
   return null;

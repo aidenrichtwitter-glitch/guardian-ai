@@ -1,0 +1,4 @@
+project_id = "zaklschpxjrfurrvbkyx"
+
+[functions.self-recurse]
+verify_jwt = false
