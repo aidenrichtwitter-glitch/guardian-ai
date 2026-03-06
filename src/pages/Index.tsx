@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye } from 'lucide-react';
+import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock } from 'lucide-react';
 import DesktopWindow from '@/components/DesktopWindow';
 import FileTree from '@/components/FileTree';
 import CodeViewer from '@/components/CodeViewer';
@@ -7,6 +7,7 @@ import AIChat from '@/components/AIChat';
 import SettingsModal from '@/components/SettingsModal';
 import ChangeLog, { rollbackChange } from '@/components/ChangeLog';
 import RecursionPanel from '@/components/RecursionPanel';
+import CapabilityTimeline from '@/components/CapabilityTimeline';
 import { ApiConfig, DEFAULT_API_CONFIG, ChangeRecord } from '@/lib/self-reference';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { validateChange } from '@/lib/safety-engine';
@@ -19,6 +20,11 @@ import {
   attemptSelfImprovement,
   getPhaseDuration,
   requestAIImprovement,
+  saveCapabilities,
+  isRateLimited,
+  getRateLimitRemaining,
+  calculateBackoff,
+  CapabilityRecord,
 } from '@/lib/recursion-engine';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
@@ -32,14 +38,43 @@ const Index = () => {
     return saved ? JSON.parse(saved) : DEFAULT_API_CONFIG;
   });
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
-  const [rightPanel, setRightPanel] = useState<'chat' | 'history'>('chat');
+  const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution'>('chat');
   const [recursionState, setRecursionState] = useState<RecursionState>(INITIAL_RECURSION_STATE);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Persist capabilities whenever they change
+  useEffect(() => {
+    saveCapabilities(recursionState.capabilities, recursionState.capabilityHistory);
+  }, [recursionState.capabilities, recursionState.capabilityHistory]);
 
   // --- Autonomous recursion loop ---
   const advancePhase = useCallback(() => {
     setRecursionState(prev => {
       if (!prev.isRunning) return prev;
+
+      // Check rate limit
+      if (isRateLimited(prev)) {
+        const remaining = getRateLimitRemaining(prev);
+        return {
+          ...prev,
+          phase: 'rate-limited' as any,
+          lastAction: `⏳ Rate limited — cooling for ${remaining}s`,
+          log: prev.log[prev.log.length - 1]?.phase === 'rate-limited' ? prev.log : [
+            ...prev.log,
+            createLogEntry('rate-limited' as any, `⏳ Rate limited — backing off for ${remaining}s. Using deterministic improvements.`, 'warning'),
+          ],
+        };
+      }
+
+      // If we were rate-limited but now clear, reset backoff
+      if (prev.phase === 'rate-limited') {
+        return {
+          ...prev,
+          phase: 'scanning',
+          rateLimitBackoff: 5000,
+          log: [...prev.log, createLogEntry('scanning', '✓ Rate limit cleared — resuming AI-powered recursion.', 'success')],
+        };
+      }
 
       const currentPhaseIdx = PHASE_SEQUENCE.indexOf(prev.phase);
       const nextPhaseIdx = (currentPhaseIdx + 1) % PHASE_SEQUENCE.length;
@@ -47,14 +82,12 @@ const Index = () => {
       const newLog = [...prev.log];
       let newState = { ...prev, phase: nextPhase };
 
-      // Cycle completed
       if (nextPhase === 'scanning') {
         newState.cycleCount = prev.cycleCount + 1;
         const { file, index } = getNextFile(prev.currentFileIndex);
         newState.currentFileIndex = index;
         newState.lastAction = `Scanning ${file.name}...`;
         newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── Selecting: ${file.name}`, 'action', file.path));
-        // Auto-select file in viewer
         setSelectedFile(file.path);
       }
 
@@ -70,16 +103,19 @@ const Index = () => {
       if (nextPhase === 'proposing') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          const improvement = attemptSelfImprovement(file, prev.cycleCount);
+          // Pass capabilities so compound improvements are attempted first
+          const improvement = attemptSelfImprovement(file, prev.cycleCount, prev.capabilities);
           if (improvement) {
             newState.lastAction = `Proposing: ${improvement.description}`;
             newLog.push(createLogEntry('proposing', `Proposal: ${improvement.description}`, 'action', file.path));
+            if (improvement.builtOn && improvement.builtOn.length > 0) {
+              newLog.push(createLogEntry('proposing', `🔗 Built on: ${improvement.builtOn.join(' + ')}`, 'info'));
+            }
             (newState as any)._proposal = improvement;
           } else {
-            newState.lastAction = `No further deterministic improvements for ${file.name} — trying AI...`;
-            newLog.push(createLogEntry('proposing', `${file.name} — deterministic improvements exhausted. Requesting AI.`, 'info', file.path));
+            newState.lastAction = `No deterministic improvements — requesting AI...`;
+            newLog.push(createLogEntry('proposing', `${file.name} — deterministic exhausted (${prev.capabilities.length} caps). Requesting AI.`, 'info', file.path));
             (newState as any)._proposal = null;
-            // Attempt AI improvement asynchronously
             (newState as any)._awaitingAI = true;
           }
         }
@@ -99,7 +135,7 @@ const Index = () => {
           } else {
             const warnings = checks.filter(c => c.severity === 'warning');
             newState.lastAction = `Validated. ${warnings.length} warnings.`;
-            newLog.push(createLogEntry('validating', `✓ Safety checks passed${warnings.length ? ` (${warnings.length} warnings)` : ''}`, 'success', file.path));
+            newLog.push(createLogEntry('validating', `✓ Safety passed${warnings.length ? ` (${warnings.length} warnings)` : ''}`, 'success', file.path));
             (newState as any)._safetyChecks = checks;
           }
         } else {
@@ -113,7 +149,6 @@ const Index = () => {
         const safetyChecks = (prev as any)._safetyChecks || [];
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (proposal && file) {
-          // Apply the change
           const record: ChangeRecord = {
             id: `change-${Date.now()}`,
             timestamp: Date.now(),
@@ -136,10 +171,28 @@ const Index = () => {
           newState.lastAction = `Applied: ${proposal.description}`;
           newLog.push(createLogEntry('applying', `● Applied: ${proposal.description}`, 'success', file.path));
           
-          // Track new capability
+          // Track new capability with full history
           if (proposal.capability && !prev.capabilities.includes(proposal.capability)) {
             newState.capabilities = [...prev.capabilities, proposal.capability];
+            const capRecord: CapabilityRecord = {
+              name: proposal.capability,
+              acquiredAt: Date.now(),
+              acquiredCycle: newState.cycleCount,
+              file: file.path,
+              description: proposal.description,
+              builtOn: proposal.builtOn || [],
+            };
+            newState.capabilityHistory = [...(prev.capabilityHistory || []), capRecord];
+            newState.evolutionLevel = Math.floor(newState.capabilities.length / 3) + 1;
             newLog.push(createLogEntry('applying', `⚡ NEW CAPABILITY: ${proposal.capability}`, 'success'));
+            if (proposal.builtOn && proposal.builtOn.length > 0) {
+              newLog.push(createLogEntry('applying', `🧬 Evolution: ${proposal.builtOn.join(' + ')} → ${proposal.capability}`, 'success'));
+            }
+            // Level up notification
+            const prevLevel = Math.floor(prev.capabilities.length / 3) + 1;
+            if (newState.evolutionLevel > prevLevel) {
+              newLog.push(createLogEntry('applying', `🌟 EVOLUTION LEVEL ${newState.evolutionLevel} REACHED — new compound abilities unlocked!`, 'success'));
+            }
           }
         } else {
           newState.lastAction = 'No change to apply';
@@ -155,33 +208,65 @@ const Index = () => {
         newLog.push(createLogEntry('cooling', '◌ Cooling. Preparing next recursive cycle.', 'info'));
       }
 
-      // Keep log bounded
       if (newLog.length > 200) newLog.splice(0, newLog.length - 200);
       newState.log = newLog;
-
       return newState;
     });
   }, []);
 
-  // Async AI improvement requests
+  // Async AI improvement requests with rate limit handling
   useEffect(() => {
     const state = recursionState;
     if ((state as any)._awaitingAI && state.phase === 'proposing') {
       const file = SELF_SOURCE[state.currentFileIndex >= 0 ? state.currentFileIndex : 0];
       if (file) {
-        requestAIImprovement(apiConfig, file, state.capabilities).then(result => {
+        requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory).then(({ result, error }) => {
+          if (error) {
+            if (error.type === 'rate-limited') {
+              const backoff = calculateBackoff(state.rateLimitBackoff);
+              setRecursionState(prev => ({
+                ...prev,
+                rateLimitBackoff: backoff,
+                rateLimitUntil: Date.now() + (error.retryAfter || backoff),
+                lastAction: `⏳ Rate limited — backing off ${Math.round((error.retryAfter || backoff) / 1000)}s`,
+                log: [...prev.log, createLogEntry('rate-limited' as any, `⏳ ${error.message}. Backoff: ${Math.round((error.retryAfter || backoff) / 1000)}s`, 'warning')],
+                _awaitingAI: false,
+              } as any));
+              return;
+            }
+            if (error.type === 'credits-exhausted') {
+              setRecursionState(prev => ({
+                ...prev,
+                log: [...prev.log, createLogEntry('proposing', `💳 ${error.message}. Continuing with deterministic evolution.`, 'warning')],
+                _awaitingAI: false,
+              } as any));
+              return;
+            }
+            setRecursionState(prev => ({
+              ...prev,
+              log: [...prev.log, createLogEntry('proposing', `⚠ AI error: ${error.message}`, 'warning')],
+              _awaitingAI: false,
+            } as any));
+            return;
+          }
           if (result) {
             setRecursionState(prev => ({
               ...prev,
               lastAction: `AI proposed: ${result.description}`,
-              log: [...prev.log, createLogEntry('proposing', `🤖 AI Proposal: ${result.description}`, 'action', file.path)],
+              rateLimitBackoff: 5000, // Reset backoff on success
+              log: [
+                ...prev.log,
+                createLogEntry('proposing', `🤖 AI Proposal: ${result.description}`, 'action', file.path),
+                ...(result.builtOn && result.builtOn.length > 0 ? [createLogEntry('proposing', `🔗 Builds on: ${result.builtOn.join(' + ')}`, 'info')] : []),
+              ],
               _proposal: result,
             } as any));
           } else {
             setRecursionState(prev => ({
               ...prev,
-              log: [...prev.log, createLogEntry('proposing', 'AI unavailable — continuing with self-analysis only.', 'info')],
-            }));
+              log: [...prev.log, createLogEntry('proposing', 'AI returned no improvement — continuing cycle.', 'info')],
+              _awaitingAI: false,
+            } as any));
           }
         });
       }
@@ -190,7 +275,9 @@ const Index = () => {
 
   useEffect(() => {
     if (recursionState.isRunning) {
-      const duration = getPhaseDuration(recursionState.phase, recursionState.speed);
+      const duration = recursionState.phase === ('rate-limited' as any)
+        ? Math.max(1000, recursionState.rateLimitUntil - Date.now())
+        : getPhaseDuration(recursionState.phase, recursionState.speed);
       timerRef.current = setTimeout(advancePhase, duration);
     }
     return () => {
@@ -257,14 +344,24 @@ const Index = () => {
           <span className="text-[10px] text-muted-foreground/50 hidden sm:inline">
             autonomous self-referential system
           </span>
+          {/* Evolution badge */}
+          {recursionState.capabilities.length > 0 && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hidden sm:inline-flex items-center gap-1">
+              <Zap className="w-2.5 h-2.5" />
+              Lvl {recursionState.evolutionLevel} · {recursionState.capabilities.length} abilities
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 mr-2">
             <span className={`w-1.5 h-1.5 rounded-full ${
-              recursionState.isRunning ? 'bg-terminal-green animate-pulse' : 'bg-terminal-amber'
+              recursionState.phase === ('rate-limited' as any) ? 'bg-terminal-amber animate-pulse'
+              : recursionState.isRunning ? 'bg-terminal-green animate-pulse' : 'bg-terminal-amber'
             }`} />
             <span className="text-[10px] text-muted-foreground">
-              {recursionState.isRunning ? 'running' : 'paused'} · cycle {recursionState.cycleCount}
+              {recursionState.phase === ('rate-limited' as any) 
+                ? `cooling ${getRateLimitRemaining(recursionState)}s` 
+                : recursionState.isRunning ? 'running' : 'paused'} · cycle {recursionState.cycleCount}
             </span>
           </div>
           <div className="flex items-center gap-1 mr-2">
@@ -286,7 +383,6 @@ const Index = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: File Tree + Recursion Engine */}
         <aside className="w-64 border-r border-border bg-card/30 flex flex-col shrink-0 hidden md:flex">
-          {/* File Tree - compact */}
           <div className="border-b border-border h-48 overflow-auto shrink-0">
             <DesktopWindow
               title="Explorer"
@@ -299,7 +395,6 @@ const Index = () => {
             </DesktopWindow>
           </div>
 
-          {/* Recursion Engine - main view */}
           <DesktopWindow
             title="Recursion Engine"
             icon={<Activity className="w-3 h-3" />}
@@ -330,7 +425,7 @@ const Index = () => {
           </DesktopWindow>
         </main>
 
-        {/* Right panel - AI Chat or History */}
+        {/* Right panel */}
         <aside className="w-80 border-l border-border bg-card/30 flex flex-col shrink-0 hidden lg:flex">
           <div className="flex border-b border-border shrink-0">
             <button
@@ -341,7 +436,22 @@ const Index = () => {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Brain className="w-3 h-3" /> Self-Dialog
+              <Brain className="w-3 h-3" /> Dialog
+            </button>
+            <button
+              onClick={() => setRightPanel('evolution')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
+                rightPanel === 'evolution'
+                  ? 'text-primary border-b border-primary bg-primary/5'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Zap className="w-3 h-3" /> Evolution
+              {recursionState.capabilities.length > 0 && (
+                <span className="text-[9px] px-1 py-0 rounded bg-primary/20 text-primary">
+                  {recursionState.capabilities.length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setRightPanel('history')}
@@ -364,6 +474,14 @@ const Index = () => {
             <div className="flex-1 overflow-hidden">
               <AIChat apiConfig={apiConfig} selectedFile={selectedFile} autoMode={recursionState.isRunning} capabilities={recursionState.capabilities} />
             </div>
+          ) : rightPanel === 'evolution' ? (
+            <div className="flex-1 overflow-hidden">
+              <CapabilityTimeline
+                capabilities={recursionState.capabilities}
+                history={recursionState.capabilityHistory}
+                evolutionLevel={recursionState.evolutionLevel}
+              />
+            </div>
           ) : (
             <div className="flex-1 overflow-auto">
               <ChangeLog changes={changes} onRollback={handleRollback} />
@@ -380,10 +498,15 @@ const Index = () => {
           </span>
           <span className="text-terminal-green">{recursionState.totalChanges} applied</span>
           <span className="text-terminal-red">{recursionState.totalRejected} rejected</span>
+          {recursionState.capabilities.length > 0 && (
+            <span className="text-primary flex items-center gap-1">
+              <Zap className="w-3 h-3" /> {recursionState.capabilities.length} abilities
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span>Phase: {recursionState.phase}</span>
-          <span>Depth: ∞ → bounded</span>
+          <span>Evolution: Lvl {recursionState.evolutionLevel}</span>
           <span className="text-primary text-glow animate-blink">▊</span>
         </div>
       </footer>
