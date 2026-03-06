@@ -141,32 +141,16 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
   }, [apiConfig, messages, selectedFile, isLoading, capabilities, generateAISelfPrompt]);
 
   useEffect(() => {
-    if (autoMode && !isLoading) {
+    if (autoMode && !isLoading && rateLimitCooldown === 0) {
       autoTimerRef.current = setTimeout(runSelfPrompt, 8000 + Math.random() * 4000);
+    } else if (autoMode && rateLimitCooldown > 0) {
+      // When rate limited, use longer intervals
+      autoTimerRef.current = setTimeout(runSelfPrompt, rateLimitCooldown * 1000 + 2000);
     }
     return () => {
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
     };
-  }, [autoMode, isLoading, messages.length]);
-
-  // Human override
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-
-    const userMsg: Message = { role: 'user', content: input.trim(), timestamp: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await callAI(apiConfig, [...messages.filter(m => m.role !== 'system'), userMsg], selectedFile, capabilities);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: response,
-        timestamp: Date.now(),
-      }]);
+  }, [autoMode, isLoading, messages.length, rateLimitCooldown]);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errMsg);
