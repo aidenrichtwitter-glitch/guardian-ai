@@ -36,8 +36,20 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
+  const [rateLimitCooldown, setRateLimitCooldown] = useState(0);
+
+  // Rate limit cooldown timer
+  useEffect(() => {
+    if (rateLimitCooldown > 0) {
+      const timer = setTimeout(() => setRateLimitCooldown(prev => Math.max(0, prev - 1)), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [rateLimitCooldown]);
+
   // Generate an AI-powered self-prompt via the edge function
   const generateAISelfPrompt = useCallback(async (file: { name: string; path: string; content: string; language: string; isModified: boolean; lastModified: number }): Promise<string> => {
+    if (rateLimitCooldown > 0) return generateSelfPrompt(file);
+    
     if (apiConfig.provider === 'lovable') {
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -68,6 +80,16 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
           }),
         });
 
+        if (res.status === 429) {
+          setRateLimitCooldown(30);
+          setError('Rate limited — slowing self-prompts for 30s');
+          return generateSelfPrompt(file);
+        }
+        if (res.status === 402) {
+          setError('Credits exhausted — using deterministic prompts');
+          return generateSelfPrompt(file);
+        }
+
         if (res.ok) {
           const data = await res.json();
           const text = data.choices?.[0]?.message?.content;
@@ -78,7 +100,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
       }
     }
     return generateSelfPrompt(file);
-  }, [apiConfig, capabilities]);
+  }, [apiConfig, capabilities, rateLimitCooldown]);
 
   // Auto-mode: periodically generate self-prompts and self-respond
   const runSelfPrompt = useCallback(async () => {
