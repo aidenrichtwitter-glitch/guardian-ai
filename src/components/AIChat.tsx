@@ -104,7 +104,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
 
   // Auto-mode: periodically generate self-prompts and self-respond
   const runSelfPrompt = useCallback(async () => {
-    if (isLoading) return;
+    if (isLoading || rateLimitCooldown > 0) return;
     
     const file = selectedFile 
       ? SELF_SOURCE.find(f => f.path === selectedFile) 
