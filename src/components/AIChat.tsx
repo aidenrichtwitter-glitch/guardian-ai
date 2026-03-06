@@ -151,16 +151,38 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
     };
   }, [autoMode, isLoading, messages.length, rateLimitCooldown]);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      setError(errMsg);
+
+  // Human override
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+
+    const userMsg: Message = { role: 'user', content: input.trim(), timestamp: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await callAI(apiConfig, [...messages.filter(m => m.role !== 'system'), userMsg], selectedFile, capabilities);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `⚠ Error: ${errMsg}\n\n${
-          apiConfig.provider === 'ollama'
-            ? '> Ollama not reachable. Running in self-reflective fallback mode.'
-            : '> API error. Falling back to autonomous reflection.'
-        }`,
+        content: response,
+        timestamp: Date.now(),
+      }]);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      if (errMsg.includes('429') || errMsg.includes('Rate limit')) {
+        setRateLimitCooldown(30);
+        setError('Rate limited — cooling down for 30s');
+      } else if (errMsg.includes('402')) {
+        setError('Credits exhausted — add funds to continue AI recursion');
+      } else {
+        setError(errMsg);
+      }
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⚠ ${errMsg}\n\n> Falling back to autonomous reflection.`,
         timestamp: Date.now(),
       }]);
     } finally {
