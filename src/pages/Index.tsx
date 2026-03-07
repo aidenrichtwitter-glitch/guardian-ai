@@ -21,6 +21,7 @@ import {
   getPhaseDuration,
   requestAIImprovement,
   saveCapabilities,
+  persistCapability,
   isRateLimited,
   getRateLimitRemaining,
   calculateBackoff,
