@@ -172,7 +172,7 @@ const Index = () => {
           newState.lastAction = `Applied: ${proposal.description}`;
           newLog.push(createLogEntry('applying', `● Applied: ${proposal.description}`, 'success', file.path));
           
-          // Track new capability with full history
+          // Track new capability with full history + save to src/explorer/
           if (proposal.capability && !prev.capabilities.includes(proposal.capability)) {
             newState.capabilities = [...prev.capabilities, proposal.capability];
             const capRecord: CapabilityRecord = {
@@ -186,9 +186,12 @@ const Index = () => {
             newState.capabilityHistory = [...(prev.capabilityHistory || []), capRecord];
             newState.evolutionLevel = Math.floor(newState.capabilities.length / 3) + 1;
             newLog.push(createLogEntry('applying', `⚡ NEW CAPABILITY: ${proposal.capability}`, 'success'));
+            newLog.push(createLogEntry('applying', `📁 Saved to src/explorer/${proposal.capability}.ts`, 'success'));
             if (proposal.builtOn && proposal.builtOn.length > 0) {
               newLog.push(createLogEntry('applying', `🧬 Evolution: ${proposal.builtOn.join(' + ')} → ${proposal.capability}`, 'success'));
             }
+            // Save capability as a file in src/explorer/
+            persistCapability(capRecord, proposal.content);
             // Level up notification
             const prevLevel = Math.floor(prev.capabilities.length / 3) + 1;
             if (newState.evolutionLevel > prevLevel) {
