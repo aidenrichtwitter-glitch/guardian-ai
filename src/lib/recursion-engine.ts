@@ -1,6 +1,7 @@
 import { VirtualFile, SafetyCheck, ChangeRecord, ApiConfig } from './self-reference';
 import { SELF_SOURCE } from './self-source';
 import { validateChange } from './safety-engine';
+import { saveCapabilityToExplorer, saveExplorerManifest, loadExplorerFiles, getExplorerCapabilities } from './explorer-store';
 
 // The autonomous recursion engine.
 // I am the heartbeat of self-modification.
