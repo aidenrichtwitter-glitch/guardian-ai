@@ -17,7 +17,6 @@ import {
   createLogEntry,
   getNextFile,
   generateSelfObservation,
-  attemptSelfImprovement,
   getPhaseDuration,
   requestAIImprovement,
   saveCapabilities,
@@ -36,7 +35,13 @@ const Index = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiConfig, setApiConfig] = useState<ApiConfig>(() => {
     const saved = localStorage.getItem('recursive-api-config');
-    return saved ? JSON.parse(saved) : DEFAULT_API_CONFIG;
+    if (saved) return JSON.parse(saved);
+    // Auto-detect: if running on localhost, use Ollama; otherwise use Lovable AI
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocal) {
+      return { provider: 'ollama' as const, baseUrl: 'http://localhost:11434', apiKey: '', model: 'llama3.2' };
+    }
+    return DEFAULT_API_CONFIG;
   });
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
   const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution'>('chat');
@@ -62,7 +67,7 @@ const Index = () => {
           lastAction: `⏳ Rate limited — cooling for ${remaining}s`,
           log: prev.log[prev.log.length - 1]?.phase === 'rate-limited' ? prev.log : [
             ...prev.log,
-            createLogEntry('rate-limited' as any, `⏳ Rate limited — backing off for ${remaining}s. Using deterministic improvements.`, 'warning'),
+            createLogEntry('rate-limited' as any, `⏳ Rate limited — waiting ${remaining}s before next AI request.`, 'warning'),
           ],
         };
       }
@@ -104,21 +109,11 @@ const Index = () => {
       if (nextPhase === 'proposing') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          // Pass capabilities so compound improvements are attempted first
-          const improvement = attemptSelfImprovement(file, prev.cycleCount, prev.capabilities);
-          if (improvement) {
-            newState.lastAction = `Proposing: ${improvement.description}`;
-            newLog.push(createLogEntry('proposing', `Proposal: ${improvement.description}`, 'action', file.path));
-            if (improvement.builtOn && improvement.builtOn.length > 0) {
-              newLog.push(createLogEntry('proposing', `🔗 Built on: ${improvement.builtOn.join(' + ')}`, 'info'));
-            }
-            (newState as any)._proposal = improvement;
-          } else {
-            newState.lastAction = `No deterministic improvements — requesting AI...`;
-            newLog.push(createLogEntry('proposing', `${file.name} — deterministic exhausted (${prev.capabilities.length} caps). Requesting AI.`, 'info', file.path));
-            (newState as any)._proposal = null;
-            (newState as any)._awaitingAI = true;
-          }
+          // Always use AI — no deterministic fallback
+          newState.lastAction = `Requesting AI improvement for ${file.name}...`;
+          newLog.push(createLogEntry('proposing', `🤖 Requesting AI improvement for ${file.name} (${prev.capabilities.length} caps)`, 'action', file.path));
+          (newState as any)._proposal = null;
+          (newState as any)._awaitingAI = true;
         }
       }
 
