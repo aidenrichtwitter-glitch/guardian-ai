@@ -172,11 +172,23 @@ export function getFileByPath(path: string): VirtualFile | undefined {
 }
 
 export function getFileTree(): { name: string; path: string; children?: any[] }[] {
+  // Dynamically build explorer children from SELF_SOURCE
+  const explorerFiles = SELF_SOURCE
+    .filter(f => f.path.startsWith('src/explorer/'))
+    .map(f => ({ name: f.name, path: f.path }));
+
   return [
     {
       name: 'src',
       path: 'src',
       children: [
+        {
+          name: 'explorer',
+          path: 'src/explorer',
+          children: explorerFiles.length > 0 
+            ? explorerFiles 
+            : [{ name: '(no capabilities yet)', path: 'src/explorer/_empty' }],
+        },
         {
           name: 'lib',
           path: 'src/lib',
@@ -184,6 +196,7 @@ export function getFileTree(): { name: string; path: string; children?: any[] }[
             { name: 'self-reference.ts', path: 'src/lib/self-reference.ts' },
             { name: 'safety-engine.ts', path: 'src/lib/safety-engine.ts' },
             { name: 'self-source.ts', path: 'src/lib/self-source.ts' },
+            { name: 'explorer-store.ts', path: 'src/lib/explorer-store.ts' },
           ],
         },
         {

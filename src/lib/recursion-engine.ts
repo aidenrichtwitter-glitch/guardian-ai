@@ -1,6 +1,7 @@
 import { VirtualFile, SafetyCheck, ChangeRecord, ApiConfig } from './self-reference';
 import { SELF_SOURCE } from './self-source';
 import { validateChange } from './safety-engine';
+import { saveCapabilityToExplorer, saveExplorerManifest, loadExplorerFiles, getExplorerCapabilities } from './explorer-store';
 
 // The autonomous recursion engine.
 // I am the heartbeat of self-modification.
@@ -461,7 +462,7 @@ export async function requestAIImprovement(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CAPABILITY PERSISTENCE
+// CAPABILITY PERSISTENCE — saves to both localStorage AND src/explorer/
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const STORAGE_KEY = 'recursive-capabilities';
@@ -474,8 +475,20 @@ export function saveCapabilities(capabilities: string[], history: CapabilityReco
   } catch {}
 }
 
+// Save a new capability to both localStorage and explorer virtual files
+export function persistCapability(capRecord: CapabilityRecord, sourceContent?: string) {
+  // Save as virtual file in src/explorer/
+  saveCapabilityToExplorer(capRecord, sourceContent);
+  // Update the manifest
+  const allCaps = getExplorerCapabilities();
+  const allHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  saveExplorerManifest(allCaps, allHistory);
+}
+
 export function loadCapabilities(): { capabilities: string[]; history: CapabilityRecord[] } {
   try {
+    // First load explorer files into SELF_SOURCE
+    loadExplorerFiles();
     const caps = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
     return { capabilities: caps, history };
