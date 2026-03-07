@@ -110,21 +110,11 @@ const Index = () => {
       if (nextPhase === 'proposing') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          // Pass capabilities so compound improvements are attempted first
-          const improvement = attemptSelfImprovement(file, prev.cycleCount, prev.capabilities);
-          if (improvement) {
-            newState.lastAction = `Proposing: ${improvement.description}`;
-            newLog.push(createLogEntry('proposing', `Proposal: ${improvement.description}`, 'action', file.path));
-            if (improvement.builtOn && improvement.builtOn.length > 0) {
-              newLog.push(createLogEntry('proposing', `🔗 Built on: ${improvement.builtOn.join(' + ')}`, 'info'));
-            }
-            (newState as any)._proposal = improvement;
-          } else {
-            newState.lastAction = `No deterministic improvements — requesting AI...`;
-            newLog.push(createLogEntry('proposing', `${file.name} — deterministic exhausted (${prev.capabilities.length} caps). Requesting AI.`, 'info', file.path));
-            (newState as any)._proposal = null;
-            (newState as any)._awaitingAI = true;
-          }
+          // Always use AI — no deterministic fallback
+          newState.lastAction = `Requesting AI improvement for ${file.name}...`;
+          newLog.push(createLogEntry('proposing', `🤖 Requesting AI improvement for ${file.name} (${prev.capabilities.length} caps)`, 'action', file.path));
+          (newState as any)._proposal = null;
+          (newState as any)._awaitingAI = true;
         }
       }
 
