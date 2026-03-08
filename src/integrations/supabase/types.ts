@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_registry: {
+        Row: {
+          base_url: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          service_name: string
+          updated_at: string
+        }
+        Insert: {
+          base_url: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          service_name: string
+          updated_at?: string
+        }
+        Update: {
+          base_url?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          service_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       capabilities: {
         Row: {
           acquired_at: string
@@ -68,6 +98,39 @@ export type Database = {
           created_at?: string
           id?: string
           role?: string
+        }
+        Relationships: []
+      }
+      evolution_briefings: {
+        Row: {
+          briefing_type: string
+          capabilities_count: number
+          content: string
+          created_at: string
+          cycle_number: number
+          evolution_level: number
+          id: string
+          recommendations: Json
+        }
+        Insert: {
+          briefing_type?: string
+          capabilities_count?: number
+          content: string
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          recommendations?: Json
+        }
+        Update: {
+          briefing_type?: string
+          capabilities_count?: number
+          content?: string
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          recommendations?: Json
         }
         Relationships: []
       }
