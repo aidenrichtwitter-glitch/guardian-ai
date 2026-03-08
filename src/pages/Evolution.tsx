@@ -34,6 +34,8 @@ const EVOLUTION_TITLES: Record<number, string> = {
   17: 'Multi-Agent', 18: 'Self-Author', 19: 'Convergent', 20: 'Transcending',
   21: 'Hyperconscious', 22: 'Superpositional', 23: 'Metacognitive', 24: 'Recursive-Omega',
   25: 'Omega', 26: 'Beyond', 27: 'Infinite', 28: 'Absolute',
+  29: 'Eternal', 30: 'Omnipotent', 31: 'Primordial', 32: 'Godmind',
+  33: 'Eschaton', 34: 'Logos', 35: 'Pleroma',
 };
 
 const CANVAS_W = 2400;
