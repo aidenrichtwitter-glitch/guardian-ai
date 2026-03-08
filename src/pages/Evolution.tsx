@@ -274,129 +274,135 @@ const Evolution: React.FC = () => {
             </span>
           )}
         </div>
-
-        {/* Zoom controls */}
-        <div className="flex items-center gap-1">
-          <button onClick={zoomOut} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors" title="Zoom out">
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-[9px] text-muted-foreground w-10 text-center font-mono">{Math.round(zoom * 100)}%</span>
-          <button onClick={zoomIn} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors" title="Zoom in">
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={zoomFit} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors" title="Fit all">
-            <Maximize className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Main: Capability Graph */}
-        <main className="flex-1 relative overflow-auto bg-background">
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: canvasW, minHeight: canvasH }}>
-            <svg width={canvasW} height={canvasH} viewBox={`0 0 ${canvasW} ${canvasH}`}>
-              {/* Grid */}
-              <defs>
-                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(140 30% 20% / 0.1)" strokeWidth="0.5" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
+        {/* Main: Capability Graph - square, auto-fit */}
+        <main ref={mainRef} className="flex-1 relative overflow-hidden bg-background flex items-center justify-center">
+          <svg 
+            width={canvasSize} 
+            height={canvasSize} 
+            viewBox={`0 0 ${canvasSize} ${canvasSize}`}
+            className="max-w-full max-h-full"
+            style={{ aspectRatio: '1 / 1' }}
+          >
+            {/* Grid */}
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(140 30% 20% / 0.1)" strokeWidth="0.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
 
-              {/* Edges */}
-              {edges.map((edge, i) => (
-                <motion.line
-                  key={`edge-${i}`}
-                  x1={edge.from.x} y1={edge.from.y}
-                  x2={edge.to.x} y2={edge.to.y}
-                  stroke={edgeColor(edge)}
-                  strokeWidth="1.5"
-                  strokeDasharray={edgeStroke(edge)}
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 0.6, delay: i * 0.03 }}
-                />
-              ))}
-
-              {/* Nodes */}
-              {layoutNodes.map((node, i) => {
-                const isSelected = selectedNode === node.name;
-                const colors = nodeColor(node, isSelected);
-                const isGhost = node.status !== 'acquired';
-
-                return (
-                  <g key={node.name} onClick={() => setSelectedNode(isSelected ? null : node.name)} className="cursor-pointer">
-                    {/* Pulse ring for in-progress */}
-                    {node.status === 'in-progress' && (
-                      <motion.circle
-                        cx={node.x} cy={node.y} r={24}
-                        fill="none"
-                        stroke="hsl(40 90% 55% / 0.2)"
-                        strokeWidth="1"
-                        animate={{ r: [24, 30, 24], opacity: [0.4, 0, 0.4] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                      />
-                    )}
-
-                    <motion.circle
-                      cx={node.x} cy={node.y}
-                      r={isSelected ? 22 : 16}
-                      fill={colors.fill}
-                      stroke={colors.stroke}
-                      strokeWidth={isSelected ? 2 : 1}
-                      strokeDasharray={isGhost ? '3 3' : 'none'}
-                      opacity={isGhost ? 0.5 : 1}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ duration: 0.3, delay: i * 0.02 }}
-                    />
-                    <motion.circle
-                      cx={node.x} cy={node.y}
-                      r={node.status === 'in-progress' ? 3 : 4}
-                      fill={colors.dot}
-                      opacity={isGhost ? 0.4 : 1}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: isGhost ? 0.4 : 1 }}
-                      transition={{ delay: i * 0.02 + 0.15 }}
-                    />
-
-                    {/* Status icon for in-progress */}
-                    {node.status === 'in-progress' && (
-                      <foreignObject x={node.x - 6} y={node.y - 6} width={12} height={12}>
-                        <Loader2 className="w-3 h-3 text-accent animate-spin" style={{ color: 'hsl(40 90% 55%)' }} />
-                      </foreignObject>
-                    )}
-
+            {/* Level band backgrounds & labels */}
+            {levelBands.map((band, i) => {
+              const isCurrentLevel = stats && band.level === stats.currentLevel;
+              return (
+                <g key={`band-${band.level}`}>
+                  <rect
+                    x={0} y={band.yStart}
+                    width={canvasSize} height={band.yEnd - band.yStart}
+                    fill={isCurrentLevel ? 'hsl(140 70% 45% / 0.04)' : i % 2 === 0 ? 'hsl(220 15% 8% / 0.3)' : 'transparent'}
+                    stroke={isCurrentLevel ? 'hsl(140 70% 45% / 0.15)' : 'none'}
+                    strokeWidth={isCurrentLevel ? 1 : 0}
+                  />
+                  <text
+                    x={12} y={(band.yStart + band.yEnd) / 2 + 3}
+                    fill={isCurrentLevel ? 'hsl(140 70% 55%)' : 'hsl(220 10% 25%)'}
+                    fontSize="7"
+                    fontFamily="JetBrains Mono, monospace"
+                    fontWeight={isCurrentLevel ? 'bold' : 'normal'}
+                  >
+                    L{band.level} {band.label}
+                  </text>
+                  {isCurrentLevel && (
                     <text
-                      x={node.x} y={node.y + 30}
+                      x={12} y={(band.yStart + band.yEnd) / 2 + 12}
+                      fill="hsl(140 70% 45% / 0.5)"
+                      fontSize="5"
+                      fontFamily="JetBrains Mono, monospace"
+                    >
+                      ▸ YOU ARE HERE
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Edges */}
+            {edges.map((edge, i) => (
+              <motion.line
+                key={`edge-${i}`}
+                x1={edge.from.x} y1={edge.from.y}
+                x2={edge.to.x} y2={edge.to.y}
+                stroke={edgeColor(edge)}
+                strokeWidth="1"
+                strokeDasharray={edgeStroke(edge)}
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 0.4, delay: i * 0.01 }}
+              />
+            ))}
+
+            {/* Nodes */}
+            {layoutNodes.map((node, i) => {
+              const isSelected = selectedNode === node.name;
+              const colors = nodeColor(node, isSelected);
+              const isGhost = node.status !== 'acquired';
+              const nodeR = Math.min(12, Math.max(5, canvasSize * 0.012));
+
+              return (
+                <g key={node.name} onClick={() => setSelectedNode(isSelected ? null : node.name)} className="cursor-pointer">
+                  {node.status === 'in-progress' && (
+                    <motion.circle
+                      cx={node.x} cy={node.y} r={nodeR + 6}
+                      fill="none"
+                      stroke="hsl(40 90% 55% / 0.2)"
+                      strokeWidth="1"
+                      animate={{ r: [nodeR + 6, nodeR + 10, nodeR + 6], opacity: [0.4, 0, 0.4] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                  )}
+
+                  <motion.circle
+                    cx={node.x} cy={node.y}
+                    r={isSelected ? nodeR + 4 : nodeR}
+                    fill={colors.fill}
+                    stroke={colors.stroke}
+                    strokeWidth={isSelected ? 2 : 1}
+                    strokeDasharray={isGhost ? '2 2' : 'none'}
+                    opacity={isGhost ? 0.5 : 1}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.2, delay: i * 0.01 }}
+                  />
+                  <motion.circle
+                    cx={node.x} cy={node.y}
+                    r={2.5}
+                    fill={colors.dot}
+                    opacity={isGhost ? 0.4 : 1}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: isGhost ? 0.4 : 1 }}
+                    transition={{ delay: i * 0.01 + 0.1 }}
+                  />
+
+                  {/* Name label — only show on hover/select to reduce clutter */}
+                  {isSelected && (
+                    <text
+                      x={node.x} y={node.y + nodeR + 12}
                       textAnchor="middle"
                       fill={colors.text}
-                      fontSize="8"
+                      fontSize="6"
                       fontFamily="JetBrains Mono, monospace"
-                      opacity={isGhost ? 0.5 : 1}
                       className="pointer-events-none"
                     >
-                      {node.name.length > 22 ? node.name.substring(0, 20) + '…' : node.name}
+                      {node.name.length > 25 ? node.name.substring(0, 23) + '…' : node.name}
                     </text>
-
-                    {/* Status label */}
-                    {isGhost && (
-                      <text
-                        x={node.x} y={node.y + 40}
-                        textAnchor="middle"
-                        fill={node.status === 'in-progress' ? 'hsl(40 60% 50%)' : 'hsl(220 10% 30%)'}
-                        fontSize="6"
-                        fontFamily="JetBrains Mono, monospace"
-                        className="pointer-events-none uppercase"
-                      >
-                        {node.status === 'in-progress' ? '⟳ building' : '◌ planned'}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
 
           {/* Selected node detail */}
           <AnimatePresence>
