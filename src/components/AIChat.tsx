@@ -142,10 +142,11 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
 
   useEffect(() => {
     if (autoMode && !isLoading && rateLimitCooldown === 0) {
-      autoTimerRef.current = setTimeout(runSelfPrompt, 8000 + Math.random() * 4000);
+      // Much longer interval to avoid competing with recursion engine for API quota
+      autoTimerRef.current = setTimeout(runSelfPrompt, 25000 + Math.random() * 15000);
     } else if (autoMode && rateLimitCooldown > 0) {
-      // When rate limited, use longer intervals
-      autoTimerRef.current = setTimeout(runSelfPrompt, rateLimitCooldown * 1000 + 2000);
+      // When rate limited, wait much longer
+      autoTimerRef.current = setTimeout(runSelfPrompt, rateLimitCooldown * 1000 + 30000);
     }
     return () => {
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
