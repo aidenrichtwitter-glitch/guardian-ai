@@ -132,7 +132,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
       setError(errMsg);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: generateFallbackReflection(file.name, file.content),
+        content: `⚠ AI error: ${errMsg}\n\n> Waiting for next cycle to retry with AI.`,
         timestamp: Date.now(),
       }]);
     } finally {
