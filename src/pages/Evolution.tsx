@@ -141,6 +141,12 @@ const Evolution: React.FC = () => {
       }
 
       if (snapRes.data) setSnapshots(snapRes.data);
+
+      // Store goals for sidebar
+      setGoals((goalsRes.data || []).sort((a, b) => {
+        const order: Record<string, number> = { 'in-progress': 0, 'active': 1, 'completed': 2 };
+        return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+      }));
     };
 
     fetchAll();
