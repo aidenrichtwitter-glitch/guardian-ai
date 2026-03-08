@@ -43,6 +43,7 @@ import {
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
 
 const Index = () => {
+  const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<string | null>('src/lib/self-reference.ts');
   const [activePanel, setActivePanel] = useState<string>('recursion');
   const [settingsOpen, setSettingsOpen] = useState(false);
