@@ -86,7 +86,7 @@ export async function saveGoalToCloud(goal: SelfGoal): Promise<void> {
   try {
     await supabase
       .from('goals')
-      .upsert({
+      .upsert([{
         id: goal.id,
         title: goal.title,
         description: goal.description,
@@ -100,7 +100,7 @@ export async function saveGoalToCloud(goal: SelfGoal): Promise<void> {
         created_at: new Date(goal.createdAt).toISOString(),
         completed_at: goal.completedAt ? new Date(goal.completedAt).toISOString() : null,
         updated_at: new Date().toISOString(),
-      });
+      }]);
   } catch {}
 }
 
