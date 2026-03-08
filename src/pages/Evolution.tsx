@@ -38,21 +38,16 @@ const EVOLUTION_TITLES: Record<number, string> = {
   33: 'Eschaton', 34: 'Logos', 35: 'Pleroma',
 };
 
-const CANVAS_W = 2400;
-const CANVAS_H_MIN = 800;
+// Square layout: group by evolution level, auto-fit everything
+function layoutGraph(capabilities: CapabilityNode[], containerSize: number): { nodes: CapabilityNode[]; size: number; levelBands: { level: number; label: string; yStart: number; yEnd: number }[] } {
+  const SIZE = containerSize || 800;
+  if (capabilities.length === 0) return { nodes: [], size: SIZE, levelBands: [] };
 
-function layoutGraph(capabilities: CapabilityNode[]): { nodes: CapabilityNode[]; width: number; height: number } {
-  if (capabilities.length === 0) return { nodes: [], width: CANVAS_W, height: CANVAS_H_MIN };
-
-  // Separate acquired from future nodes and assign proper levels
   const acquired = capabilities.filter(n => n.status === 'acquired');
   const future = capabilities.filter(n => n.status !== 'acquired');
-  
-  // Build dependency depth for future nodes
   const acquiredNames = new Set(acquired.map(n => n.name));
   const futureByName = new Map(future.map(n => [n.name, n]));
-  
-  // Assign future levels based on dependency depth
+
   const getDepthForFuture = (node: CapabilityNode, visited = new Set<string>()): number => {
     if (visited.has(node.name)) return 0;
     visited.add(node.name);
@@ -69,11 +64,7 @@ function layoutGraph(capabilities: CapabilityNode[]): { nodes: CapabilityNode[];
     return maxParentDepth + 1;
   };
 
-  const leveledFuture = future.map(n => ({
-    ...n,
-    level: getDepthForFuture(n),
-  }));
-
+  const leveledFuture = future.map(n => ({ ...n, level: getDepthForFuture(n) }));
   const allNodes = [...acquired, ...leveledFuture];
 
   // Group by level
@@ -84,26 +75,45 @@ function layoutGraph(capabilities: CapabilityNode[]): { nodes: CapabilityNode[];
   });
 
   const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b);
-  const result: CapabilityNode[] = [];
+  const numLevels = sortedLevels.length;
+  if (numLevels === 0) return { nodes: [], size: SIZE, levelBands: [] };
 
-  // Calculate canvas width based on widest level
-  const maxNodesInLevel = Math.max(...Array.from(levels.values()).map(n => n.length), 1);
-  const nodeSpacing = 170;
-  const canvasW = Math.max(CANVAS_W, maxNodesInLevel * nodeSpacing + 200);
+  const padding = 40;
+  const usable = SIZE - padding * 2;
+  const bandHeight = usable / numLevels;
+  const nodeRadius = Math.min(14, Math.max(6, bandHeight * 0.2));
+
+  const result: CapabilityNode[] = [];
+  const levelBands: { level: number; label: string; yStart: number; yEnd: number }[] = [];
 
   sortedLevels.forEach((lvl, li) => {
     const nodes = levels.get(lvl)!;
-    const y = 80 + li * 130;
+    const yCenter = padding + li * bandHeight + bandHeight / 2;
+    const yStart = padding + li * bandHeight;
+    const yEnd = yStart + bandHeight;
+    
+    levelBands.push({ 
+      level: lvl, 
+      label: EVOLUTION_TITLES[lvl] || `L${lvl}`, 
+      yStart, 
+      yEnd 
+    });
+
+    const count = nodes.length;
+    const spacing = Math.min(usable / (count + 1), 80);
+    const totalWidth = spacing * (count - 1);
+    const startX = padding + (usable - totalWidth) / 2;
+
     nodes.forEach((node, ni) => {
-      const totalWidth = nodes.length * nodeSpacing;
-      const startX = (canvasW - totalWidth) / 2;
-      result.push({ ...node, x: startX + ni * nodeSpacing + nodeSpacing / 2, y });
+      result.push({
+        ...node,
+        x: count === 1 ? SIZE / 2 : startX + ni * spacing,
+        y: yCenter,
+      });
     });
   });
 
-  const canvasH = Math.max(CANVAS_H_MIN, sortedLevels.length * 130 + 200);
-
-  return { nodes: result, width: canvasW, height: canvasH };
+  return { nodes: result, size: SIZE, levelBands };
 }
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
