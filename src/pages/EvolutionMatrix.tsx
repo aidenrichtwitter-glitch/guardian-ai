@@ -371,7 +371,7 @@ const EvolutionMatrix: React.FC = () => {
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getTierColor(selectedNode.level) }} />
                   <span className="text-[9px] text-muted-foreground font-mono">
-                    L{selectedNode.level} · {EVOLUTION_TITLES[selectedNode.level] || ''}
+                    L{selectedNode.level} · {getEvolutionTitle(selectedNode.level)}
                     {selectedNode.status !== 'acquired' && ' · PLANNED'}
                   </span>
                 </div>
