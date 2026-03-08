@@ -586,7 +586,79 @@ const Evolution: React.FC = () => {
                 ))}
               </div>
 
-              {/* AI AUTONOMY METER */}
+              {/* LIFE PROOF — Vital Signs */}
+              {lifeReport && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    💓 Life Proof · Heartbeat #{lifeReport.heartbeatNumber}
+                  </div>
+                  
+                  {/* Overall score bar */}
+                  <div className="relative h-6 rounded-lg bg-muted/30 overflow-hidden border border-border/50">
+                    <motion.div
+                      className="absolute inset-y-0 left-0 rounded-lg"
+                      style={{
+                        background: lifeReport.overallScore >= 70
+                          ? 'linear-gradient(90deg, hsl(140, 70%, 35%), hsl(140, 70%, 50%))'
+                          : lifeReport.overallScore >= 40
+                          ? 'linear-gradient(90deg, hsl(40, 90%, 45%), hsl(40, 90%, 60%))'
+                          : 'linear-gradient(90deg, hsl(0, 70%, 40%), hsl(0, 70%, 55%))',
+                      }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${lifeReport.overallScore}%` }}
+                      transition={{ duration: 1, ease: 'easeOut' }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-foreground mix-blend-difference">
+                        {lifeReport.alive ? '💓' : '💀'} {lifeReport.overallScore}% {lifeReport.alive ? 'ALIVE' : 'CRITICAL'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Verdict */}
+                  <div className="text-[9px] text-foreground/80 px-1">
+                    {lifeReport.verdict}
+                  </div>
+
+                  {/* Stage results */}
+                  <div className="space-y-0.5">
+                    {lifeReport.stages.map(stage => (
+                      <div
+                        key={stage.stage}
+                        className={`flex items-center gap-2 text-[9px] px-2 py-1 rounded ${
+                          stage.passed
+                            ? 'text-primary/80'
+                            : 'text-destructive/80'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          stage.passed ? 'bg-primary' : 'bg-destructive'
+                        }`} />
+                        <span className="font-semibold w-16 shrink-0">{stage.name}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted/30 overflow-hidden">
+                          <motion.div
+                            className={`h-full rounded-full ${stage.passed ? 'bg-primary/60' : 'bg-destructive/60'}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${stage.score}%` }}
+                            transition={{ duration: 0.5 }}
+                          />
+                        </div>
+                        <span className="text-[8px] text-muted-foreground w-6 text-right">{stage.score}%</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {isRunningLifeProof && (
+                    <div className="text-[8px] text-accent animate-pulse flex items-center gap-1">
+                      <Loader className="w-2.5 h-2.5 animate-spin" /> Running test stages...
+                    </div>
+                  )}
+                  <div className="text-[8px] text-muted-foreground/50">
+                    Duration: {lifeReport.duration.toFixed(0)}ms
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                   <Cpu className="w-3 h-3" /> Autonomy Score
