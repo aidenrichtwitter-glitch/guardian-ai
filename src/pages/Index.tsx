@@ -47,6 +47,7 @@ const Index = () => {
   const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution'>('chat');
   const [recursionState, setRecursionState] = useState<RecursionState>(INITIAL_RECURSION_STATE);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fileTreeVersion, setFileTreeVersion] = useState(0);
 
   // Persist capabilities whenever they change
   useEffect(() => {
