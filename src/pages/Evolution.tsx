@@ -220,8 +220,8 @@ const Evolution: React.FC = () => {
   }, [containerSize]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
-  const canvasW = capabilities.width;
-  const canvasH = capabilities.height;
+  const canvasSize = capabilities.size;
+  const levelBands = capabilities.levelBands;
 
   const edges = useMemo(() => {
     const result: { from: CapabilityNode; to: CapabilityNode }[] = [];
