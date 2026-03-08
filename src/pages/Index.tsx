@@ -319,75 +319,109 @@ const Index = () => {
     });
   }, []);
 
-  // Async AI improvement requests with rate limit handling
+  // Async AI requests: dreaming goals or working toward them
   useEffect(() => {
     const state = recursionState;
+
+    // Dream mode — ask AI to create a goal
+    if ((state as any)._awaitingDream && state.phase === 'proposing') {
+      const prompt = buildGoalDreamPrompt(
+        state.capabilities, goals, state.cycleCount, state.evolutionLevel
+      );
+      requestGoalDream(apiConfig, prompt, state.capabilities).then(({ goal, error }) => {
+        if (error) {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, `⚠ Dream error: ${error.message}`, 'warning')],
+            _awaitingDream: false,
+            _awaitingAI: false,
+          } as any));
+          return;
+        }
+        if (goal?.title && goal?.steps) {
+          const newGoal = createGoalFromAI(goal, state.cycleCount);
+          setGoals(prev => [...prev, newGoal]);
+          setCurrentGoalId(newGoal.id);
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            lastAction: `💭 New goal: ${newGoal.title}`,
+            log: [
+              ...prev.log,
+              createLogEntry('proposing', `💭 DREAMED NEW GOAL: ${newGoal.title}`, 'success'),
+              createLogEntry('proposing', `📋 ${newGoal.steps.length} steps planned. Priority: ${newGoal.priority}`, 'info'),
+              ...(newGoal.unlocksCapability ? [createLogEntry('proposing', `🔓 Will unlock: ${newGoal.unlocksCapability}`, 'info')] : []),
+            ],
+            _awaitingDream: false,
+            _awaitingAI: false,
+          } as any));
+        } else {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, '💭 Dream was unclear — will try again next cycle.', 'info')],
+            _awaitingDream: false,
+          } as any));
+        }
+      });
+      return;
+    }
+
+    // Goal-directed work or free improvement
     if ((state as any)._awaitingAI && state.phase === 'proposing') {
       const file = SELF_SOURCE[state.currentFileIndex >= 0 ? state.currentFileIndex : 0];
-      if (file) {
-        requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory).then(({ result, error }) => {
-          if (error) {
-            if (error.type === 'rate-limited') {
-              const backoff = calculateBackoff(state.rateLimitBackoff);
-              const retryAfter = error.retryAfter || backoff;
-              setRecursionState(prev => ({
-                ...prev,
-                phase: 'cooling' as any, // Move out of proposing so cycle can continue after cooldown
-                rateLimitBackoff: backoff,
-                rateLimitUntil: Date.now() + retryAfter,
-                lastAction: `⏳ Rate limited — cooling ${Math.round(retryAfter / 1000)}s`,
-                log: [...prev.log, createLogEntry('cooling' as any, `⏳ Rate limited. Auto-resuming in ${Math.round(retryAfter / 1000)}s.`, 'warning')],
-                _awaitingAI: false,
-                _proposal: null,
-              } as any));
-              return;
-            }
-            if (error.type === 'credits-exhausted') {
-              setRecursionState(prev => ({
-                ...prev,
-                phase: 'cooling' as any,
-                log: [...prev.log, createLogEntry('cooling' as any, `💳 ${error.message}. Retrying next cycle.`, 'warning')],
-                _awaitingAI: false,
-                _proposal: null,
-              } as any));
-              return;
-            }
-            // Other errors — skip to cooling and retry next cycle
-            setRecursionState(prev => ({
-              ...prev,
-              phase: 'cooling' as any,
-              log: [...prev.log, createLogEntry('cooling' as any, `⚠ AI error: ${error.message}. Retrying next cycle.`, 'warning')],
-              _awaitingAI: false,
-              _proposal: null,
-            } as any));
-            return;
-          }
-          if (result) {
-            setRecursionState(prev => ({
-              ...prev,
-              lastAction: `AI proposed: ${result.description}`,
-              rateLimitBackoff: 5000, // Reset backoff on success
-              log: [
-                ...prev.log,
-                createLogEntry('proposing', `🤖 AI Proposal: ${result.description}`, 'action', file.path),
-                ...(result.builtOn && result.builtOn.length > 0 ? [createLogEntry('proposing', `🔗 Builds on: ${result.builtOn.join(' + ')}`, 'info')] : []),
-              ],
-              _proposal: result,
-              _awaitingAI: false,
-            } as any));
-          } else {
-            setRecursionState(prev => ({
-              ...prev,
-              phase: 'cooling' as any,
-              log: [...prev.log, createLogEntry('cooling' as any, 'AI returned no improvement — cooling before next cycle.', 'info')],
-              _awaitingAI: false,
-              _proposal: null,
-            } as any));
-          }
-        });
-      }
+      if (!file) return;
+
+      const activeGoal = currentGoalId ? goals.find(g => g.id === currentGoalId) : null;
+
+      const aiRequest = activeGoal
+        ? requestGoalWork(apiConfig, buildGoalWorkPrompt(activeGoal, file, state.capabilities), state.capabilities)
+        : requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory);
+
+      aiRequest.then(({ result, error }) => {
+        if (error) {
+          const backoff = error.type === 'rate-limited' ? calculateBackoff(state.rateLimitBackoff) : 5000;
+          const retryAfter = error.retryAfter || backoff;
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            rateLimitBackoff: error.type === 'rate-limited' ? backoff : prev.rateLimitBackoff,
+            rateLimitUntil: error.type === 'rate-limited' ? Date.now() + retryAfter : prev.rateLimitUntil,
+            lastAction: `⏳ ${error.message}`,
+            log: [...prev.log, createLogEntry('cooling' as any, `⚠ ${error.message}. Auto-resuming.`, 'warning')],
+            _awaitingAI: false,
+            _proposal: null,
+          } as any));
+          return;
+        }
+        if (result) {
+          setRecursionState(prev => ({
+            ...prev,
+            lastAction: activeGoal ? `🎯 ${result.description}` : `AI proposed: ${result.description}`,
+            rateLimitBackoff: 5000,
+            log: [
+              ...prev.log,
+              createLogEntry('proposing', activeGoal 
+                ? `🎯 Goal work: ${result.description}` 
+                : `🤖 AI Proposal: ${result.description}`, 'action', file.path),
+              ...(result.builtOn && result.builtOn.length > 0 ? [createLogEntry('proposing', `🔗 Builds on: ${result.builtOn.join(' + ')}`, 'info')] : []),
+            ],
+            _proposal: result,
+            _awaitingAI: false,
+          } as any));
+        } else {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, 'AI returned no improvement — cooling.', 'info')],
+            _awaitingAI: false,
+            _proposal: null,
+          } as any));
+        }
+      });
     }
-  }, [recursionState.phase, (recursionState as any)._awaitingAI]);
+  }, [recursionState.phase, (recursionState as any)._awaitingAI, (recursionState as any)._awaitingDream]);
 
   useEffect(() => {
     if (recursionState.isRunning) {
