@@ -271,13 +271,32 @@ const Index = () => {
             if (proposal.builtOn && proposal.builtOn.length > 0) {
               newLog.push(createLogEntry('applying', `🧬 Evolution: ${proposal.builtOn.join(' + ')} → ${proposal.capability}`, 'success'));
             }
-            // Save capability as a file in src/explorer/
             persistCapability(capRecord, proposal.content);
-            // Level up notification
             const prevLevel = Math.floor(prev.capabilities.length / 3) + 1;
             if (newState.evolutionLevel > prevLevel) {
-              newLog.push(createLogEntry('applying', `🌟 EVOLUTION LEVEL ${newState.evolutionLevel} REACHED — new compound abilities unlocked!`, 'success'));
+              newLog.push(createLogEntry('applying', `🌟 EVOLUTION LEVEL ${newState.evolutionLevel} REACHED!`, 'success'));
             }
+          }
+
+          // Update goal progress if working toward a goal
+          if (proposal.goalProgress !== undefined && currentGoalId) {
+            setGoals(prevGoals => prevGoals.map(g => {
+              if (g.id !== currentGoalId) return g;
+              const updatedSteps = [...g.steps];
+              if (proposal.stepCompleted >= 0 && proposal.stepCompleted < updatedSteps.length) {
+                updatedSteps[proposal.stepCompleted] = { ...updatedSteps[proposal.stepCompleted], completed: true, completedAt: Date.now() };
+              }
+              const newProgress = Math.min(100, proposal.goalProgress || g.progress);
+              const allDone = updatedSteps.every(s => s.completed);
+              return {
+                ...g,
+                progress: newProgress,
+                steps: updatedSteps,
+                status: allDone || newProgress >= 100 ? 'completed' as const : 'in-progress' as const,
+                completedAt: allDone || newProgress >= 100 ? Date.now() : undefined,
+              };
+            }));
+            newLog.push(createLogEntry('applying', `🎯 Goal progress: ${proposal.goalProgress}%`, 'success'));
           }
         } else {
           newState.lastAction = 'No change to apply';
@@ -286,6 +305,7 @@ const Index = () => {
         (newState as any)._proposal = null;
         (newState as any)._safetyChecks = null;
         (newState as any)._awaitingAI = false;
+        (newState as any)._awaitingDream = false;
       }
 
       if (nextPhase === 'cooling') {
