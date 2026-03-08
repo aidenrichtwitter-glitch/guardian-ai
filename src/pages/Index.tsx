@@ -549,7 +549,7 @@ const Index = () => {
       const file = SELF_SOURCE[state.currentFileIndex >= 0 ? state.currentFileIndex : 0];
       if (!file) return;
 
-      const activeGoal = currentGoalId ? goals.find(g => g.id === currentGoalId) : null;
+      const activeGoal = currentGoalIdRef.current ? goalsRef.current.find(g => g.id === currentGoalIdRef.current) : null;
 
       // Get recent capability code for richer context
       const explorerFiles = SELF_SOURCE.filter(f => f.path.startsWith('src/explorer/') && f.name !== 'manifest.ts');
