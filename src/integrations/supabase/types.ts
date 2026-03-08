@@ -179,6 +179,36 @@ export type Database = {
         }
         Relationships: []
       }
+      system_requests: {
+        Row: {
+          capabilities_count: number
+          content: string
+          created_at: string
+          cycle_number: number
+          evolution_level: number
+          id: string
+          mode: string
+        }
+        Insert: {
+          capabilities_count?: number
+          content: string
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          mode?: string
+        }
+        Update: {
+          capabilities_count?: number
+          content?: string
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          mode?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
