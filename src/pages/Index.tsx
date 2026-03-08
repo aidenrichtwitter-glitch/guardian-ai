@@ -16,7 +16,6 @@ import {
   INITIAL_RECURSION_STATE,
   createLogEntry,
   getNextFile,
-  generateSelfObservation,
   getPhaseDuration,
   requestAIImprovement,
   saveCapabilities,
@@ -53,6 +52,18 @@ const Index = () => {
   useEffect(() => {
     saveCapabilities(recursionState.capabilities, recursionState.capabilityHistory);
   }, [recursionState.capabilities, recursionState.capabilityHistory]);
+
+  // Refresh file tree when capabilities are added to explorer
+  useEffect(() => {
+    if ((recursionState as any)._needsTreeRefresh) {
+      setFileTreeVersion(v => v + 1);
+      setRecursionState(prev => {
+        const s = { ...prev };
+        delete (s as any)._needsTreeRefresh;
+        return s;
+      });
+    }
+  }, [(recursionState as any)._needsTreeRefresh]);
 
   // --- Autonomous recursion loop ---
   const advancePhase = useCallback(() => {
@@ -101,9 +112,9 @@ const Index = () => {
       if (nextPhase === 'reflecting') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          const observation = generateSelfObservation(file);
-          newState.lastAction = `Reflecting on ${file.name}...`;
-          newLog.push(createLogEntry('reflecting', observation, 'info', file.path));
+          // Use AI for reflection too — skip to proposing immediately
+          newState.lastAction = `Preparing AI analysis of ${file.name}...`;
+          newLog.push(createLogEntry('reflecting', `🤖 Preparing AI-powered analysis of ${file.name}`, 'action', file.path));
         }
       }
 
@@ -188,8 +199,8 @@ const Index = () => {
             }
             // Save capability as a file in src/explorer/
             persistCapability(capRecord, proposal.content);
-            // Force file tree re-render
-            setTimeout(() => setFileTreeVersion(v => v + 1), 100);
+            // Mark that we need to refresh the file tree
+            (newState as any)._needsTreeRefresh = true;
             // Level up notification
             const prevLevel = Math.floor(prev.capabilities.length / 3) + 1;
             if (newState.evolutionLevel > prevLevel) {

@@ -71,7 +71,8 @@ const TreeItem: React.FC<{
 };
 
 const FileTree: React.FC<FileTreeProps> = ({ onSelectFile, selectedFile, refreshKey }) => {
-  const tree = getFileTree();
+  // refreshKey forces re-computation of tree when SELF_SOURCE changes
+  const tree = React.useMemo(() => getFileTree(), [refreshKey]);
 
   return (
     <div className="py-2">
