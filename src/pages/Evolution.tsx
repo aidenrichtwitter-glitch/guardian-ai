@@ -185,7 +185,7 @@ const Evolution: React.FC = () => {
         });
 
       const allNodes = [...acquiredNodes, ...goalNodes];
-      setCapabilities(layoutGraph(allNodes));
+      setCapabilities(layoutGraph(allNodes, containerSize));
 
       // Stats
       if (stateRes.data) {
