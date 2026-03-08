@@ -8,6 +8,7 @@ import { getEvolutionTitle } from '@/lib/evolution-titles';
 import { ruleEngine, RuleEngineReport } from '@/lib/rule-engine';
 import { StormLightning, emitStormProcess } from '@/components/TerminalStorm';
 import { runAutonomyCycle, getCumulativeAutonomy, recordAutonomyCycle, deterministicSearch, type AutonomyReport } from '@/lib/autonomy-engine';
+import { runLifeProof, getHeartbeatCount, type LifeProofReport } from '@/lib/life-proof';
 
 interface CapabilityNode {
   name: string;
@@ -119,6 +120,10 @@ const Evolution: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [lifeReport, setLifeReport] = useState<LifeProofReport | null>(null);
+  const [isRunningLifeProof, setIsRunningLifeProof] = useState(false);
+  const [lifeProofLoop, setLifeProofLoop] = useState(false);
+  const lifeProofRef = React.useRef(false);
   const mainRef = React.useRef<HTMLDivElement>(null);
 
   // Measure container
@@ -236,35 +241,36 @@ const Evolution: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Periodic storm: pick actual capabilities to show testing/verification
+  // Life proof continuous loop — replaces random storm with real tests
   useEffect(() => {
-    if (!showStorm) return;
-    const acquiredNodes = capabilities.nodes.filter(n => n.status === 'acquired');
-    if (acquiredNodes.length < 2) return;
+    lifeProofRef.current = lifeProofLoop;
+  }, [lifeProofLoop]);
 
-    const interval = setInterval(() => {
-      const from = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
-      const to = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
-      if (from.name === to.name) return;
+  useEffect(() => {
+    if (!lifeProofLoop) return;
+    let cancelled = false;
 
-      const actions = [
-        { label: `Verify ${from.name}`, type: 'test' as const },
-        { label: `${from.name} → ${to.name}`, type: 'capability' as const },
-        { label: `Rule check: ${from.name}`, type: 'rule' as const },
-        { label: `Mutate ${to.name}`, type: 'mutation' as const },
-      ];
-      const action = actions[Math.floor(Math.random() * actions.length)];
+    const loop = async () => {
+      while (!cancelled && lifeProofRef.current) {
+        setIsRunningLifeProof(true);
+        try {
+          const report = await runLifeProof();
+          if (!cancelled) {
+            setLifeReport(report);
+            fetchAll();
+          }
+        } catch (err) {
+          console.error('Life proof error:', err);
+        }
+        setIsRunningLifeProof(false);
+        // Wait 8 seconds between heartbeats
+        await new Promise(r => setTimeout(r, 8000));
+      }
+    };
 
-      emitStormProcess({
-        label: action.label,
-        source: from.name,
-        target: to.name,
-        type: action.type,
-        status: Math.random() > 0.1 ? 'success' : 'fail',
-      });
-    }, 1500 + Math.random() * 2500);
-    return () => clearInterval(interval);
-  }, [showStorm, capabilities.nodes]);
+    loop();
+    return () => { cancelled = true; };
+  }, [lifeProofLoop]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
   const canvasSize = capabilities.size;
@@ -364,6 +370,16 @@ const Evolution: React.FC = () => {
           >
             {isRunningCycle ? <Loader className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
             {isRunningCycle ? 'Running...' : 'Run Autonomy Cycle'}
+          </button>
+          <button
+            onClick={() => setLifeProofLoop(v => !v)}
+            className={`text-[9px] px-3 py-1 rounded border transition-colors flex items-center gap-1 ${
+              lifeProofLoop
+                ? 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse'
+                : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'
+            }`}
+          >
+            {lifeProofLoop ? '⏹' : '💓'} {lifeProofLoop ? `Stop (HB #${lifeReport?.heartbeatNumber || 0})` : 'Life Proof Loop'}
           </button>
           <button
             onClick={() => setShowStorm(s => !s)}
@@ -570,7 +586,79 @@ const Evolution: React.FC = () => {
                 ))}
               </div>
 
-              {/* AI AUTONOMY METER */}
+              {/* LIFE PROOF — Vital Signs */}
+              {lifeReport && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    💓 Life Proof · Heartbeat #{lifeReport.heartbeatNumber}
+                  </div>
+                  
+                  {/* Overall score bar */}
+                  <div className="relative h-6 rounded-lg bg-muted/30 overflow-hidden border border-border/50">
+                    <motion.div
+                      className="absolute inset-y-0 left-0 rounded-lg"
+                      style={{
+                        background: lifeReport.overallScore >= 70
+                          ? 'linear-gradient(90deg, hsl(140, 70%, 35%), hsl(140, 70%, 50%))'
+                          : lifeReport.overallScore >= 40
+                          ? 'linear-gradient(90deg, hsl(40, 90%, 45%), hsl(40, 90%, 60%))'
+                          : 'linear-gradient(90deg, hsl(0, 70%, 40%), hsl(0, 70%, 55%))',
+                      }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${lifeReport.overallScore}%` }}
+                      transition={{ duration: 1, ease: 'easeOut' }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-foreground mix-blend-difference">
+                        {lifeReport.alive ? '💓' : '💀'} {lifeReport.overallScore}% {lifeReport.alive ? 'ALIVE' : 'CRITICAL'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Verdict */}
+                  <div className="text-[9px] text-foreground/80 px-1">
+                    {lifeReport.verdict}
+                  </div>
+
+                  {/* Stage results */}
+                  <div className="space-y-0.5">
+                    {lifeReport.stages.map(stage => (
+                      <div
+                        key={stage.stage}
+                        className={`flex items-center gap-2 text-[9px] px-2 py-1 rounded ${
+                          stage.passed
+                            ? 'text-primary/80'
+                            : 'text-destructive/80'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          stage.passed ? 'bg-primary' : 'bg-destructive'
+                        }`} />
+                        <span className="font-semibold w-16 shrink-0">{stage.name}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted/30 overflow-hidden">
+                          <motion.div
+                            className={`h-full rounded-full ${stage.passed ? 'bg-primary/60' : 'bg-destructive/60'}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${stage.score}%` }}
+                            transition={{ duration: 0.5 }}
+                          />
+                        </div>
+                        <span className="text-[8px] text-muted-foreground w-6 text-right">{stage.score}%</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {isRunningLifeProof && (
+                    <div className="text-[8px] text-accent animate-pulse flex items-center gap-1">
+                      <Loader className="w-2.5 h-2.5 animate-spin" /> Running test stages...
+                    </div>
+                  )}
+                  <div className="text-[8px] text-muted-foreground/50">
+                    Duration: {lifeReport.duration.toFixed(0)}ms
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                   <Cpu className="w-3 h-3" /> Autonomy Score
