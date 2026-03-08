@@ -497,10 +497,19 @@ const Index = () => {
       );
       requestGoalDream(apiConfig, prompt, state.capabilities, goalHistoryStr).then(({ goal, error }) => {
         if (error) {
+          const isCreditsExhausted = error.type === 'credits-exhausted';
+          const isRateLimitError = error.type === 'rate-limited';
+          const backoff = isCreditsExhausted ? 300000 : isRateLimitError ? 30000 : 5000;
           setRecursionState(prev => ({
             ...prev,
-            phase: 'cooling' as any,
-            log: [...prev.log, createLogEntry('cooling' as any, `⚠ Dream error: ${error.message}`, 'warning')],
+            phase: (isCreditsExhausted || isRateLimitError) ? 'rate-limited' as any : 'cooling' as any,
+            rateLimitUntil: (isCreditsExhausted || isRateLimitError) ? Date.now() + backoff : prev.rateLimitUntil,
+            rateLimitBackoff: isCreditsExhausted ? 300000 : prev.rateLimitBackoff,
+            log: [...prev.log, createLogEntry(
+              (isCreditsExhausted || isRateLimitError) ? 'rate-limited' as any : 'cooling' as any,
+              isCreditsExhausted ? `⚠ Credits exhausted. Pausing 5 min.` : `⚠ Dream error: ${error.message}`,
+              'warning'
+            )],
             _awaitingDream: false,
             _awaitingAI: false,
           } as any));
