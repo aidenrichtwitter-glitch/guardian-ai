@@ -54,6 +54,9 @@ export type Database = {
           id: string
           name: string
           source_file: string | null
+          verification_method: string | null
+          verified: boolean
+          verified_at: string | null
           virtual_source: string | null
         }
         Insert: {
@@ -65,6 +68,9 @@ export type Database = {
           id: string
           name: string
           source_file?: string | null
+          verification_method?: string | null
+          verified?: boolean
+          verified_at?: string | null
           virtual_source?: string | null
         }
         Update: {
@@ -76,6 +82,9 @@ export type Database = {
           id?: string
           name?: string
           source_file?: string | null
+          verification_method?: string | null
+          verified?: boolean
+          verified_at?: string | null
           virtual_source?: string | null
         }
         Relationships: []
