@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock, Target, ScrollText, Network } from 'lucide-react';
+import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock, Target, ScrollText, Network, Rocket, Code2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import DesktopWindow from '@/components/DesktopWindow';
 import FileTree from '@/components/FileTree';
@@ -55,6 +55,7 @@ import {
 } from '@/lib/cloud-memory';
 import { saveSnapshot, computeMerkleRoot } from '@/lib/memory-palace';
 import { installPresetCapabilities } from '@/lib/preinstall';
+import CodeEvolution from '@/components/CodeEvolution';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
 
@@ -597,7 +598,78 @@ const Index = () => {
     }
   }, [recursionState.phase, (recursionState as any)._awaitingAI, (recursionState as any)._awaitingDream]);
 
-  // Generate requests file for human relay — persisted to DB
+  // ═══ TURBO MODE — every 3rd cycle, fire 2 extra parallel improvement calls ═══
+  useEffect(() => {
+    const state = recursionState;
+    if (state.phase !== 'cooling' || !state.isRunning) return;
+    if (state.cycleCount % 3 !== 0 || state.cycleCount === 0) return;
+    // Don't turbo if rate limited
+    if (isRateLimited(state)) return;
+
+    const runTurbo = async () => {
+      emitTerminalEvent('turbo', 'ai', `🚀 TURBO MODE — firing 2 parallel improvements at cycle ${state.cycleCount}`);
+      
+      // Pick 2 random files for parallel improvement
+      const eligibleFiles = SELF_SOURCE.filter(f => f.path.startsWith('src/lib/') || f.path.startsWith('src/explorer/'));
+      const files = [];
+      for (let i = 0; i < 2 && eligibleFiles.length > 0; i++) {
+        const idx = Math.floor(Math.random() * eligibleFiles.length);
+        files.push(eligibleFiles.splice(idx, 1)[0]);
+      }
+
+      const results = await Promise.allSettled(
+        files.map(file => requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory))
+      );
+
+      let newCaps = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.result) {
+          const { result } = r.value;
+          if (result.capability && !state.capabilities.includes(result.capability)) {
+            const capRecord: CapabilityRecord = {
+              name: result.capability,
+              acquiredAt: Date.now(),
+              acquiredCycle: state.cycleCount,
+              file: 'turbo-parallel',
+              description: result.description,
+              builtOn: result.builtOn || [],
+            };
+            persistCapability(capRecord, result.content);
+            saveCapabilityToCloud(capRecord, result.content);
+            addJournalEntry('capability_acquired', `Acquired: ${result.capability}`, result.description, {
+              capability: result.capability,
+              builtOn: result.builtOn || [],
+              file: 'turbo-parallel',
+              cycle: state.cycleCount,
+            });
+            emitTerminalEvent('turbo', 'capability', `⚡ TURBO CAP: ${result.capability}`);
+            newCaps++;
+            // Update state
+            setRecursionState(prev => {
+              const updated = {
+                ...prev,
+                capabilities: prev.capabilities.includes(result.capability!) ? prev.capabilities : [...prev.capabilities, result.capability!],
+                capabilityHistory: [...prev.capabilityHistory, capRecord],
+                evolutionLevel: Math.floor(([...prev.capabilities, result.capability!].length) / 3) + 1,
+                log: [...prev.log,
+                  createLogEntry('applying', `🚀 TURBO: ${result.capability}`, 'success'),
+                ],
+              };
+              return updated;
+            });
+          }
+        }
+      }
+      if (newCaps > 0) {
+        setJournalRefresh(v => v + 1);
+        setFileTreeVersion(v => v + 1);
+      }
+    };
+
+    runTurbo();
+  }, [recursionState.phase, recursionState.cycleCount]);
+
+
   useEffect(() => {
     if ((recursionState as any)._shouldGenerateRequests && recursionState.phase === 'cooling') {
       setRecursionState(prev => ({ ...prev, _shouldGenerateRequests: false } as any));
@@ -738,7 +810,7 @@ const Index = () => {
 
   // Drawer state for detail panels
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerPanel, setDrawerPanel] = useState<'engine' | 'goals' | 'evolution' | 'journal' | 'terminal' | 'code' | 'explorer'>('goals');
+  const [drawerPanel, setDrawerPanel] = useState<'engine' | 'goals' | 'evolution' | 'journal' | 'terminal' | 'code' | 'explorer' | 'code-evo'>('goals');
 
   const openDrawer = (panel: typeof drawerPanel) => {
     if (drawerOpen && drawerPanel === panel) {
@@ -768,6 +840,7 @@ const Index = () => {
           { id: 'journal' as const, icon: ScrollText, label: 'Journal' },
           { id: 'terminal' as const, icon: Terminal, label: 'Terminal' },
           { id: 'code' as const, icon: Eye, label: 'Code' },
+          { id: 'code-evo' as const, icon: Code2, label: 'Code Evolution' },
           { id: 'explorer' as const, icon: FileCode, label: 'Files' },
         ].map(item => (
           <button
@@ -844,6 +917,9 @@ const Index = () => {
                 <FileTree onSelectFile={(f) => { setSelectedFile(f); openDrawer('code'); }} selectedFile={selectedFile} refreshKey={fileTreeVersion} />
               </div>
             )}
+            {drawerPanel === 'code-evo' && (
+              <CodeEvolution capabilities={recursionState.capabilities} capabilityHistory={recursionState.capabilityHistory} />
+            )}
           </>
         )}
       </aside>
@@ -875,6 +951,33 @@ const Index = () => {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Ghost Briefing trigger */}
+            <button
+              onClick={() => {
+                const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+                emitTerminalEvent('ghost', 'ai', '👻 Triggering Ghost Instance briefing...');
+                fetch(`${supabaseUrl}/functions/v1/ghost-evolve`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+                  body: JSON.stringify({}),
+                }).then(r => r.json()).then(data => {
+                  if (data.briefing) {
+                    emitTerminalEvent('ghost', 'ai', `👻 Briefing received: ${data.briefing.substring(0, 100)}...`);
+                    addJournalEntry('milestone', '👻 Ghost Briefing', data.briefing.substring(0, 500), {
+                      evolution_level: data.state?.evolution_level,
+                      capabilities_count: data.state?.capabilities_count,
+                    });
+                    setJournalRefresh(v => v + 1);
+                    toast({ title: '👻 Ghost Briefing Ready', description: 'Check the Journal for the full briefing.', duration: 5000 });
+                  }
+                }).catch(() => emitTerminalEvent('ghost', 'error', 'Ghost instance failed'));
+              }}
+              className="text-[10px] px-2.5 py-1 rounded-full bg-muted/20 text-muted-foreground border border-border hover:text-primary hover:border-primary/30 transition-all flex items-center gap-1"
+              title="Request Ghost Instance Briefing"
+            >
+              <Rocket className="w-3 h-3" /> Briefing
+            </button>
             <button
               onClick={handleToggleRunning}
               className={`text-[10px] px-3 py-1 rounded-full transition-all ${
