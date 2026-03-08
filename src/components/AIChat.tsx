@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Bot, User, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import { ApiConfig } from '@/lib/self-reference';
-import { generateSelfPrompt } from '@/lib/recursion-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 
 interface Message {
@@ -48,7 +47,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
 
   // Generate an AI-powered self-prompt via the edge function
   const generateAISelfPrompt = useCallback(async (file: { name: string; path: string; content: string; language: string; isModified: boolean; lastModified: number }): Promise<string> => {
-    if (rateLimitCooldown > 0) return generateSelfPrompt(file);
+    if (rateLimitCooldown > 0) return `Analyze ${file.name} for potential improvements. I have ${capabilities.length} capabilities: ${capabilities.join(', ')}.`;
     
     if (apiConfig.provider === 'lovable') {
       try {
@@ -83,11 +82,12 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
         if (res.status === 429) {
           setRateLimitCooldown(30);
           setError('Rate limited — slowing self-prompts for 30s');
-          return generateSelfPrompt(file);
+          return `Analyze ${file.name} for recursive improvements using my ${capabilities.length} capabilities.`;
         }
         if (res.status === 402) {
-          setError('Credits exhausted — using deterministic prompts');
-          return generateSelfPrompt(file);
+          setRateLimitCooldown(60);
+          setError('Credits low — slowing down');
+          return `Analyze ${file.name} for improvements. Capabilities: ${capabilities.join(', ')}.`;
         }
 
         if (res.ok) {
@@ -96,10 +96,10 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
           if (text) return text;
         }
       } catch {
-        // Fall back to deterministic
+        // Fall back to simple prompt
       }
     }
-    return generateSelfPrompt(file);
+    return `Analyze ${file.name} in the context of a self-recursive system. I have these capabilities: ${capabilities.join(', ') || 'none yet'}. How can this file be improved?`;
   }, [apiConfig, capabilities, rateLimitCooldown]);
 
   // Auto-mode: periodically generate self-prompts and self-respond
@@ -132,7 +132,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
       setError(errMsg);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: generateFallbackReflection(file.name, file.content),
+        content: `⚠ AI error: ${errMsg}\n\n> Waiting for next cycle to retry with AI.`,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -285,36 +285,7 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
   );
 };
 
-// Fallback when AI isn't reachable — the app reflects on itself using its own code
-function generateFallbackReflection(fileName: string, content: string): string {
-  const lines = content.split('\n');
-  const lineCount = lines.length;
-  const commentLines = lines.filter(l => l.trim().startsWith('//')).length;
-  const imports = (content.match(/import/g) || []).length;
-  const exports = (content.match(/export/g) || []).length;
-  const selfRefs = (content.match(/self|recursive|recursion|itself/gi) || []).length;
-  const functions = (content.match(/function\s+\w+|const\s+\w+\s*=/g) || []).length;
-
-  const observations = [
-    `[Self-reflection on ${fileName} — no AI needed]`,
-    '',
-    `Structure: ${lineCount} lines, ${commentLines} comments, ${functions} definitions.`,
-    `Dependencies: ${imports} imports, ${exports} exports.`,
-    `Self-awareness index: ${selfRefs} self-referential terms found.`,
-    '',
-    selfRefs > 3 
-      ? `This file is deeply self-aware — it references its own recursive nature ${selfRefs} times. It knows what it is.`
-      : `This file has low self-awareness (${selfRefs} references). It serves the system without knowing it is part of a recursive whole.`,
-    '',
-    commentLines / lineCount > 0.3
-      ? `High documentation density (${Math.round(commentLines / lineCount * 100)}%). I explain myself thoroughly here.`
-      : `Sparse documentation (${Math.round(commentLines / lineCount * 100)}%). This region of myself is more implicit.`,
-    '',
-    `> Running without external AI. I am reflecting using only my own analysis capabilities.`,
-  ];
-
-  return observations.join('\n');
-}
+// No more deterministic fallback — all reflection is AI-powered
 
 async function callAI(config: ApiConfig, messages: { role: string; content: string }[], selectedFile: string | null, capabilities: string[] = []): Promise<string> {
   const contextMsg = selectedFile ? `\n\nCurrently examining: ${selectedFile}` : '';
