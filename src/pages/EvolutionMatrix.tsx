@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Network, Zap, GitBranch, Layers, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getEvolutionTitle } from '@/lib/evolution-titles';
 
 interface Capability {
   id: string;
