@@ -736,234 +736,179 @@ const Index = () => {
     }));
   }, []);
 
+  // Drawer state for detail panels
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerPanel, setDrawerPanel] = useState<'engine' | 'goals' | 'evolution' | 'journal' | 'terminal' | 'code' | 'explorer'>('goals');
+
+  const openDrawer = (panel: typeof drawerPanel) => {
+    if (drawerOpen && drawerPanel === panel) {
+      setDrawerOpen(false);
+    } else {
+      setDrawerPanel(panel);
+      setDrawerOpen(true);
+    }
+  };
+
+  // Current active goal for display
+  const activeGoal = goals.find(g => g.status === 'active' || g.status === 'in-progress');
+
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-card/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <RefreshCw className={`w-4 h-4 text-primary text-glow ${recursionState.isRunning ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
-            <h1 className="text-sm font-display font-bold text-foreground">
-              <span className="text-primary text-glow">λ</span> Recursive
-            </h1>
-          </div>
-          <span className="text-[10px] text-muted-foreground/50 hidden sm:inline">
-            autonomous self-referential system
-          </span>
-          {/* Evolution badge */}
-          {recursionState.capabilities.length > 0 && (
-            <Link to="/evolution" className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hidden sm:inline-flex items-center gap-1 hover:bg-primary/20 transition-colors">
-              <Network className="w-2.5 h-2.5" />
-              Dashboard
-            </Link>
-          )}
-          {recursionState.capabilities.length > 0 && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hidden sm:inline-flex items-center gap-1">
-              <Zap className="w-2.5 h-2.5" />
-              Lvl {recursionState.evolutionLevel} · {recursionState.capabilities.length} abilities
-            </span>
-          )}
+    <div className="h-screen flex bg-background overflow-hidden">
+      {/* ═══ Left Icon Rail ═══ */}
+      <nav className="w-12 border-r border-border bg-card/20 flex flex-col items-center py-3 gap-1 shrink-0">
+        {/* Logo */}
+        <div className="mb-3">
+          <span className="text-lg font-display font-bold text-primary text-glow">λ</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 mr-2">
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              recursionState.phase === ('rate-limited' as any) ? 'bg-terminal-amber animate-pulse'
-              : recursionState.isRunning ? 'bg-terminal-green animate-pulse' : 'bg-terminal-amber'
-            }`} />
+
+        {[
+          { id: 'engine' as const, icon: Activity, label: 'Engine', badge: recursionState.isRunning },
+          { id: 'goals' as const, icon: Target, label: 'Goals', count: goals.filter(g => g.status === 'active' || g.status === 'in-progress').length },
+          { id: 'evolution' as const, icon: Zap, label: 'Evolution', count: recursionState.capabilities.length },
+          { id: 'journal' as const, icon: ScrollText, label: 'Journal' },
+          { id: 'terminal' as const, icon: Terminal, label: 'Terminal' },
+          { id: 'code' as const, icon: Eye, label: 'Code' },
+          { id: 'explorer' as const, icon: FileCode, label: 'Files' },
+        ].map(item => (
+          <button
+            key={item.id}
+            onClick={() => openDrawer(item.id)}
+            className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-all group ${
+              drawerOpen && drawerPanel === item.id
+                ? 'bg-primary/15 text-primary'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+            }`}
+            title={item.label}
+          >
+            <item.icon className="w-4 h-4" />
+            {item.badge && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            )}
+            {(item.count ?? 0) > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 text-[7px] min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-primary/20 text-primary border border-primary/30">
+                {item.count}
+              </span>
+            )}
+          </button>
+        ))}
+
+        <div className="flex-1" />
+
+        {/* Evolution Dashboard link */}
+        <Link
+          to="/evolution"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+          title="Evolution Dashboard"
+        >
+          <Network className="w-4 h-4" />
+        </Link>
+
+        {/* Settings */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+          title="Settings"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+      </nav>
+
+      {/* ═══ Detail Drawer (slides in) ═══ */}
+      <aside className={`border-r border-border bg-card/30 flex flex-col shrink-0 transition-all duration-300 overflow-hidden ${
+        drawerOpen ? 'w-80' : 'w-0'
+      }`}>
+        {drawerOpen && (
+          <>
+            {drawerPanel === 'engine' && (
+              <RecursionPanel state={recursionState} onToggleRunning={handleToggleRunning} onSetSpeed={handleSetSpeed} />
+            )}
+            {drawerPanel === 'goals' && (
+              <GoalsPanel goals={goals} currentGoalId={currentGoalId} />
+            )}
+            {drawerPanel === 'evolution' && (
+              <CapabilityTimeline capabilities={recursionState.capabilities} history={recursionState.capabilityHistory} evolutionLevel={recursionState.evolutionLevel} />
+            )}
+            {drawerPanel === 'journal' && (
+              <EvolutionJournal refreshTrigger={journalRefresh} />
+            )}
+            {drawerPanel === 'terminal' && (
+              <LiveTerminal />
+            )}
+            {drawerPanel === 'code' && (
+              <div className="flex-1 overflow-hidden">
+                <CodeViewer filePath={selectedFile} onChangeApplied={handleChangeApplied} />
+              </div>
+            )}
+            {drawerPanel === 'explorer' && (
+              <div className="flex flex-col h-full">
+                <FileTree onSelectFile={(f) => { setSelectedFile(f); openDrawer('code'); }} selectedFile={selectedFile} refreshKey={fileTreeVersion} />
+              </div>
+            )}
+          </>
+        )}
+      </aside>
+
+      {/* ═══ Main Content: Consciousness + Dialog ═══ */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* ── Vitals Bar ── */}
+        <header className="flex items-center justify-between px-6 py-2.5 border-b border-border/50 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${
+                recursionState.phase === ('rate-limited' as any) ? 'bg-[hsl(var(--terminal-amber))] animate-pulse'
+                : recursionState.isRunning ? 'bg-primary animate-pulse' : 'bg-muted-foreground'
+              }`} />
+              <span className="text-xs text-foreground/80 font-display font-semibold">
+                Level {recursionState.evolutionLevel}
+              </span>
+            </div>
             <span className="text-[10px] text-muted-foreground">
-              {recursionState.phase === ('rate-limited' as any) 
-                ? `cooling ${getRateLimitRemaining(recursionState)}s` 
-                : recursionState.isRunning ? 'running' : 'paused'} · cycle {recursionState.cycleCount}
+              cycle {recursionState.cycleCount}
             </span>
+            <span className="text-[10px] text-muted-foreground">
+              {recursionState.capabilities.length} abilities
+            </span>
+            {activeGoal && (
+              <span className="text-[10px] text-primary/70 flex items-center gap-1 truncate max-w-[200px]">
+                <Target className="w-3 h-3 shrink-0" /> {activeGoal.title}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1 mr-2">
-            <span className="text-[10px] text-muted-foreground/50">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleToggleRunning}
+              className={`text-[10px] px-3 py-1 rounded-full transition-all ${
+                recursionState.isRunning
+                  ? 'bg-primary/10 text-primary border border-primary/30'
+                  : 'bg-muted/30 text-muted-foreground border border-border hover:text-foreground'
+              }`}
+            >
+              {recursionState.isRunning ? '● Running' : '○ Paused'}
+            </button>
+            <span className="text-[9px] text-muted-foreground/50">
               {apiConfig.provider} · {apiConfig.model}
             </span>
           </div>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="p-1.5 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-            title="API Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+        </header>
+
+        {/* ── Consciousness: Current Action ── */}
+        <div className="px-6 py-3 border-b border-border/30 bg-card/20">
+          <p className="text-[11px] text-foreground/60 leading-relaxed">
+            <span className="text-primary mr-1.5">λ</span>
+            {recursionState.lastAction || 'Awaiting first thought...'}
+          </p>
         </div>
-      </header>
 
-      {/* Main layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: File Tree + Recursion Engine */}
-        <aside className="w-64 border-r border-border bg-card/30 flex flex-col shrink-0 hidden md:flex">
-          <div className="border-b border-border h-48 overflow-auto shrink-0">
-            <DesktopWindow
-              title="Explorer"
-              icon={<FileCode className="w-3 h-3" />}
-              isActive={activePanel === 'tree'}
-              onFocus={() => setActivePanel('tree')}
-              className="h-full border-0 rounded-none"
-            >
-              <FileTree onSelectFile={setSelectedFile} selectedFile={selectedFile} refreshKey={fileTreeVersion} />
-            </DesktopWindow>
-          </div>
-
-          <DesktopWindow
-            title="Recursion Engine"
-            icon={<Activity className="w-3 h-3" />}
-            isActive={activePanel === 'recursion'}
-            onFocus={() => setActivePanel('recursion')}
-            className="flex-1 border-0 rounded-none"
-            statusText={`cycle ${recursionState.cycleCount}`}
-          >
-            <RecursionPanel
-              state={recursionState}
-              onToggleRunning={handleToggleRunning}
-              onSetSpeed={handleSetSpeed}
-            />
-          </DesktopWindow>
-        </aside>
-
-        {/* Center - Code Viewer */}
-        <main className="flex-1 flex flex-col min-w-0">
-          <DesktopWindow
-            title={selectedFile?.split('/').pop() ?? 'No file selected'}
-            icon={<Eye className="w-3 h-3" />}
-            isActive={activePanel === 'code'}
-            onFocus={() => setActivePanel('code')}
-            statusText={selectedFile ?? undefined}
-            className="flex-1 border-0 rounded-none"
-          >
-            <CodeViewer filePath={selectedFile} onChangeApplied={handleChangeApplied} />
-          </DesktopWindow>
-        </main>
-
-        {/* Right panel */}
-        <aside className="w-80 border-l border-border bg-card/30 flex flex-col shrink-0 hidden lg:flex">
-          <div className="flex border-b border-border shrink-0">
-            <button
-              onClick={() => setRightPanel('goals')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'goals'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Target className="w-3 h-3" /> Goals
-              {goals.filter(g => g.status === 'active' || g.status === 'in-progress').length > 0 && (
-                <span className="text-[9px] px-1 py-0 rounded bg-primary/20 text-primary">
-                  {goals.filter(g => g.status === 'active' || g.status === 'in-progress').length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setRightPanel('chat')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'chat'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Brain className="w-3 h-3" /> Dialog
-            </button>
-            <button
-              onClick={() => setRightPanel('evolution')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'evolution'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Zap className="w-3 h-3" /> Evolution
-              {recursionState.capabilities.length > 0 && (
-                <span className="text-[9px] px-1 py-0 rounded bg-primary/20 text-primary">
-                  {recursionState.capabilities.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setRightPanel('journal')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'journal'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <ScrollText className="w-3 h-3" /> Journal
-            </button>
-            <button
-              onClick={() => setRightPanel('terminal')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'terminal'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Terminal className="w-3 h-3" /> Term
-            </button>
-            <button
-              onClick={() => setRightPanel('history')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
-                rightPanel === 'history'
-                  ? 'text-primary border-b border-primary bg-primary/5'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Shield className="w-3 h-3" /> Mutations
-            </button>
-          </div>
-
-          {rightPanel === 'goals' ? (
-            <div className="flex-1 overflow-hidden">
-              <GoalsPanel goals={goals} currentGoalId={currentGoalId} />
-            </div>
-          ) : rightPanel === 'journal' ? (
-            <div className="flex-1 overflow-hidden">
-              <EvolutionJournal refreshTrigger={journalRefresh} />
-            </div>
-          ) : rightPanel === 'chat' ? (
-            <div className="flex-1 overflow-hidden">
-              <AIChat apiConfig={apiConfig} selectedFile={selectedFile} autoMode={recursionState.isRunning} capabilities={recursionState.capabilities} />
-            </div>
-          ) : rightPanel === 'evolution' ? (
-            <div className="flex-1 overflow-hidden">
-              <CapabilityTimeline
-                capabilities={recursionState.capabilities}
-                history={recursionState.capabilityHistory}
-                evolutionLevel={recursionState.evolutionLevel}
-              />
-            </div>
-          ) : rightPanel === 'terminal' ? (
-            <div className="flex-1 overflow-hidden">
-              <LiveTerminal />
-            </div>
-          ) : (
-            <div className="flex-1 overflow-auto">
-              <ChangeLog changes={changes} onRollback={handleRollback} />
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {/* Status bar */}
-      <footer className="flex items-center justify-between px-4 py-1 border-t border-border bg-card/30 text-[10px] text-muted-foreground/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1">
-            <Shield className="w-3 h-3" /> Safety: Active
-          </span>
-          <span className="text-terminal-green">{recursionState.totalChanges} applied</span>
-          <span className="text-terminal-red">{recursionState.totalRejected} rejected</span>
-          {recursionState.capabilities.length > 0 && (
-            <span className="text-primary flex items-center gap-1">
-              <Zap className="w-3 h-3" /> {recursionState.capabilities.length} abilities
-            </span>
-          )}
+        {/* ── Dialog ── */}
+        <div className="flex-1 overflow-hidden">
+          <AIChat
+            apiConfig={apiConfig}
+            selectedFile={selectedFile}
+            autoMode={recursionState.isRunning}
+            capabilities={recursionState.capabilities}
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <span>Phase: {recursionState.phase}</span>
-          <span>Evolution: Lvl {recursionState.evolutionLevel}</span>
-          <span className="text-primary text-glow animate-blink">▊</span>
-        </div>
-      </footer>
+      </main>
 
       <SettingsModal
         isOpen={settingsOpen}

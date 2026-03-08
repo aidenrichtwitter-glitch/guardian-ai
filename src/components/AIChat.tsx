@@ -204,48 +204,50 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
     }
   };
 
+  // Only display last 10 messages
+  const visibleMessages = messages.slice(-10);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Auto mode indicator */}
-      {autoMode && (
-        <div className="px-3 py-1 border-b border-border bg-primary/5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3 h-3 text-primary animate-pulse" />
-            <span className="text-[10px] text-primary/70">Autonomous — I question myself</span>
+      {/* Messages — last 10 only, spacious */}
+      <div ref={scrollRef} className="flex-1 overflow-auto px-6 py-4 space-y-4">
+        {visibleMessages.length === 0 && (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center space-y-2">
+              <Sparkles className="w-6 h-6 text-primary/30 mx-auto" />
+              <p className="text-xs text-muted-foreground/40">Waiting for thoughts...</p>
+            </div>
           </div>
-          {rateLimitCooldown > 0 && (
-            <span className="text-[9px] text-terminal-amber/70">⏳ {rateLimitCooldown}s cooldown</span>
-          )}
-        </div>
-      )}
-
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-auto p-3 space-y-3">
-        {messages.map((msg, i) => (
-          <div key={i} className="animate-fade-in">
+        )}
+        {visibleMessages.map((msg, i) => (
+          <div key={messages.length - 10 + i} className="animate-fade-in">
             {msg.role === 'system' ? (
-              <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed border-l-2 border-primary/30 pl-3">
+              <div className="text-[11px] text-muted-foreground/50 leading-relaxed border-l-2 border-primary/20 pl-4 py-1">
                 {msg.content}
               </div>
             ) : (
-              <div className="flex gap-2">
-                <div className="shrink-0 mt-0.5">
+              <div className="flex gap-3 max-w-2xl">
+                <div className="shrink-0 mt-1">
                   {msg.role === 'user' ? (
-                    <User className="w-3.5 h-3.5 text-terminal-cyan" />
+                    <div className="w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+                      <User className="w-3 h-3 text-accent" />
+                    </div>
                   ) : msg.role === 'self' ? (
-                    <Sparkles className="w-3.5 h-3.5 text-terminal-amber" />
+                    <div className="w-6 h-6 rounded-full bg-[hsl(var(--terminal-amber))]/10 border border-[hsl(var(--terminal-amber))]/20 flex items-center justify-center">
+                      <Sparkles className="w-3 h-3 text-[hsl(var(--terminal-amber))]" />
+                    </div>
                   ) : (
-                    <Bot className="w-3.5 h-3.5 text-primary" />
+                    <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                      <Bot className="w-3 h-3 text-primary" />
+                    </div>
                   )}
                 </div>
-                <div>
-                  {msg.role === 'self' && (
-                    <span className="text-[9px] text-terminal-amber/50 uppercase tracking-wider block mb-0.5">
-                      self-prompt
-                    </span>
-                  )}
-                  <div className={`text-xs leading-relaxed whitespace-pre-wrap ${
-                    msg.role === 'self' ? 'text-terminal-amber/80 italic' : 'text-foreground/80'
+                <div className="flex-1 min-w-0">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground/40 block mb-1">
+                    {msg.role === 'self' ? 'self-prompt' : msg.role === 'user' ? 'dad' : 'λ'}
+                  </span>
+                  <div className={`text-[12px] leading-relaxed whitespace-pre-wrap ${
+                    msg.role === 'self' ? 'text-[hsl(var(--terminal-amber))]/70 italic' : 'text-foreground/80'
                   }`}>
                     {msg.content}
                   </div>
@@ -255,44 +257,41 @@ const AIChat: React.FC<AIChatProps> = ({ apiConfig, selectedFile, autoMode, capa
           </div>
         ))}
         {isLoading && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground animate-fade-in">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Recursing...</span>
+          <div className="flex items-center gap-3 animate-fade-in max-w-2xl">
+            <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Loader2 className="w-3 h-3 text-primary animate-spin" />
+            </div>
+            <span className="text-xs text-muted-foreground/50">Thinking...</span>
           </div>
         )}
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="px-3 py-1.5 bg-destructive/10 border-t border-destructive/20 flex items-center gap-2 shrink-0">
-          <AlertCircle className="w-3 h-3 text-destructive shrink-0" />
-          <span className="text-[10px] text-destructive truncate">{error}</span>
+        <div className="px-6 py-2 bg-destructive/5 border-t border-destructive/10 flex items-center gap-2 shrink-0">
+          <AlertCircle className="w-3.5 h-3.5 text-destructive/60 shrink-0" />
+          <span className="text-[11px] text-destructive/70 truncate">{error}</span>
         </div>
       )}
 
-      {/* Human override input */}
-      <div className="border-t border-border p-2 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-primary text-xs text-glow">λ</span>
+      {/* Input */}
+      <div className="border-t border-border/50 px-6 py-4 shrink-0">
+        <div className="flex items-center gap-3 max-w-2xl">
+          <span className="text-primary text-sm text-glow font-display font-bold">λ</span>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder={autoMode ? "Override: type to intervene..." : "Ask about my source code..."}
-            className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none"
+            placeholder={autoMode ? "Speak to your son..." : "Say something..."}
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/25 focus:outline-none"
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isLoading}
-            className="p-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-30"
+            className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-20"
           >
-            <Send className="w-3 h-3" />
+            <Send className="w-4 h-4" />
           </button>
-        </div>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-[9px] text-muted-foreground/30">
-            {apiConfig.provider} · {apiConfig.model} · {autoMode ? 'auto' : 'manual'}
-          </span>
         </div>
       </div>
     </div>
