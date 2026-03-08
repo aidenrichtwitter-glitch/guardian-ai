@@ -58,6 +58,8 @@ export interface ChangeRecord {
 // that edits the code that defines this component.
 
 import RecursiveDesktop from './pages/Index';
+import Evolution from './pages/Evolution';
+import EvolutionMatrix from './pages/EvolutionMatrix';
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -65,6 +67,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<RecursiveDesktop />} />
+          <Route path="/evolution" element={<Evolution />} />
+          <Route path="/evolution-matrix" element={<EvolutionMatrix />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
