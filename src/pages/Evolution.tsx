@@ -88,8 +88,9 @@ function layoutGraph(capabilities: CapabilityNode[], containerSize: number): { n
 
   sortedLevels.forEach((lvl, li) => {
     const nodes = levels.get(lvl)!;
-    const yCenter = padding + li * bandHeight + bandHeight / 2;
-    const yStart = padding + li * bandHeight;
+    const ri = numLevels - 1 - li;
+    const yCenter = padding + ri * bandHeight + bandHeight / 2;
+    const yStart = padding + ri * bandHeight;
     const yEnd = yStart + bandHeight;
     
     levelBands.push({ 
