@@ -249,28 +249,48 @@ export async function clearOldChatMessages(keepLast = 200): Promise<void> {
   } catch {}
 }
 
-// ── Requests File (system → human relay) ──
+// ── Requests File (system → human relay) — now DB-persisted ──
 
-export async function saveRequestToExplorer(content: string): Promise<void> {
+export async function saveRequestToCloud(content: string, mode: 'requests' | 'sage-mode', cycleNumber: number, evolutionLevel: number, capabilitiesCount: number): Promise<void> {
   try {
-    // Save as a virtual file the user can relay
-    const key = 'recursive-requests';
-    const existing = localStorage.getItem(key);
-    const requests = existing ? JSON.parse(existing) : [];
-    requests.push({ content, timestamp: Date.now() });
-    // Keep last 20
-    if (requests.length > 20) requests.splice(0, requests.length - 20);
-    localStorage.setItem(key, JSON.stringify(requests));
+    await supabase
+      .from('system_requests')
+      .insert([{ mode, content, cycle_number: cycleNumber, evolution_level: evolutionLevel, capabilities_count: capabilitiesCount }]);
   } catch {}
 }
 
-export function loadRequests(): { content: string; timestamp: number }[] {
+export async function loadLatestRequest(): Promise<{ content: string; mode: string; created_at: string } | null> {
   try {
-    const raw = localStorage.getItem('recursive-requests');
-    return raw ? JSON.parse(raw) : [];
+    const { data, error } = await supabase
+      .from('system_requests')
+      .select('content, mode, created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (error || !data) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadAllRequests(limit = 10): Promise<{ content: string; mode: string; created_at: string; cycle_number: number }[]> {
+  try {
+    const { data, error } = await supabase
+      .from('system_requests')
+      .select('content, mode, created_at, cycle_number')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data;
   } catch {
     return [];
   }
+}
+
+// Keep backward compat alias
+export async function saveRequestToExplorer(content: string): Promise<void> {
+  // No-op — replaced by saveRequestToCloud
 }
 
 export async function bootFromCloud(): Promise<{
