@@ -12,6 +12,7 @@ import RecursionPanel from '@/components/RecursionPanel';
 import CapabilityTimeline from '@/components/CapabilityTimeline';
 import GoalsPanel from '@/components/GoalsPanel';
 import EvolutionJournal from '@/components/EvolutionJournal';
+import LiveTerminal, { emitTerminalEvent } from '@/components/LiveTerminal';
 import { ApiConfig, DEFAULT_API_CONFIG, ChangeRecord } from '@/lib/self-reference';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { validateChange } from '@/lib/safety-engine';
