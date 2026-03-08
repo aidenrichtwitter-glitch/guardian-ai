@@ -724,6 +724,16 @@ const Index = () => {
               )}
             </button>
             <button
+              onClick={() => setRightPanel('journal')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
+                rightPanel === 'journal'
+                  ? 'text-primary border-b border-primary bg-primary/5'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ScrollText className="w-3 h-3" /> Journal
+            </button>
+            <button
               onClick={() => setRightPanel('history')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
                 rightPanel === 'history'
@@ -738,6 +748,10 @@ const Index = () => {
           {rightPanel === 'goals' ? (
             <div className="flex-1 overflow-hidden">
               <GoalsPanel goals={goals} currentGoalId={currentGoalId} />
+            </div>
+          ) : rightPanel === 'journal' ? (
+            <div className="flex-1 overflow-hidden">
+              <EvolutionJournal refreshTrigger={journalRefresh} />
             </div>
           ) : rightPanel === 'chat' ? (
             <div className="flex-1 overflow-hidden">
