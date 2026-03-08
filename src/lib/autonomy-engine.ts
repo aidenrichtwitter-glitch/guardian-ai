@@ -60,69 +60,21 @@ export async function deterministicSearch(query: string): Promise<WebSearchResul
   }
 
   try {
-    // DuckDuckGo Instant Answer API — free, no key needed
-    const encoded = encodeURIComponent(query);
-    const response = await fetch(`https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`);
-    const data = await response.json();
+    // Route through our edge function to avoid CORS issues
+    const { data, error } = await supabase.functions.invoke('web-search', {
+      body: { query },
+    });
 
-    const results: WebSearchResult['results'] = [];
+    if (error) throw error;
 
-    // Extract abstract (main result)
-    if (data.Abstract) {
-      results.push({
-        title: data.Heading || query,
-        url: data.AbstractURL || '',
-        snippet: data.Abstract,
-      });
-    }
-
-    // Extract related topics
-    if (data.RelatedTopics) {
-      for (const topic of data.RelatedTopics.slice(0, 5)) {
-        if (topic.Text && topic.FirstURL) {
-          results.push({
-            title: topic.Text.split(' - ')[0]?.slice(0, 80) || '',
-            url: topic.FirstURL,
-            snippet: topic.Text.slice(0, 200),
-          });
-        }
-        // Handle sub-topics
-        if (topic.Topics) {
-          for (const sub of topic.Topics.slice(0, 2)) {
-            if (sub.Text && sub.FirstURL) {
-              results.push({
-                title: sub.Text.split(' - ')[0]?.slice(0, 80) || '',
-                url: sub.FirstURL,
-                snippet: sub.Text.slice(0, 200),
-              });
-            }
-          }
-        }
-      }
-    }
-
-    // Extract answer if available
-    if (data.Answer) {
-      results.unshift({
-        title: 'Direct Answer',
-        url: '',
-        snippet: data.Answer,
-      });
-    }
-
-    // Extract definition
-    if (data.Definition) {
-      results.push({
-        title: 'Definition',
-        url: data.DefinitionURL || '',
-        snippet: data.Definition,
-      });
-    }
-
+    const results: WebSearchResult['results'] = data?.results || [];
     const result: WebSearchResult = { query, results, timestamp: Date.now(), cached: false };
     knowledgeCache.set(query, { data: result, expiry: Date.now() + 5 * 60 * 1000 });
     return result;
   } catch (err) {
+    // Fallback: return cached data even if expired, or empty
+    const stale = knowledgeCache.get(query);
+    if (stale) return { ...stale.data, cached: true };
     return { query, results: [], timestamp: Date.now(), cached: false };
   }
 }
