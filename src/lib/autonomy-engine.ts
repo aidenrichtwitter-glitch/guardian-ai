@@ -257,14 +257,17 @@ async function runForecasting(): Promise<AutonomyTask> {
 
 function runDocumentation(): AutonomyTask {
   const start = performance.now();
-  const report = documentProject();
+  // Use SELF_SOURCE to get actual files to document
+  const { SELF_SOURCE } = require('./self-source');
+  const files = (SELF_SOURCE || []).map((f: any) => ({ path: f.path, content: f.content }));
+  const report = documentProject(files);
 
   return {
     id: 'documentation',
     name: 'Self-documentation',
     type: 'document',
     success: true,
-    detail: `Documented ${report.files.length} files. Avg complexity: ${report.averageComplexity.toFixed(1)}. Self-awareness: ${(report.selfAwarenessScore * 100).toFixed(0)}%.`,
+    detail: `Documented ${report.docs.length} files. ${report.totalExports} exports. Self-awareness: ${(report.avgSelfAwareness * 100).toFixed(0)}%.`,
     duration: performance.now() - start,
     usedAI: false,
   };
