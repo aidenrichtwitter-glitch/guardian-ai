@@ -168,6 +168,54 @@ const BUILT_IN_RULES: Rule[] = [
     failCount: 0,
     aiCallsSaved: 1,
   },
+  {
+    id: 'rule-ghost-purge',
+    name: 'Auto-purge Ghost Capabilities',
+    category: 'maintain',
+    description: 'Detect and flag capabilities without backing code for removal',
+    priority: 85,
+    condition: (ctx) => ctx.capabilities.length > 0 && ctx.capabilityCount > ctx.capabilities.length * 1.2,
+    action: (ctx) => ({
+      type: 'alert',
+      description: `Capability inflation detected: ${ctx.capabilityCount} total but only ${ctx.capabilities.length} appear legitimate. Run verification.`,
+      severity: 'warning',
+    }),
+    successCount: 0,
+    failCount: 0,
+    aiCallsSaved: 1,
+  },
+  {
+    id: 'rule-autonomy-cycle-recommend',
+    name: 'Recommend Autonomy Cycle',
+    category: 'optimize',
+    description: 'Recommend running autonomy cycle when idle for too long',
+    priority: 40,
+    condition: (ctx) => ctx.timeSinceLastEvolution > 180_000, // 3 minutes idle
+    action: () => ({
+      type: 'alert',
+      description: 'System idle. Run autonomy cycle to verify, repair, and advance deterministically.',
+      severity: 'info',
+    }),
+    successCount: 0,
+    failCount: 0,
+    aiCallsSaved: 0,
+  },
+  {
+    id: 'rule-goal-completion-check',
+    name: 'Goal Completion Scanner',
+    category: 'maintain',
+    description: 'Check if any goals can be auto-completed based on existing capabilities',
+    priority: 55,
+    condition: (ctx) => ctx.cycleCount % 2 === 0 && ctx.capabilityCount > 5,
+    action: (ctx) => ({
+      type: 'skip',
+      description: `Scanning ${ctx.capabilityCount} capabilities against active goals for auto-completion.`,
+      severity: 'info',
+    }),
+    successCount: 0,
+    failCount: 0,
+    aiCallsSaved: 1,
+  },
 ];
 
 // ── RULE ENGINE ──
