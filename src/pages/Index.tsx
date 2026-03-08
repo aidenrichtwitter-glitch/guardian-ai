@@ -47,6 +47,7 @@ import {
   saveCapabilityToCloud,
   addJournalEntry,
 } from '@/lib/cloud-memory';
+import { installPresetCapabilities } from '@/lib/preinstall';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
 
@@ -75,31 +76,47 @@ const Index = () => {
   const [journalRefresh, setJournalRefresh] = useState(0);
   const [cloudBooted, setCloudBooted] = useState(false);
 
-  // ── Boot from cloud on mount ──
+  // ── Boot from cloud on mount + pre-install capabilities ──
   useEffect(() => {
     bootFromCloud().then(({ evolutionState, goals: cloudGoals, capabilities }) => {
       // Merge cloud state with localStorage (cloud wins if it has data)
       if (cloudGoals.length > 0) {
         setGoals(cloudGoals);
       }
-      if (capabilities.length > 0) {
-        setRecursionState(prev => ({
-          ...prev,
-          capabilities: capabilities.map(c => c.name),
-          capabilityHistory: capabilities,
-          evolutionLevel: Math.floor(capabilities.length / 3) + 1,
-        }));
-      }
-      if (evolutionState) {
-        setRecursionState(prev => ({
-          ...prev,
-          cycleCount: Math.max(prev.cycleCount, evolutionState.cycle_count),
-          totalChanges: Math.max(prev.totalChanges, evolutionState.total_changes),
-          evolutionLevel: Math.max(prev.evolutionLevel, evolutionState.evolution_level),
-        }));
-      }
+      
+      // Determine existing capabilities
+      const existingCapNames = capabilities.length > 0 
+        ? capabilities.map(c => c.name)
+        : recursionState.capabilities;
+      
+      // Pre-install all capability libraries
+      const { capabilities: allCaps, history: preinstallHistory } = installPresetCapabilities(existingCapNames);
+      
+      // Merge everything
+      const mergedHistory = [
+        ...(capabilities.length > 0 ? capabilities : recursionState.capabilityHistory),
+        ...preinstallHistory,
+      ];
+      
+      setRecursionState(prev => ({
+        ...prev,
+        capabilities: allCaps,
+        capabilityHistory: mergedHistory,
+        evolutionLevel: Math.floor(allCaps.length / 3) + 1,
+        cycleCount: evolutionState ? Math.max(prev.cycleCount, evolutionState.cycle_count) : prev.cycleCount,
+        totalChanges: evolutionState ? Math.max(prev.totalChanges, evolutionState.total_changes) : prev.totalChanges,
+        log: [
+          ...prev.log,
+          ...(preinstallHistory.length > 0 ? [
+            createLogEntry('scanning', `🧬 Pre-installed ${preinstallHistory.length} capability libraries`, 'success'),
+            createLogEntry('scanning', `📦 ${allCaps.join(', ')}`, 'info'),
+          ] : []),
+        ],
+      }));
+      
       setCloudBooted(true);
       setJournalRefresh(v => v + 1);
+      setFileTreeVersion(v => v + 1);
     });
   }, []);
 
