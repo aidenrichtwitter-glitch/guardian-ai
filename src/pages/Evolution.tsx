@@ -141,83 +141,83 @@ const Evolution: React.FC = () => {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  useEffect(() => {
-    // Fetch capabilities + goals in parallel
-    const fetchAll = async () => {
-      const [capRes, stateRes, goalsRes, snapRes] = await Promise.all([
-        supabase.from('capabilities').select('*').order('cycle_number', { ascending: true }),
-        supabase.from('evolution_state').select('*').eq('id', 'singleton').single(),
-        supabase.from('goals').select('*'),
-        supabase.from('lambda_evolution_state').select('*').order('created_at', { ascending: false }).limit(10),
-      ]);
+  const fetchAll = React.useCallback(async () => {
+    const [capRes, stateRes, goalsRes, snapRes] = await Promise.all([
+      supabase.from('capabilities').select('*').order('cycle_number', { ascending: true }),
+      supabase.from('evolution_state').select('*').eq('id', 'singleton').single(),
+      supabase.from('goals').select('*'),
+      supabase.from('lambda_evolution_state').select('*').order('created_at', { ascending: false }).limit(10),
+    ]);
 
-      // Build acquired nodes
-      const acquiredNodes: CapabilityNode[] = (capRes.data || []).map(row => ({
-        name: row.name,
-        description: row.description,
-        builtOn: row.built_on || [],
-        cycle: row.cycle_number,
-        level: row.evolution_level,
-        x: 0, y: 0,
-        status: 'acquired' as const,
-      }));
+    // Build acquired nodes
+    const acquiredNodes: CapabilityNode[] = (capRes.data || []).map(row => ({
+      name: row.name,
+      description: row.description,
+      builtOn: row.built_on || [],
+      cycle: row.cycle_number,
+      level: row.evolution_level,
+      x: 0, y: 0,
+      status: 'acquired' as const,
+    }));
 
-      const acquiredNames = new Set(acquiredNodes.map(n => n.name));
+    const acquiredNames = new Set(acquiredNodes.map(n => n.name));
 
-      // Build in-progress / planned nodes from goals
-      // Only show goals that are NOT completed and whose capability isn't already acquired
-      const goalNodes: CapabilityNode[] = (goalsRes.data || [])
-        .filter(g => g.unlocks_capability 
-          && !acquiredNames.has(g.unlocks_capability) 
-          && g.status !== 'completed')  // Don't show completed goals as planned
-        .map(g => {
-          const isInProgress = g.status === 'in-progress';
-          const maxLevel = acquiredNodes.length > 0 ? Math.max(...acquiredNodes.map(n => n.level)) : 1;
-          return {
-            name: g.unlocks_capability!,
-            description: g.description,
-            builtOn: g.required_capabilities || [],
-            cycle: 0,
-            level: maxLevel + (isInProgress ? 1 : 2),
-            x: 0, y: 0,
-            status: isInProgress ? 'in-progress' as const : 'planned' as const,
-          };
-        });
+    // Build in-progress / planned nodes from goals
+    const goalNodes: CapabilityNode[] = (goalsRes.data || [])
+      .filter(g => g.unlocks_capability 
+        && !acquiredNames.has(g.unlocks_capability) 
+        && g.status !== 'completed')
+      .map(g => {
+        const isInProgress = g.status === 'in-progress';
+        const maxLevel = acquiredNodes.length > 0 ? Math.max(...acquiredNodes.map(n => n.level)) : 1;
+        return {
+          name: g.unlocks_capability!,
+          description: g.description,
+          builtOn: g.required_capabilities || [],
+          cycle: 0,
+          level: maxLevel + (isInProgress ? 1 : 2),
+          x: 0, y: 0,
+          status: isInProgress ? 'in-progress' as const : 'planned' as const,
+        };
+      });
 
-      const allNodes = [...acquiredNodes, ...goalNodes];
-      setCapabilities(layoutGraph(allNodes, containerSize));
+    const allNodes = [...acquiredNodes, ...goalNodes];
+    setCapabilities(layoutGraph(allNodes, containerSize));
 
-      // Stats
-      if (stateRes.data) {
-        const completed = goalsRes.data?.filter(g => g.status === 'completed').length || 0;
-        const active = goalsRes.data?.filter(g => g.status === 'active' || g.status === 'in-progress').length || 0;
-        const cycles = (capRes.data || []).map(c => c.cycle_number);
-        const avgCycles = cycles.length > 1 ? Number(mean(cycles)) : 0;
-        const stdDev = cycles.length > 2 ? Number(std(cycles)) : 0;
-        const healthScore = Math.max(0, Math.min(100, 100 - stdDev * 5));
+    // Stats
+    if (stateRes.data) {
+      const completed = goalsRes.data?.filter(g => g.status === 'completed').length || 0;
+      const active = goalsRes.data?.filter(g => g.status === 'active' || g.status === 'in-progress').length || 0;
+      const cycles = (capRes.data || []).map(c => c.cycle_number);
+      const avgCycles = cycles.length > 1 ? Number(mean(cycles)) : 0;
+      const stdDev = cycles.length > 2 ? Number(std(cycles)) : 0;
+      const healthScore = Math.max(0, Math.min(100, 100 - stdDev * 5));
 
-        setStats({
-          currentLevel: stateRes.data.evolution_level,
-          totalCapabilities: capRes.data?.length || 0,
-          totalCycles: stateRes.data.cycle_count,
-          totalGoalsCompleted: completed,
-          activeGoals: active,
-          avgCyclesPerCapability: Math.round(avgCycles * 10) / 10,
-          healthScore: Math.round(healthScore),
-        });
-      }
+      setStats({
+        currentLevel: stateRes.data.evolution_level,
+        totalCapabilities: capRes.data?.length || 0,
+        totalCycles: stateRes.data.cycle_count,
+        totalGoalsCompleted: completed,
+        activeGoals: active,
+        avgCyclesPerCapability: Math.round(avgCycles * 10) / 10,
+        healthScore: Math.round(healthScore),
+      });
+    }
 
-      if (snapRes.data) setSnapshots(snapRes.data);
+    if (snapRes.data) setSnapshots(snapRes.data);
 
-      // Store goals for sidebar
-      setGoals((goalsRes.data || []).sort((a, b) => {
-        const order: Record<string, number> = { 'in-progress': 0, 'active': 1, 'completed': 2 };
-        return (order[a.status] ?? 3) - (order[b.status] ?? 3);
-      }));
-    };
-
-    fetchAll();
+    setGoals((goalsRes.data || []).sort((a, b) => {
+      const order: Record<string, number> = { 'in-progress': 0, 'active': 1, 'completed': 2 };
+      return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+    }));
   }, [containerSize]);
+
+  // Initial fetch + polling every 5s
+  useEffect(() => {
+    fetchAll();
+    const interval = setInterval(fetchAll, 5000);
+    return () => clearInterval(interval);
+  }, [fetchAll]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
   const canvasSize = capabilities.size;
