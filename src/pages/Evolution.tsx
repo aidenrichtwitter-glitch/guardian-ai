@@ -265,8 +265,8 @@ const Evolution: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Main: Capability Graph */}
         <main className="flex-1 relative overflow-auto bg-background">
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: CANVAS_W, minHeight: canvasH }}>
-            <svg width={CANVAS_W} height={canvasH} viewBox={`0 0 ${CANVAS_W} ${canvasH}`}>
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: canvasW, minHeight: canvasH }}>
+            <svg width={canvasW} height={canvasH} viewBox={`0 0 ${canvasW} ${canvasH}`}>
               {/* Grid */}
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
