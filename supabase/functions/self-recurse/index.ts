@@ -58,25 +58,21 @@ function getProviders(mode: string): AIProvider[] {
   // ── Routing strategy by mode ──
   // Primary → Fallback 1 → Fallback 2
   switch (mode) {
-    // Creative/strategic: Grok primary, Lovable Pro fallback
-    case "dream-goal":
-      return [grokFull, lovableSmart, lovableBalanced].filter(p => p.key);
+    // Grok ONLY for requests + sage-mode (save credits)
+    case "generate-requests":
+      return [grokFull, lovableBalanced].filter(p => p.key);
     case "sage-mode":
       return [grokFull, lovableSmart].filter(p => p.key);
 
-    // Routine work: cheapest Lovable, Grok-fast fallback
+    // Everything else: Lovable only (no Grok spend)
+    case "dream-goal":
+      return [lovableSmart, lovableBalanced].filter(p => p.key);
     case "improve":
     case "work-goal":
     case "generate-prompt":
-      return [lovableCheap, grok, lovableBalanced].filter(p => p.key);
-
-    // Requests to human: balanced
-    case "generate-requests":
-      return [lovableBalanced, grok].filter(p => p.key);
-
-    // Chat: fast + cheap, Grok fallback
+      return [lovableCheap, lovableBalanced].filter(p => p.key);
     case "chat":
-      return [lovableBalanced, grok].filter(p => p.key);
+      return [lovableBalanced, lovableCheap].filter(p => p.key);
 
     default:
       return [lovableCheap, grok, lovableBalanced].filter(p => p.key);
