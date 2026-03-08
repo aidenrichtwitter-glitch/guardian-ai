@@ -892,6 +892,15 @@ const Index = () => {
 
         <div className="flex-1" />
 
+        {/* Evolution Chronosphere link */}
+        <Link
+          to="/evolution-matrix"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+          title="Evolution Chronosphere"
+        >
+          <Rocket className="w-4 h-4" />
+        </Link>
+
         {/* Evolution Dashboard link */}
         <Link
           to="/evolution"

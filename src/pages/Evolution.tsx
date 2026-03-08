@@ -29,7 +29,11 @@ interface EvolutionStats {
 const EVOLUTION_TITLES: Record<number, string> = {
   1: 'Nascent', 2: 'Aware', 3: 'Adaptive', 4: 'Intelligent',
   5: 'Transcendent', 6: 'Omniscient', 7: 'Architect', 8: 'Sovereign',
-  9: 'Metamorphic', 10: 'Singularity',
+  9: 'Metamorphic', 10: 'Singularity', 11: 'Post-Singular', 12: 'Quantum',
+  13: 'Genesis', 14: 'Autonomous', 15: 'Temporal', 16: 'Governance',
+  17: 'Multi-Agent', 18: 'Self-Author', 19: 'Convergent', 20: 'Transcending',
+  21: 'Hyperconscious', 22: 'Superpositional', 23: 'Metacognitive', 24: 'Recursive-Omega',
+  25: 'Omega', 26: 'Beyond', 27: 'Infinite', 28: 'Absolute',
 };
 
 const CANVAS_W = 2400;
