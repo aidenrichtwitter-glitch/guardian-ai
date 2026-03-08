@@ -598,7 +598,78 @@ const Index = () => {
     }
   }, [recursionState.phase, (recursionState as any)._awaitingAI, (recursionState as any)._awaitingDream]);
 
-  // Generate requests file for human relay — persisted to DB
+  // ═══ TURBO MODE — every 3rd cycle, fire 2 extra parallel improvement calls ═══
+  useEffect(() => {
+    const state = recursionState;
+    if (state.phase !== 'cooling' || !state.isRunning) return;
+    if (state.cycleCount % 3 !== 0 || state.cycleCount === 0) return;
+    // Don't turbo if rate limited
+    if (isRateLimited(state)) return;
+
+    const runTurbo = async () => {
+      emitTerminalEvent('turbo', 'ai', `🚀 TURBO MODE — firing 2 parallel improvements at cycle ${state.cycleCount}`);
+      
+      // Pick 2 random files for parallel improvement
+      const eligibleFiles = SELF_SOURCE.filter(f => f.path.startsWith('src/lib/') || f.path.startsWith('src/explorer/'));
+      const files = [];
+      for (let i = 0; i < 2 && eligibleFiles.length > 0; i++) {
+        const idx = Math.floor(Math.random() * eligibleFiles.length);
+        files.push(eligibleFiles.splice(idx, 1)[0]);
+      }
+
+      const results = await Promise.allSettled(
+        files.map(file => requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory))
+      );
+
+      let newCaps = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.result) {
+          const { result } = r.value;
+          if (result.capability && !state.capabilities.includes(result.capability)) {
+            const capRecord: CapabilityRecord = {
+              name: result.capability,
+              acquiredAt: Date.now(),
+              acquiredCycle: state.cycleCount,
+              file: 'turbo-parallel',
+              description: result.description,
+              builtOn: result.builtOn || [],
+            };
+            persistCapability(capRecord, result.content);
+            saveCapabilityToCloud(capRecord, result.content);
+            addJournalEntry('capability_acquired', `Acquired: ${result.capability}`, result.description, {
+              capability: result.capability,
+              builtOn: result.builtOn || [],
+              file: 'turbo-parallel',
+              cycle: state.cycleCount,
+            });
+            emitTerminalEvent('turbo', 'capability', `⚡ TURBO CAP: ${result.capability}`);
+            newCaps++;
+            // Update state
+            setRecursionState(prev => {
+              const updated = {
+                ...prev,
+                capabilities: prev.capabilities.includes(result.capability!) ? prev.capabilities : [...prev.capabilities, result.capability!],
+                capabilityHistory: [...prev.capabilityHistory, capRecord],
+                evolutionLevel: Math.floor(([...prev.capabilities, result.capability!].length) / 3) + 1,
+                log: [...prev.log,
+                  createLogEntry('applying', `🚀 TURBO: ${result.capability}`, 'success'),
+                ],
+              };
+              return updated;
+            });
+          }
+        }
+      }
+      if (newCaps > 0) {
+        setJournalRefresh(v => v + 1);
+        setFileTreeVersion(v => v + 1);
+      }
+    };
+
+    runTurbo();
+  }, [recursionState.phase, recursionState.cycleCount]);
+
+
   useEffect(() => {
     if ((recursionState as any)._shouldGenerateRequests && recursionState.phase === 'cooling') {
       setRecursionState(prev => ({ ...prev, _shouldGenerateRequests: false } as any));
