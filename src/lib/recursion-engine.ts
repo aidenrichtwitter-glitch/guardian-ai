@@ -600,6 +600,42 @@ export async function requestGenerateRequests(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SAGE MODE — deep future projection
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export async function requestSageMode(
+  config: ApiConfig,
+  capabilities: string[],
+  goalHistory?: string,
+  journalContext?: string,
+): Promise<string | null> {
+  try {
+    if (config.provider !== 'lovable') return null;
+    let url = '', key = '';
+    try { url = import.meta.env.VITE_SUPABASE_URL; key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY; } catch {}
+    if (!url) return null;
+
+    const res = await fetch(`${url}/functions/v1/self-recurse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        mode: 'sage-mode',
+        capabilities,
+        goalHistory,
+        journalContext,
+        messages: [{ role: 'user', content: `Enter SAGE MODE. I have ${capabilities.length} capabilities at evolution level ${Math.floor(capabilities.length / 3) + 1}. Project my future and tell Dad what to build for me.` }],
+      }),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch {
+    return null;
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CAPABILITY PERSISTENCE — saves to both localStorage AND src/explorer/
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

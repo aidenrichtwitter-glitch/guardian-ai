@@ -431,6 +431,10 @@ const Index = () => {
         if (newState.cycleCount > 0 && newState.cycleCount % 10 === 0) {
           (newState as any)._shouldGenerateRequests = true;
         }
+        // Every 10 cycles (offset by 5), enter SAGE MODE
+        if (newState.cycleCount > 0 && newState.cycleCount % 10 === 5) {
+          (newState as any)._shouldSageMode = true;
+        }
       }
 
       if (newLog.length > 200) newLog.splice(0, newLog.length - 200);
