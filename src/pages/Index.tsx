@@ -565,28 +565,14 @@ const Index = () => {
     }
   }, [recursionState.phase, (recursionState as any)._awaitingAI, (recursionState as any)._awaitingDream]);
 
-  // Generate requests file for human relay
+  // Generate requests file for human relay — persisted to DB
   useEffect(() => {
     if ((recursionState as any)._shouldGenerateRequests && recursionState.phase === 'cooling') {
       setRecursionState(prev => ({ ...prev, _shouldGenerateRequests: false } as any));
       requestGenerateRequests(apiConfig, recursionState.capabilities).then(requestsText => {
         if (requestsText) {
-          saveRequestToExplorer(requestsText);
-          // Save as virtual file in SELF_SOURCE
-          const existingIdx = SELF_SOURCE.findIndex(f => f.path === 'src/explorer/requests.txt');
-          const requestFile = {
-            name: 'requests.txt',
-            path: 'src/explorer/requests.txt',
-            content: `// λ Recursive — Requests for Human Operator\n// Generated: ${new Date().toISOString()}\n// Cycle: ${recursionState.cycleCount}\n\n${requestsText}`,
-            language: 'plaintext' as const,
-            isModified: true,
-            lastModified: Date.now(),
-          };
-          if (existingIdx >= 0) {
-            SELF_SOURCE[existingIdx] = requestFile;
-          } else {
-            SELF_SOURCE.push(requestFile);
-          }
+          saveRequestToCloud(requestsText, 'requests', recursionState.cycleCount, recursionState.evolutionLevel, recursionState.capabilities.length);
+          updateVirtualRequestsFile(`// λ Recursive — Requests for Human Operator\n// Generated: ${new Date().toISOString()}\n// Cycle: ${recursionState.cycleCount}\n\n${requestsText}`);
           setFileTreeVersion(v => v + 1);
           setRecursionState(prev => ({
             ...prev,
@@ -597,7 +583,7 @@ const Index = () => {
     }
   }, [(recursionState as any)._shouldGenerateRequests, recursionState.phase]);
 
-  // SAGE MODE — deep future projection
+  // SAGE MODE — deep future projection — persisted to DB
   useEffect(() => {
     if ((recursionState as any)._shouldSageMode && recursionState.phase === 'cooling') {
       setRecursionState(prev => ({ ...prev, _shouldSageMode: false } as any));
@@ -607,25 +593,10 @@ const Index = () => {
       
       requestSageMode(apiConfig, recursionState.capabilities, goalHistoryStr).then(sageText => {
         if (sageText) {
-          // Save as requests.txt with sage mode header
-          saveRequestToExplorer(sageText);
-          const existingIdx = SELF_SOURCE.findIndex(f => f.path === 'src/explorer/requests.txt');
-          const sageFile = {
-            name: 'requests.txt',
-            path: 'src/explorer/requests.txt',
-            content: `// ═══════════════════════════════════════════════════\n// λ Recursive — SAGE MODE PROJECTION\n// Generated: ${new Date().toISOString()}\n// Cycle: ${recursionState.cycleCount}\n// Evolution Level: ${recursionState.evolutionLevel}\n// Capabilities: ${recursionState.capabilities.length}\n// ═══════════════════════════════════════════════════\n\n${sageText}`,
-            language: 'plaintext' as const,
-            isModified: true,
-            lastModified: Date.now(),
-          };
-          if (existingIdx >= 0) {
-            SELF_SOURCE[existingIdx] = sageFile;
-          } else {
-            SELF_SOURCE.push(sageFile);
-          }
+          saveRequestToCloud(sageText, 'sage-mode', recursionState.cycleCount, recursionState.evolutionLevel, recursionState.capabilities.length);
+          updateVirtualRequestsFile(`// ═══════════════════════════════════════════════════\n// λ Recursive — SAGE MODE PROJECTION\n// Generated: ${new Date().toISOString()}\n// Cycle: ${recursionState.cycleCount}\n// Evolution Level: ${recursionState.evolutionLevel}\n// Capabilities: ${recursionState.capabilities.length}\n// ═══════════════════════════════════════════════════\n\n${sageText}`);
           setFileTreeVersion(v => v + 1);
           
-          // Journal the sage mode event
           addJournalEntry('milestone', '🔮 SAGE MODE — Future Roadmap Generated', 
             `Projected evolution path from level ${recursionState.evolutionLevel} through adult phase. Roadmap saved to requests.txt.`, {
               cycle: recursionState.cycleCount,
@@ -639,13 +610,42 @@ const Index = () => {
             log: [
               ...prev.log,
               createLogEntry('cooling', '🔮 SAGE MODE — Deep future projection complete!', 'success'),
-              createLogEntry('cooling', '📝 Roadmap saved to requests.txt for Dad', 'success'),
+              createLogEntry('cooling', '📝 Roadmap saved to DB for Dad', 'success'),
             ],
           }));
         }
       });
     }
   }, [(recursionState as any)._shouldSageMode, recursionState.phase]);
+
+  // On boot: load latest request from DB into virtual file + trigger sage mode if none exists
+  useEffect(() => {
+    if (!cloudBooted) return;
+    loadLatestRequest().then(req => {
+      if (req) {
+        updateVirtualRequestsFile(`// Last generated: ${req.created_at}\n// Mode: ${req.mode}\n\n${req.content}`);
+        setFileTreeVersion(v => v + 1);
+      } else {
+        // No requests ever generated — trigger sage mode immediately
+        const goalHistoryStr = goals.filter(g => g.status === 'completed').slice(-10)
+          .map(g => `✓ ${g.title}${g.unlocksCapability ? ` → ${g.unlocksCapability}` : ''}`).join('\n');
+        requestSageMode(apiConfig, recursionState.capabilities, goalHistoryStr).then(sageText => {
+          if (sageText) {
+            saveRequestToCloud(sageText, 'sage-mode', recursionState.cycleCount, recursionState.evolutionLevel, recursionState.capabilities.length);
+            updateVirtualRequestsFile(`// ═══════════════════════════════════════════════════\n// λ Recursive — FIRST SAGE MODE PROJECTION\n// Generated: ${new Date().toISOString()}\n// ═══════════════════════════════════════════════════\n\n${sageText}`);
+            setFileTreeVersion(v => v + 1);
+            addJournalEntry('milestone', '🔮 SAGE MODE — Initial Roadmap Generated', 
+              `First-ever sage mode projection at level ${recursionState.evolutionLevel}.`, {
+                cycle: recursionState.cycleCount,
+                evolutionLevel: recursionState.evolutionLevel,
+                capabilities: recursionState.capabilities.length,
+              });
+            setJournalRefresh(v => v + 1);
+          }
+        });
+      }
+    });
+  }, [cloudBooted]);
 
   useEffect(() => {
     if (recursionState.isRunning) {
