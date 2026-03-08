@@ -5,6 +5,7 @@ import { getFileTree } from '@/lib/self-source';
 interface FileTreeProps {
   onSelectFile: (path: string) => void;
   selectedFile: string | null;
+  refreshKey?: number; // Forces re-render when SELF_SOURCE changes
 }
 
 interface TreeNode {
