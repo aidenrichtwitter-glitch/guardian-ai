@@ -846,6 +846,9 @@ const Index = () => {
                 <FileTree onSelectFile={(f) => { setSelectedFile(f); openDrawer('code'); }} selectedFile={selectedFile} refreshKey={fileTreeVersion} />
               </div>
             )}
+            {drawerPanel === 'code-evo' && (
+              <CodeEvolution capabilities={recursionState.capabilities} capabilityHistory={recursionState.capabilityHistory} />
+            )}
           </>
         )}
       </aside>
