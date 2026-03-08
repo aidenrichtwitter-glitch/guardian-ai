@@ -101,9 +101,9 @@ const Index = () => {
       if (nextPhase === 'reflecting') {
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (file) {
-          const observation = generateSelfObservation(file);
-          newState.lastAction = `Reflecting on ${file.name}...`;
-          newLog.push(createLogEntry('reflecting', observation, 'info', file.path));
+          // Use AI for reflection too — skip to proposing immediately
+          newState.lastAction = `Preparing AI analysis of ${file.name}...`;
+          newLog.push(createLogEntry('reflecting', `🤖 Preparing AI-powered analysis of ${file.name}`, 'action', file.path));
         }
       }
 
