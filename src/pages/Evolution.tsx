@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search } from 'lucide-react';
+import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { mean, std } from 'mathjs';
@@ -9,6 +9,7 @@ import { ruleEngine, RuleEngineReport } from '@/lib/rule-engine';
 import { StormLightning, emitStormProcess } from '@/components/TerminalStorm';
 import { runAutonomyCycle, getCumulativeAutonomy, recordAutonomyCycle, deterministicSearch, type AutonomyReport } from '@/lib/autonomy-engine';
 import { runLifeProof, getHeartbeatCount, type LifeProofReport } from '@/lib/life-proof';
+import { runMaturityTest, type MaturityReport } from '@/lib/maturity-test';
 
 interface CapabilityNode {
   name: string;
