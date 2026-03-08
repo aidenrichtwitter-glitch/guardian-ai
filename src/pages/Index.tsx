@@ -458,6 +458,9 @@ const Index = () => {
         newState.lastAction = 'Cooling down between cycles...';
         newLog.push(createLogEntry('cooling', '◌ Cooling. Preparing next recursive cycle.', 'info'));
         emitTerminalEvent('engine', 'state', `Cycle ${newState.cycleCount} complete. Phase: cooling`);
+
+        // Run self-tests after every cycle
+        (newState as any)._shouldSelfTest = true;
         
         // Every 10 cycles, generate requests for the human
         if (newState.cycleCount > 0 && newState.cycleCount % 10 === 0) {
