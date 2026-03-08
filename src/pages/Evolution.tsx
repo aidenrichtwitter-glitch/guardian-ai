@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search } from 'lucide-react';
+import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { mean, std } from 'mathjs';
@@ -9,6 +9,7 @@ import { ruleEngine, RuleEngineReport } from '@/lib/rule-engine';
 import { StormLightning, emitStormProcess } from '@/components/TerminalStorm';
 import { runAutonomyCycle, getCumulativeAutonomy, recordAutonomyCycle, deterministicSearch, type AutonomyReport } from '@/lib/autonomy-engine';
 import { runLifeProof, getHeartbeatCount, type LifeProofReport } from '@/lib/life-proof';
+import { runMaturityTest, type MaturityReport } from '@/lib/maturity-test';
 
 interface CapabilityNode {
   name: string;
@@ -123,7 +124,11 @@ const Evolution: React.FC = () => {
   const [lifeReport, setLifeReport] = useState<LifeProofReport | null>(null);
   const [isRunningLifeProof, setIsRunningLifeProof] = useState(false);
   const [lifeProofLoop, setLifeProofLoop] = useState(false);
+  const [maturityReport, setMaturityReport] = useState<MaturityReport | null>(null);
+  const [isRunningMaturity, setIsRunningMaturity] = useState(false);
+  const [maturityLoop, setMaturityLoop] = useState(false);
   const lifeProofRef = React.useRef(false);
+  const maturityRef = React.useRef(false);
   const mainRef = React.useRef<HTMLDivElement>(null);
 
   // Measure container
@@ -241,7 +246,7 @@ const Evolution: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Life proof continuous loop — replaces random storm with real tests
+  // Life proof continuous loop
   useEffect(() => {
     lifeProofRef.current = lifeProofLoop;
   }, [lifeProofLoop]);
@@ -263,7 +268,6 @@ const Evolution: React.FC = () => {
           console.error('Life proof error:', err);
         }
         setIsRunningLifeProof(false);
-        // Wait 8 seconds between heartbeats
         await new Promise(r => setTimeout(r, 8000));
       }
     };
@@ -271,6 +275,36 @@ const Evolution: React.FC = () => {
     loop();
     return () => { cancelled = true; };
   }, [lifeProofLoop]);
+
+  // Maturity test continuous loop
+  useEffect(() => {
+    maturityRef.current = maturityLoop;
+  }, [maturityLoop]);
+
+  useEffect(() => {
+    if (!maturityLoop) return;
+    let cancelled = false;
+
+    const loop = async () => {
+      while (!cancelled && maturityRef.current) {
+        setIsRunningMaturity(true);
+        try {
+          const report = await runMaturityTest();
+          if (!cancelled) {
+            setMaturityReport(report);
+            fetchAll();
+          }
+        } catch (err) {
+          console.error('Maturity test error:', err);
+        }
+        setIsRunningMaturity(false);
+        await new Promise(r => setTimeout(r, 12000));
+      }
+    };
+
+    loop();
+    return () => { cancelled = true; };
+  }, [maturityLoop]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
   const canvasSize = capabilities.size;
@@ -380,6 +414,16 @@ const Evolution: React.FC = () => {
             }`}
           >
             {lifeProofLoop ? '⏹' : '💓'} {lifeProofLoop ? `Stop (HB #${lifeReport?.heartbeatNumber || 0})` : 'Life Proof Loop'}
+          </button>
+          <button
+            onClick={() => setMaturityLoop(v => !v)}
+            className={`text-[9px] px-3 py-1 rounded border transition-colors flex items-center gap-1 ${
+              maturityLoop
+                ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 animate-pulse'
+                : 'bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20'
+            }`}
+          >
+            {maturityLoop ? '⏹' : <BarChart3 className="w-3 h-3" />} {maturityLoop ? `Stop Maturity (${maturityReport?.grade || '?'})` : 'Maturity Test'}
           </button>
           <button
             onClick={() => setShowStorm(s => !s)}
@@ -655,6 +699,96 @@ const Evolution: React.FC = () => {
                   )}
                   <div className="text-[8px] text-muted-foreground/50">
                     Duration: {lifeReport.duration.toFixed(0)}ms
+                  </div>
+                </div>
+              )}
+
+              {/* MATURITY TEST — Value Readiness */}
+              {maturityReport && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    <BarChart3 className="w-3 h-3" /> Maturity · Run #{maturityReport.runNumber}
+                  </div>
+                  
+                  {/* Grade badge */}
+                  <div className="flex items-center gap-2">
+                    <div className={`text-2xl font-bold font-display ${
+                      maturityReport.grade === 'S' ? 'text-yellow-400' :
+                      maturityReport.grade === 'A' ? 'text-primary' :
+                      maturityReport.grade === 'B' ? 'text-blue-400' :
+                      maturityReport.grade === 'C' ? 'text-accent' :
+                      'text-destructive'
+                    }`}>
+                      {maturityReport.grade}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold text-foreground/80">{maturityReport.overallScore}%</div>
+                      <div className="text-[8px] text-muted-foreground">Overall Maturity</div>
+                    </div>
+                  </div>
+
+                  {/* Readiness label */}
+                  <div className="text-[9px] text-foreground/70 px-1">
+                    {maturityReport.readinessLabel}
+                  </div>
+
+                  {/* Dimension bars */}
+                  <div className="space-y-1">
+                    {maturityReport.dimensions.map(dim => (
+                      <div key={dim.dimension} className="group">
+                        <div className="flex items-center gap-1.5 text-[9px]">
+                          <span className="w-4 text-center">{dim.icon}</span>
+                          <span className={`w-20 shrink-0 font-medium truncate ${dim.passed ? 'text-foreground/80' : 'text-muted-foreground'}`}>
+                            {dim.label.replace(/^. /, '')}
+                          </span>
+                          <div className="flex-1 h-2 rounded-full bg-muted/30 overflow-hidden">
+                            <motion.div
+                              className={`h-full rounded-full ${
+                                dim.score >= 80 ? 'bg-primary' :
+                                dim.score >= 60 ? 'bg-blue-500/70' :
+                                dim.score >= 40 ? 'bg-accent/70' :
+                                'bg-destructive/60'
+                              }`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${dim.score}%` }}
+                              transition={{ duration: 0.6 }}
+                            />
+                          </div>
+                          <span className="text-[8px] text-muted-foreground w-6 text-right">{dim.score}%</span>
+                        </div>
+                        {/* Expand on hover: show next milestone */}
+                        <div className="hidden group-hover:block text-[7px] text-muted-foreground/60 ml-6 mt-0.5">
+                          Next: {dim.milestone}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Next milestone callout */}
+                  <div className="text-[8px] px-2 py-1.5 rounded bg-accent/5 border border-accent/20 text-accent/80">
+                    🎯 Focus: {maturityReport.nextMilestone}
+                  </div>
+
+                  {/* Score trend */}
+                  {maturityReport.scoreHistory.length > 1 && (
+                    <div className="flex items-end gap-px h-6">
+                      {maturityReport.scoreHistory.map((s, i) => (
+                        <div
+                          key={i}
+                          className={`flex-1 rounded-t ${s >= 60 ? 'bg-primary/50' : s >= 40 ? 'bg-accent/50' : 'bg-destructive/50'}`}
+                          style={{ height: `${Math.max(2, (s / 100) * 24)}px` }}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {isRunningMaturity && (
+                    <div className="text-[8px] text-purple-400 animate-pulse flex items-center gap-1">
+                      <Loader className="w-2.5 h-2.5 animate-spin" /> Testing dimensions...
+                    </div>
+                  )}
+                  <div className="text-[8px] text-muted-foreground/50">
+                    Duration: {maturityReport.duration.toFixed(0)}ms
                   </div>
                 </div>
               )}
