@@ -288,13 +288,26 @@ const Index = () => {
               }
               const newProgress = Math.min(100, proposal.goalProgress || g.progress);
               const allDone = updatedSteps.every(s => s.completed);
-              return {
+              const justCompleted = (allDone || newProgress >= 100) && g.status !== 'completed';
+              const updated = {
                 ...g,
                 progress: newProgress,
                 steps: updatedSteps,
                 status: allDone || newProgress >= 100 ? 'completed' as const : 'in-progress' as const,
                 completedAt: allDone || newProgress >= 100 ? Date.now() : undefined,
               };
+              if (justCompleted) {
+                setTimeout(() => {
+                  toast({
+                    title: `🎯 Goal Accomplished: ${g.title}`,
+                    description: g.unlocksCapability 
+                      ? `Unlocked: ${g.unlocksCapability} — ${g.description}`
+                      : g.description,
+                    duration: 12000,
+                  });
+                }, 100);
+              }
+              return updated;
             }));
             newLog.push(createLogEntry('applying', `🎯 Goal progress: ${proposal.goalProgress}%`, 'success'));
           }
