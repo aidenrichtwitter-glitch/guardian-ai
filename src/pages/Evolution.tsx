@@ -241,35 +241,36 @@ const Evolution: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Periodic storm: pick actual capabilities to show testing/verification
+  // Life proof continuous loop — replaces random storm with real tests
   useEffect(() => {
-    if (!showStorm) return;
-    const acquiredNodes = capabilities.nodes.filter(n => n.status === 'acquired');
-    if (acquiredNodes.length < 2) return;
+    lifeProofRef.current = lifeProofLoop;
+  }, [lifeProofLoop]);
 
-    const interval = setInterval(() => {
-      const from = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
-      const to = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
-      if (from.name === to.name) return;
+  useEffect(() => {
+    if (!lifeProofLoop) return;
+    let cancelled = false;
 
-      const actions = [
-        { label: `Verify ${from.name}`, type: 'test' as const },
-        { label: `${from.name} → ${to.name}`, type: 'capability' as const },
-        { label: `Rule check: ${from.name}`, type: 'rule' as const },
-        { label: `Mutate ${to.name}`, type: 'mutation' as const },
-      ];
-      const action = actions[Math.floor(Math.random() * actions.length)];
+    const loop = async () => {
+      while (!cancelled && lifeProofRef.current) {
+        setIsRunningLifeProof(true);
+        try {
+          const report = await runLifeProof();
+          if (!cancelled) {
+            setLifeReport(report);
+            fetchAll();
+          }
+        } catch (err) {
+          console.error('Life proof error:', err);
+        }
+        setIsRunningLifeProof(false);
+        // Wait 8 seconds between heartbeats
+        await new Promise(r => setTimeout(r, 8000));
+      }
+    };
 
-      emitStormProcess({
-        label: action.label,
-        source: from.name,
-        target: to.name,
-        type: action.type,
-        status: Math.random() > 0.1 ? 'success' : 'fail',
-      });
-    }, 1500 + Math.random() * 2500);
-    return () => clearInterval(interval);
-  }, [showStorm, capabilities.nodes]);
+    loop();
+    return () => { cancelled = true; };
+  }, [lifeProofLoop]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
   const canvasSize = capabilities.size;
