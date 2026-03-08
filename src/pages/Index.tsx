@@ -217,10 +217,10 @@ const Index = () => {
 
       if (nextPhase === 'scanning') {
         newState.cycleCount = prev.cycleCount + 1;
-        const activeGoal = getActiveGoal(goals);
+        const activeGoal = getActiveGoal(goalsRef.current);
         
         // Check if we should dream a new goal
-        if (shouldDreamNewGoal(goals, newState.cycleCount)) {
+        if (shouldDreamNewGoal(goalsRef.current, newState.cycleCount)) {
           (newState as any)._shouldDream = true;
           newState.lastAction = `💭 Dreaming up a new goal...`;
           newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── 💭 Dreaming a new goal...`, 'action'));
