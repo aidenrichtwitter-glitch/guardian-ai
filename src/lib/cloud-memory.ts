@@ -93,7 +93,7 @@ export async function saveGoalToCloud(goal: SelfGoal): Promise<void> {
         status: goal.status,
         priority: goal.priority,
         progress: goal.progress,
-        steps: goal.steps as unknown as Record<string, unknown>[],
+        steps: JSON.parse(JSON.stringify(goal.steps)),
         required_capabilities: goal.requiredCapabilities,
         unlocks_capability: goal.unlocksCapability || null,
         dreamed_at_cycle: goal.dreamedAtCycle,
