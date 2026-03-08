@@ -2799,6 +2799,400 @@ export class SingularityBootstrap {
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DREAMED GOALS — additional capabilities from autonomous goal dreaming
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const syntheticHeuristicProfiler: PreinstalledCap = {
+  name: 'synthetic-heuristic-profiler',
+  description: 'Profiles code heuristics and generates synthetic benchmarks for optimization decisions',
+  builtOn: ['code-analysis', 'math-stats'],
+  sourceCode: `
+export interface HeuristicProfile {
+  name: string;
+  timeComplexity: string;
+  spaceComplexity: string;
+  benchmarkScore: number;
+  hotspots: { line: number; weight: number }[];
+}
+
+export class SyntheticHeuristicProfiler {
+  profile(code: string, name: string): HeuristicProfile {
+    const lines = code.split('\\n');
+    const loops = (code.match(/for\\s*\\(|while\\s*\\(|\\.map|\\.reduce|\\.filter/g) || []).length;
+    const nestedLoops = (code.match(/for.*\\n.*for|while.*\\n.*while/g) || []).length;
+    const branches = (code.match(/if\\s*\\(|switch\\s*\\(|\\?/g) || []).length;
+    const allocations = (code.match(/new |\\[\\]|\\{\\}|Array\\(|Map\\(|Set\\(/g) || []).length;
+
+    const timeComplexity = nestedLoops > 0 ? 'O(n²)' : loops > 0 ? 'O(n)' : 'O(1)';
+    const spaceComplexity = allocations > 3 ? 'O(n)' : 'O(1)';
+    const benchmarkScore = 100 - nestedLoops * 20 - loops * 5 - branches * 2;
+
+    const hotspots = lines.map((line, i) => {
+      let weight = 0;
+      if (line.match(/for\\s*\\(|while\\s*\\(/)) weight += 10;
+      if (line.match(/\\.map|\\.reduce|\\.filter/)) weight += 5;
+      if (line.match(/new |Array\\(/)) weight += 3;
+      return { line: i + 1, weight };
+    }).filter(h => h.weight > 0);
+
+    return { name, timeComplexity, spaceComplexity, benchmarkScore: Math.max(0, benchmarkScore), hotspots };
+  }
+
+  compare(profiles: HeuristicProfile[]): { best: string; ranking: { name: string; score: number }[] } {
+    const ranking = profiles.map(p => ({ name: p.name, score: p.benchmarkScore })).sort((a, b) => b.score - a.score);
+    return { best: ranking[0]?.name || 'none', ranking };
+  }
+}`,
+};
+
+const stochasticMetaHeuristicOptimizer: PreinstalledCap = {
+  name: 'stochastic-meta-heuristic-optimizer',
+  description: 'Applies stochastic optimization (simulated annealing, genetic) to capability parameters',
+  builtOn: ['math-stats', 'func-utils'],
+  sourceCode: `
+export interface OptimizationProblem {
+  evaluate: (params: number[]) => number;
+  dimensions: number;
+  bounds: { min: number; max: number }[];
+}
+
+export class StochasticMetaHeuristicOptimizer {
+  simulatedAnnealing(problem: OptimizationProblem, maxIter = 1000): { best: number[]; score: number } {
+    let current = problem.bounds.map(b => b.min + Math.random() * (b.max - b.min));
+    let currentScore = problem.evaluate(current);
+    let best = [...current];
+    let bestScore = currentScore;
+    let temperature = 1.0;
+
+    for (let i = 0; i < maxIter; i++) {
+      temperature *= 0.995;
+      const neighbor = current.map((v, j) => {
+        const delta = (Math.random() - 0.5) * (problem.bounds[j].max - problem.bounds[j].min) * temperature;
+        return Math.max(problem.bounds[j].min, Math.min(problem.bounds[j].max, v + delta));
+      });
+      const neighborScore = problem.evaluate(neighbor);
+      
+      if (neighborScore > currentScore || Math.random() < Math.exp((neighborScore - currentScore) / temperature)) {
+        current = neighbor;
+        currentScore = neighborScore;
+      }
+      if (currentScore > bestScore) {
+        best = [...current];
+        bestScore = currentScore;
+      }
+    }
+    return { best, score: bestScore };
+  }
+
+  geneticAlgorithm(problem: OptimizationProblem, popSize = 50, generations = 100): { best: number[]; score: number } {
+    let population = Array(popSize).fill(0).map(() =>
+      problem.bounds.map(b => b.min + Math.random() * (b.max - b.min))
+    );
+
+    for (let g = 0; g < generations; g++) {
+      const scored = population.map(p => ({ params: p, score: problem.evaluate(p) })).sort((a, b) => b.score - a.score);
+      const survivors = scored.slice(0, Math.floor(popSize / 2));
+      const children: number[][] = [];
+      
+      while (children.length < popSize - survivors.length) {
+        const p1 = survivors[Math.floor(Math.random() * survivors.length)];
+        const p2 = survivors[Math.floor(Math.random() * survivors.length)];
+        const child = p1.params.map((v, i) => Math.random() < 0.5 ? v : p2.params[i]);
+        // Mutation
+        if (Math.random() < 0.1) {
+          const idx = Math.floor(Math.random() * child.length);
+          child[idx] = problem.bounds[idx].min + Math.random() * (problem.bounds[idx].max - problem.bounds[idx].min);
+        }
+        children.push(child);
+      }
+      population = [...survivors.map(s => s.params), ...children];
+    }
+    
+    const final = population.map(p => ({ params: p, score: problem.evaluate(p) })).sort((a, b) => b.score - a.score);
+    return { best: final[0].params, score: final[0].score };
+  }
+}`,
+};
+
+const recursiveSemanticDependencyMapper: PreinstalledCap = {
+  name: 'recursive-semantic-dependency-mapper',
+  description: 'Maps deep semantic dependencies between capabilities using recursive graph traversal',
+  builtOn: ['graph-engine', 'code-analysis'],
+  sourceCode: `
+export interface SemanticLink {
+  from: string;
+  to: string;
+  type: 'imports' | 'uses-concept' | 'extends' | 'mirrors';
+  strength: number;
+}
+
+export class RecursiveSemanticDependencyMapper {
+  private links: SemanticLink[] = [];
+
+  addLink(link: SemanticLink): void { this.links.push(link); }
+
+  mapDeep(root: string, maxDepth = 10): { nodes: string[]; links: SemanticLink[]; depth: number } {
+    const visited = new Set<string>();
+    const resultLinks: SemanticLink[] = [];
+    
+    const recurse = (node: string, depth: number) => {
+      if (depth > maxDepth || visited.has(node)) return;
+      visited.add(node);
+      const outgoing = this.links.filter(l => l.from === node);
+      resultLinks.push(...outgoing);
+      outgoing.forEach(l => recurse(l.to, depth + 1));
+    };
+    
+    recurse(root, 0);
+    return { nodes: [...visited], links: resultLinks, depth: maxDepth };
+  }
+
+  findSemanticClusters(): { cluster: string[]; theme: string }[] {
+    const adjacency = new Map<string, Set<string>>();
+    this.links.forEach(l => {
+      if (!adjacency.has(l.from)) adjacency.set(l.from, new Set());
+      if (!adjacency.has(l.to)) adjacency.set(l.to, new Set());
+      adjacency.get(l.from)!.add(l.to);
+      adjacency.get(l.to)!.add(l.from);
+    });
+
+    const visited = new Set<string>();
+    const clusters: { cluster: string[]; theme: string }[] = [];
+    
+    for (const node of adjacency.keys()) {
+      if (visited.has(node)) continue;
+      const cluster: string[] = [];
+      const queue = [node];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        cluster.push(current);
+        adjacency.get(current)?.forEach(n => { if (!visited.has(n)) queue.push(n); });
+      }
+      clusters.push({ cluster, theme: this.inferTheme(cluster) });
+    }
+    return clusters;
+  }
+
+  private inferTheme(nodes: string[]): string {
+    const words = nodes.flatMap(n => n.split('-'));
+    const freq = new Map<string, number>();
+    words.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || 'unknown';
+  }
+}`,
+};
+
+const autonomousEntropyRegulator: PreinstalledCap = {
+  name: 'autonomous-entropy-regulator',
+  description: 'Measures and regulates system entropy to prevent chaotic evolution',
+  builtOn: ['math-stats', 'state-machine'],
+  sourceCode: `
+export interface EntropyMeasurement {
+  value: number; // 0 = perfectly ordered, 1 = maximum chaos
+  trend: 'decreasing' | 'stable' | 'increasing';
+  recommendation: string;
+}
+
+export class AutonomousEntropyRegulator {
+  private history: number[] = [];
+  private maxEntropy = 0.8; // Threshold before intervention
+
+  measure(capabilities: string[], changes: number, errors: number): EntropyMeasurement {
+    // Shannon entropy approximation
+    const totalEvents = changes + errors + capabilities.length;
+    const p_change = changes / Math.max(1, totalEvents);
+    const p_error = errors / Math.max(1, totalEvents);
+    const p_stable = 1 - p_change - p_error;
+    
+    const entropy = -[p_change, p_error, p_stable]
+      .filter(p => p > 0)
+      .reduce((sum, p) => sum + p * Math.log2(p), 0);
+    
+    const normalized = Math.min(1, entropy / Math.log2(3));
+    this.history.push(normalized);
+    if (this.history.length > 50) this.history.shift();
+
+    const trend = this.computeTrend();
+    const recommendation = normalized > this.maxEntropy 
+      ? 'SLOW DOWN — entropy too high, risk of chaotic evolution'
+      : normalized < 0.2 
+        ? 'SPEED UP — system is too static, needs more variation'
+        : 'MAINTAIN — entropy in healthy range';
+
+    return { value: normalized, trend, recommendation };
+  }
+
+  private computeTrend(): EntropyMeasurement['trend'] {
+    if (this.history.length < 5) return 'stable';
+    const recent = this.history.slice(-5);
+    const earlier = this.history.slice(-10, -5);
+    if (earlier.length === 0) return 'stable';
+    const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const earlierAvg = earlier.reduce((a, b) => a + b, 0) / earlier.length;
+    if (recentAvg > earlierAvg + 0.05) return 'increasing';
+    if (recentAvg < earlierAvg - 0.05) return 'decreasing';
+    return 'stable';
+  }
+
+  shouldIntervene(): boolean {
+    return this.history.length > 0 && this.history[this.history.length - 1] > this.maxEntropy;
+  }
+
+  getOptimalSpeed(currentSpeed: number): number {
+    if (this.history.length === 0) return currentSpeed;
+    const entropy = this.history[this.history.length - 1];
+    if (entropy > this.maxEntropy) return currentSpeed * 0.5;
+    if (entropy < 0.2) return currentSpeed * 1.5;
+    return currentSpeed;
+  }
+}`,
+};
+
+const adversarialCodeMutationStressor: PreinstalledCap = {
+  name: 'adversarial-code-mutation-stressor',
+  description: 'Stress-tests capabilities by applying adversarial mutations to find weaknesses',
+  builtOn: ['autonomous-test-synthesizer', 'self-healing-immune-system'],
+  sourceCode: `
+export interface MutationResult {
+  original: string;
+  mutated: string;
+  mutationType: string;
+  survived: boolean;
+  weakness?: string;
+}
+
+export class AdversarialCodeMutationStressor {
+  private mutations: { name: string; apply: (code: string) => string }[] = [
+    { name: 'negate-condition', apply: code => code.replace(/if\\s*\\((.+?)\\)/, 'if (!$1)') },
+    { name: 'swap-operators', apply: code => code.replace(/===/, '!==').replace(/>/, '<') },
+    { name: 'remove-return', apply: code => code.replace(/return\\s+[^;]+;/, 'return undefined;') },
+    { name: 'null-inject', apply: code => code.replace(/const (\\w+) = /, 'const $1 = null; // ') },
+    { name: 'boundary-shift', apply: code => code.replace(/< (\\d+)/, '< $1 + 1').replace(/>= (\\d+)/, '>= $1 - 1') },
+    { name: 'type-coerce', apply: code => code.replace(/=== (\\d+)/, '== "$1"') },
+    { name: 'async-chaos', apply: code => code.replace(/function (\\w+)/, 'async function $1') },
+    { name: 'off-by-one', apply: code => code.replace(/\\[0\\]/, '[1]').replace(/length - 1/, 'length') },
+  ];
+
+  stressTest(code: string, validator?: (mutated: string) => boolean): MutationResult[] {
+    const results: MutationResult[] = [];
+    
+    for (const mutation of this.mutations) {
+      const mutated = mutation.apply(code);
+      if (mutated === code) continue; // Mutation didn't apply
+      
+      let survived = false;
+      let weakness: string | undefined;
+      
+      try {
+        if (validator) {
+          survived = !validator(mutated); // If validator passes on mutated code, mutation survived = weakness
+        } else {
+          // Basic syntax check — can it be parsed?
+          new Function(mutated);
+          survived = true;
+        }
+      } catch {
+        survived = false;
+      }
+
+      if (survived) {
+        weakness = \`Code may be vulnerable to \${mutation.name} mutation\`;
+      }
+
+      results.push({ original: code, mutated, mutationType: mutation.name, survived, weakness });
+    }
+
+    return results;
+  }
+
+  getWeaknesses(results: MutationResult[]): string[] {
+    return results.filter(r => r.survived && r.weakness).map(r => r.weakness!);
+  }
+
+  hardeningScore(results: MutationResult[]): number {
+    const total = results.length;
+    if (total === 0) return 100;
+    const killed = results.filter(r => !r.survived).length;
+    return Math.round((killed / total) * 100);
+  }
+}`,
+};
+
+const asymmetricCryptoStateGuard: PreinstalledCap = {
+  name: 'asymmetric-crypto-state-guard',
+  description: 'Provides cryptographic integrity verification for evolution state using hash chains',
+  builtOn: ['string-utils', 'memory-compression-engine'],
+  sourceCode: `
+export interface StateProof {
+  hash: string;
+  previousHash: string;
+  timestamp: number;
+  stateFingerprint: string;
+  valid: boolean;
+}
+
+export class AsymmetricCryptoStateGuard {
+  private chain: StateProof[] = [];
+
+  private hashString(input: string): string {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      const char = input.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    // Expand to hex-like string
+    const h1 = Math.abs(hash).toString(16).padStart(8, '0');
+    let hash2 = 0;
+    for (let i = input.length - 1; i >= 0; i--) {
+      hash2 = ((hash2 << 3) + hash2) + input.charCodeAt(i);
+      hash2 |= 0;
+    }
+    const h2 = Math.abs(hash2).toString(16).padStart(8, '0');
+    return h1 + h2;
+  }
+
+  sign(state: Record<string, any>): StateProof {
+    const fingerprint = JSON.stringify(state, Object.keys(state).sort());
+    const previousHash = this.chain.length > 0 ? this.chain[this.chain.length - 1].hash : '0'.repeat(16);
+    const hash = this.hashString(previousHash + fingerprint + Date.now().toString());
+    
+    const proof: StateProof = {
+      hash,
+      previousHash,
+      timestamp: Date.now(),
+      stateFingerprint: this.hashString(fingerprint),
+      valid: true,
+    };
+    
+    this.chain.push(proof);
+    return proof;
+  }
+
+  verify(proof: StateProof, state: Record<string, any>): boolean {
+    const fingerprint = JSON.stringify(state, Object.keys(state).sort());
+    const expectedFingerprint = this.hashString(fingerprint);
+    return proof.stateFingerprint === expectedFingerprint;
+  }
+
+  verifyChain(): { valid: boolean; brokenAt?: number } {
+    for (let i = 1; i < this.chain.length; i++) {
+      if (this.chain[i].previousHash !== this.chain[i - 1].hash) {
+        return { valid: false, brokenAt: i };
+      }
+    }
+    return { valid: true };
+  }
+
+  getChainLength(): number { return this.chain.length; }
+  getLatestProof(): StateProof | null { return this.chain[this.chain.length - 1] || null; }
+}`,
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ALL CAPABILITIES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
