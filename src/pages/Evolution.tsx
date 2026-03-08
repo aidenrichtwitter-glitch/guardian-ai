@@ -8,6 +8,7 @@ import { getEvolutionTitle } from '@/lib/evolution-titles';
 import { ruleEngine, RuleEngineReport } from '@/lib/rule-engine';
 import { StormLightning, emitStormProcess } from '@/components/TerminalStorm';
 import { runAutonomyCycle, getCumulativeAutonomy, recordAutonomyCycle, deterministicSearch, type AutonomyReport } from '@/lib/autonomy-engine';
+import { runLifeProof, getHeartbeatCount, type LifeProofReport } from '@/lib/life-proof';
 
 interface CapabilityNode {
   name: string;
