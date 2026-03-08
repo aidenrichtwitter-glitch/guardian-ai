@@ -116,7 +116,7 @@ function layoutGraph(capabilities: CapabilityNode[], containerSize: number): { n
   return { nodes: result, size: SIZE, levelBands };
 }
 
-const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
+
 
 const Evolution: React.FC = () => {
   const [capabilities, setCapabilities] = useState<{ nodes: CapabilityNode[]; size: number; levelBands: { level: number; label: string; yStart: number; yEnd: number }[] }>({ nodes: [], size: 800, levelBands: [] });
