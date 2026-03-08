@@ -573,35 +573,125 @@ const Evolution: React.FC = () => {
               {/* AI AUTONOMY METER */}
               <div className="space-y-2">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                  <Cpu className="w-3 h-3" /> AI Autonomy
+                  <Cpu className="w-3 h-3" /> Autonomy Score
                 </div>
-                <div className="relative h-4 rounded-full bg-muted/30 overflow-hidden border border-border/50">
-                  <motion.div
-                    className="absolute inset-y-0 left-0 rounded-full"
-                    style={{
-                      background: `linear-gradient(90deg, hsl(var(--terminal-amber)), hsl(var(--primary)))`,
-                    }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${metrics.autonomyScore}%` }}
-                    transition={{ duration: 1.5, ease: 'easeOut' }}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-foreground mix-blend-difference">
-                      {metrics.autonomyScore}% AUTONOMOUS
-                    </span>
+                {(() => {
+                  const cumulative = getCumulativeAutonomy();
+                  const score = autonomyReport ? autonomyReport.score : cumulative.score;
+                  return (
+                    <>
+                      <div className="relative h-5 rounded-full bg-muted/30 overflow-hidden border border-border/50">
+                        <motion.div
+                          className="absolute inset-y-0 left-0 rounded-full"
+                          style={{
+                            background: score > 70
+                              ? `linear-gradient(90deg, hsl(140, 70%, 45%), hsl(175, 70%, 40%))`
+                              : score > 30
+                              ? `linear-gradient(90deg, hsl(40, 90%, 55%), hsl(140, 70%, 45%))`
+                              : `linear-gradient(90deg, hsl(0, 70%, 50%), hsl(40, 90%, 55%))`,
+                          }}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${score}%` }}
+                          transition={{ duration: 1.5, ease: 'easeOut' }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-[9px] font-bold text-foreground mix-blend-difference">
+                            {score}% AUTONOMOUS
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-[8px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Cog className="w-2.5 h-2.5" /> {cumulative.totalDeterministic} deterministic
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Bot className="w-2.5 h-2.5" /> {cumulative.totalAI} AI calls
+                        </span>
+                      </div>
+                      <div className="text-[8px] text-muted-foreground/50">
+                        {cumulative.cyclesRun} autonomy cycles run · {metrics.ruleCount} rules
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Last Autonomy Report */}
+              {autonomyReport && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    <Activity className="w-3 h-3" /> Last Cycle
+                  </div>
+                  <div className="space-y-1">
+                    {autonomyReport.tasksCompleted.map(task => (
+                      <div
+                        key={task.id}
+                        className={`text-[9px] px-2 py-1.5 rounded border ${
+                          task.success
+                            ? task.usedAI
+                              ? 'bg-accent/5 border-accent/20 text-accent'
+                              : 'bg-primary/5 border-primary/20 text-primary'
+                            : 'bg-destructive/5 border-destructive/20 text-destructive'
+                        }`}
+                      >
+                        <span className="font-bold text-[7px] uppercase">
+                          [{task.usedAI ? 'AI' : '⚙️'}]
+                        </span>{' '}
+                        {task.name}: {task.detail.slice(0, 60)}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[8px] text-muted-foreground/50">
+                    Duration: {autonomyReport.duration.toFixed(0)}ms
                   </div>
                 </div>
-                <div className="flex justify-between text-[8px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Bot className="w-2.5 h-2.5" /> {metrics.totalAICalls} AI calls
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Cog className="w-2.5 h-2.5" /> {metrics.totalAISaved} rule-handled
-                  </span>
+              )}
+
+              {/* Web Search */}
+              <div className="space-y-2">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <Search className="w-3 h-3" /> Knowledge Search (No AI)
                 </div>
-                <div className="text-[8px] text-muted-foreground/50">
-                  {metrics.ruleCount} rules · {metrics.totalRulesRun} evaluations
-                </div>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!searchQuery.trim() || isSearching) return;
+                  setIsSearching(true);
+                  try {
+                    const result = await deterministicSearch(searchQuery);
+                    setSearchResults(result.results);
+                  } finally {
+                    setIsSearching(false);
+                  }
+                }} className="flex gap-1">
+                  <input
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Search the web..."
+                    className="flex-1 text-[9px] px-2 py-1 rounded border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSearching}
+                    className="text-[9px] px-2 py-1 rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    {isSearching ? '...' : '🔍'}
+                  </button>
+                </form>
+                {searchResults.length > 0 && (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {searchResults.slice(0, 5).map((r, i) => (
+                      <div key={i} className="text-[9px] px-2 py-1.5 rounded bg-muted/20 border border-border/30">
+                        <div className="font-semibold text-foreground/80 truncate">{r.title}</div>
+                        <div className="text-muted-foreground/60 line-clamp-2">{r.snippet?.slice(0, 100)}</div>
+                        {r.url && (
+                          <a href={r.url} target="_blank" rel="noopener" className="text-primary/60 hover:text-primary text-[7px]">
+                            {r.url.slice(0, 50)}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Rule Engine Report */}
