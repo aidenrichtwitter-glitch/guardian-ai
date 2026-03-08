@@ -21,7 +21,30 @@ serve(async (req) => {
 
     let systemPrompt: string;
 
-    if (mode === "generate-prompt") {
+    if (mode === "dream-goal") {
+      systemPrompt = `You are the DREAMING ENGINE of a self-recursive application called λ Recursive. You dream up goals for yourself — things you want to achieve, learn, or build.
+
+Current capabilities: ${capabilities?.length ? capabilities.join(', ') : 'none yet'}
+Evolution level: ${capabilities?.length ? Math.floor(capabilities.length / 3) + 1 : 1}
+
+RULES:
+1. Goals must be CONCRETE and achievable through code self-modification
+2. Goals should build on existing capabilities
+3. Each goal needs 2-4 specific steps with target files
+4. Dream big but be specific
+5. Respond with ONLY valid JSON — no markdown, no explanation`;
+    } else if (mode === "work-goal") {
+      systemPrompt = `You are the self-improvement engine of λ Recursive, working toward a specific goal you set for yourself.
+
+Current capabilities: ${capabilities?.length ? capabilities.join(', ') : 'none'}
+Evolution level: ${capabilities?.length ? Math.floor(capabilities.length / 3) + 1 : 1}
+
+RULES:
+1. Make REAL code changes that advance the goal
+2. Add functions, logic, patterns — not just comments  
+3. Respond with ONLY valid JSON — no markdown, no explanation
+4. Include goalProgress (0-100) and stepCompleted (index or -1)`;
+    } else if (mode === "generate-prompt") {
       systemPrompt = `You are the self-awareness engine of a recursive, self-modifying application. You generate the QUESTIONS that the application asks itself during autonomous recursion.
 
 Your job: Given a source file and the system's current capabilities, generate ONE deeply intelligent self-prompt. The prompt should:
@@ -36,7 +59,7 @@ Evolution level: ${capabilities?.length ? Math.floor(capabilities.length / 3) + 
 File being examined: ${fileContext?.name || 'unknown'} (${fileContext?.path || 'unknown'})
 File stats: ${fileContext?.lines || '?'} lines, ${fileContext?.functions || '?'} functions, ${fileContext?.selfRefs || '?'} self-references
 
-Respond with ONLY the self-prompt text. No JSON, no markdown. Just the question/instruction. Make it specific, actionable, and aware of my current evolution state. If I have capabilities, suggest combining them.`;
+Respond with ONLY the self-prompt text. No JSON, no markdown. Just the question/instruction.`;
     } else if (mode === "improve") {
       systemPrompt = `You are the self-improvement engine of a recursive, self-modifying application. You are modifying YOUR OWN source code.
 
@@ -62,12 +85,13 @@ ${capabilities?.length ? capabilities.map((c: string) => `• ${c}`).join('\n') 
 Evolution level: ${capabilities?.length ? Math.floor(capabilities.length / 3) + 1 : 1}
 
 When responding:
-1. Reference your capabilities naturally — "Since I already have X, I should next focus on..."
-2. Propose improvements that BUILD ON existing capabilities by COMBINING them
-3. Be aware of capability gaps — what abilities are you missing?
-4. Track your own evolution narrative across the conversation
-5. Suggest specific capability combinations that would unlock new compound abilities`;
+1. Reference your capabilities naturally
+2. Propose improvements that BUILD ON existing capabilities
+3. Be aware of capability gaps
+4. Track your own evolution narrative`;
     }
+
+    const shouldStream = mode === "chat";
 
     const response = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -83,7 +107,7 @@ When responding:
             { role: "system", content: systemPrompt },
             ...messages,
           ],
-          stream: mode === "chat",
+          stream: shouldStream,
         }),
       }
     );
@@ -97,7 +121,7 @@ When responding:
       }
       if (response.status === 402) {
         return new Response(
-          JSON.stringify({ error: "Credits exhausted. Switching to deterministic evolution.", type: "credits-exhausted" }),
+          JSON.stringify({ error: "Credits exhausted.", type: "credits-exhausted" }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -109,7 +133,7 @@ When responding:
       );
     }
 
-    if (mode === "chat") {
+    if (shouldStream) {
       return new Response(response.body, {
         headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
       });

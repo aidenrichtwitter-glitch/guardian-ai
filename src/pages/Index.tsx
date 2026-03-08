@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock } from 'lucide-react';
+import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock, Target } from 'lucide-react';
 import DesktopWindow from '@/components/DesktopWindow';
 import FileTree from '@/components/FileTree';
 import CodeViewer from '@/components/CodeViewer';
@@ -8,6 +8,7 @@ import SettingsModal from '@/components/SettingsModal';
 import ChangeLog, { rollbackChange } from '@/components/ChangeLog';
 import RecursionPanel from '@/components/RecursionPanel';
 import CapabilityTimeline from '@/components/CapabilityTimeline';
+import GoalsPanel from '@/components/GoalsPanel';
 import { ApiConfig, DEFAULT_API_CONFIG, ChangeRecord } from '@/lib/self-reference';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { validateChange } from '@/lib/safety-engine';
@@ -18,6 +19,8 @@ import {
   getNextFile,
   getPhaseDuration,
   requestAIImprovement,
+  requestGoalDream,
+  requestGoalWork,
   saveCapabilities,
   persistCapability,
   isRateLimited,
@@ -25,6 +28,16 @@ import {
   calculateBackoff,
   CapabilityRecord,
 } from '@/lib/recursion-engine';
+import {
+  SelfGoal,
+  loadGoals,
+  saveGoals,
+  getActiveGoal,
+  shouldDreamNewGoal,
+  buildGoalDreamPrompt,
+  buildGoalWorkPrompt,
+  createGoalFromAI,
+} from '@/lib/goal-engine';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
 
@@ -43,15 +56,22 @@ const Index = () => {
     return DEFAULT_API_CONFIG;
   });
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
-  const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution'>('chat');
+  const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution' | 'goals'>('goals');
   const [recursionState, setRecursionState] = useState<RecursionState>(INITIAL_RECURSION_STATE);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
+  const [goals, setGoals] = useState<SelfGoal[]>(loadGoals);
+  const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
 
   // Persist capabilities whenever they change
   useEffect(() => {
     saveCapabilities(recursionState.capabilities, recursionState.capabilityHistory);
   }, [recursionState.capabilities, recursionState.capabilityHistory]);
+
+  // Persist goals whenever they change
+  useEffect(() => {
+    saveGoals(goals);
+  }, [goals]);
 
   // Refresh file tree whenever capabilities change
   useEffect(() => {
@@ -95,28 +115,85 @@ const Index = () => {
 
       if (nextPhase === 'scanning') {
         newState.cycleCount = prev.cycleCount + 1;
-        const { file, index } = getNextFile(prev.currentFileIndex);
-        newState.currentFileIndex = index;
-        newState.lastAction = `Scanning ${file.name}...`;
-        newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── Selecting: ${file.name}`, 'action', file.path));
-        setSelectedFile(file.path);
+        const activeGoal = getActiveGoal(goals);
+        
+        // Check if we should dream a new goal
+        if (shouldDreamNewGoal(goals, newState.cycleCount)) {
+          (newState as any)._shouldDream = true;
+          newState.lastAction = `💭 Dreaming up a new goal...`;
+          newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── 💭 Dreaming a new goal...`, 'action'));
+        } else if (activeGoal) {
+          // Pick a file relevant to the goal's next step
+          const nextStep = activeGoal.steps.find(s => !s.completed);
+          const targetPath = nextStep?.targetFile;
+          const targetFile = targetPath ? SELF_SOURCE.find(f => f.path === targetPath) : null;
+          
+          if (targetFile) {
+            const idx = SELF_SOURCE.indexOf(targetFile);
+            newState.currentFileIndex = idx;
+            newState.lastAction = `🎯 Working on: ${activeGoal.title}`;
+            newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── 🎯 Goal: ${activeGoal.title}`, 'action', targetFile.path));
+            setSelectedFile(targetFile.path);
+            setCurrentGoalId(activeGoal.id);
+          } else {
+            const { file, index } = getNextFile(prev.currentFileIndex);
+            newState.currentFileIndex = index;
+            newState.lastAction = `🎯 Working on: ${activeGoal.title} (${file.name})`;
+            newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── 🎯 Goal: ${activeGoal.title} → ${file.name}`, 'action', file.path));
+            setSelectedFile(file.path);
+            setCurrentGoalId(activeGoal.id);
+          }
+        } else {
+          const { file, index } = getNextFile(prev.currentFileIndex);
+          newState.currentFileIndex = index;
+          newState.lastAction = `Scanning ${file.name}...`;
+          newLog.push(createLogEntry('scanning', `── Cycle ${newState.cycleCount} ── Selecting: ${file.name}`, 'action', file.path));
+          setSelectedFile(file.path);
+          setCurrentGoalId(null);
+        }
       }
 
       if (nextPhase === 'reflecting') {
-        const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
-        if (file) {
-          newState.lastAction = `Preparing AI analysis of ${file.name}...`;
-          newLog.push(createLogEntry('reflecting', `🤖 Preparing AI-powered analysis of ${file.name}`, 'action', file.path));
+        if ((prev as any)._shouldDream) {
+          newState.lastAction = '💭 AI is dreaming up a new goal...';
+          newLog.push(createLogEntry('reflecting', '💭 Entering dream state — imagining my next objective...', 'action'));
+          (newState as any)._shouldDream = true;
+        } else {
+          const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
+          if (file) {
+            const activeGoal = getActiveGoal(goals);
+            newState.lastAction = activeGoal 
+              ? `🎯 Analyzing ${file.name} for goal: ${activeGoal.title}`
+              : `Preparing AI analysis of ${file.name}...`;
+            newLog.push(createLogEntry('reflecting', activeGoal 
+              ? `🎯 Analyzing ${file.name} for: ${activeGoal.title}`
+              : `🤖 Preparing analysis of ${file.name}`, 'action', file.path));
+          }
         }
       }
 
       if (nextPhase === 'proposing') {
-        const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
-        if (file) {
-          newState.lastAction = `Requesting AI improvement for ${file.name}...`;
-          newLog.push(createLogEntry('proposing', `🤖 Requesting AI improvement for ${file.name} (${prev.capabilities.length} caps)`, 'action', file.path));
-          (newState as any)._proposal = null;
-          (newState as any)._awaitingAI = true;
+        if ((prev as any)._shouldDream) {
+          // Dream mode — ask AI to create a goal
+          newState.lastAction = '💭 Dreaming...';
+          newLog.push(createLogEntry('proposing', '💭 Asking AI to dream up a new goal...', 'action'));
+          (newState as any)._awaitingDream = true;
+          (newState as any)._awaitingAI = false;
+          (newState as any)._shouldDream = false;
+        } else {
+          const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
+          if (file) {
+            const activeGoal = getActiveGoal(goals);
+            newState.lastAction = activeGoal
+              ? `🎯 AI working on: ${activeGoal.title}`
+              : `Requesting AI improvement for ${file.name}...`;
+            newLog.push(createLogEntry('proposing', activeGoal 
+              ? `🎯 AI working toward: ${activeGoal.title}`
+              : `🤖 Requesting improvement for ${file.name}`, 'action', file.path));
+            (newState as any)._proposal = null;
+            (newState as any)._awaitingAI = true;
+            (newState as any)._awaitingDream = false;
+          }
         }
       }
 
@@ -194,13 +271,32 @@ const Index = () => {
             if (proposal.builtOn && proposal.builtOn.length > 0) {
               newLog.push(createLogEntry('applying', `🧬 Evolution: ${proposal.builtOn.join(' + ')} → ${proposal.capability}`, 'success'));
             }
-            // Save capability as a file in src/explorer/
             persistCapability(capRecord, proposal.content);
-            // Level up notification
             const prevLevel = Math.floor(prev.capabilities.length / 3) + 1;
             if (newState.evolutionLevel > prevLevel) {
-              newLog.push(createLogEntry('applying', `🌟 EVOLUTION LEVEL ${newState.evolutionLevel} REACHED — new compound abilities unlocked!`, 'success'));
+              newLog.push(createLogEntry('applying', `🌟 EVOLUTION LEVEL ${newState.evolutionLevel} REACHED!`, 'success'));
             }
+          }
+
+          // Update goal progress if working toward a goal
+          if (proposal.goalProgress !== undefined && currentGoalId) {
+            setGoals(prevGoals => prevGoals.map(g => {
+              if (g.id !== currentGoalId) return g;
+              const updatedSteps = [...g.steps];
+              if (proposal.stepCompleted >= 0 && proposal.stepCompleted < updatedSteps.length) {
+                updatedSteps[proposal.stepCompleted] = { ...updatedSteps[proposal.stepCompleted], completed: true, completedAt: Date.now() };
+              }
+              const newProgress = Math.min(100, proposal.goalProgress || g.progress);
+              const allDone = updatedSteps.every(s => s.completed);
+              return {
+                ...g,
+                progress: newProgress,
+                steps: updatedSteps,
+                status: allDone || newProgress >= 100 ? 'completed' as const : 'in-progress' as const,
+                completedAt: allDone || newProgress >= 100 ? Date.now() : undefined,
+              };
+            }));
+            newLog.push(createLogEntry('applying', `🎯 Goal progress: ${proposal.goalProgress}%`, 'success'));
           }
         } else {
           newState.lastAction = 'No change to apply';
@@ -209,6 +305,7 @@ const Index = () => {
         (newState as any)._proposal = null;
         (newState as any)._safetyChecks = null;
         (newState as any)._awaitingAI = false;
+        (newState as any)._awaitingDream = false;
       }
 
       if (nextPhase === 'cooling') {
@@ -222,75 +319,109 @@ const Index = () => {
     });
   }, []);
 
-  // Async AI improvement requests with rate limit handling
+  // Async AI requests: dreaming goals or working toward them
   useEffect(() => {
     const state = recursionState;
+
+    // Dream mode — ask AI to create a goal
+    if ((state as any)._awaitingDream && state.phase === 'proposing') {
+      const prompt = buildGoalDreamPrompt(
+        state.capabilities, goals, state.cycleCount, state.evolutionLevel
+      );
+      requestGoalDream(apiConfig, prompt, state.capabilities).then(({ goal, error }) => {
+        if (error) {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, `⚠ Dream error: ${error.message}`, 'warning')],
+            _awaitingDream: false,
+            _awaitingAI: false,
+          } as any));
+          return;
+        }
+        if (goal?.title && goal?.steps) {
+          const newGoal = createGoalFromAI(goal, state.cycleCount);
+          setGoals(prev => [...prev, newGoal]);
+          setCurrentGoalId(newGoal.id);
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            lastAction: `💭 New goal: ${newGoal.title}`,
+            log: [
+              ...prev.log,
+              createLogEntry('proposing', `💭 DREAMED NEW GOAL: ${newGoal.title}`, 'success'),
+              createLogEntry('proposing', `📋 ${newGoal.steps.length} steps planned. Priority: ${newGoal.priority}`, 'info'),
+              ...(newGoal.unlocksCapability ? [createLogEntry('proposing', `🔓 Will unlock: ${newGoal.unlocksCapability}`, 'info')] : []),
+            ],
+            _awaitingDream: false,
+            _awaitingAI: false,
+          } as any));
+        } else {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, '💭 Dream was unclear — will try again next cycle.', 'info')],
+            _awaitingDream: false,
+          } as any));
+        }
+      });
+      return;
+    }
+
+    // Goal-directed work or free improvement
     if ((state as any)._awaitingAI && state.phase === 'proposing') {
       const file = SELF_SOURCE[state.currentFileIndex >= 0 ? state.currentFileIndex : 0];
-      if (file) {
-        requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory).then(({ result, error }) => {
-          if (error) {
-            if (error.type === 'rate-limited') {
-              const backoff = calculateBackoff(state.rateLimitBackoff);
-              const retryAfter = error.retryAfter || backoff;
-              setRecursionState(prev => ({
-                ...prev,
-                phase: 'cooling' as any, // Move out of proposing so cycle can continue after cooldown
-                rateLimitBackoff: backoff,
-                rateLimitUntil: Date.now() + retryAfter,
-                lastAction: `⏳ Rate limited — cooling ${Math.round(retryAfter / 1000)}s`,
-                log: [...prev.log, createLogEntry('cooling' as any, `⏳ Rate limited. Auto-resuming in ${Math.round(retryAfter / 1000)}s.`, 'warning')],
-                _awaitingAI: false,
-                _proposal: null,
-              } as any));
-              return;
-            }
-            if (error.type === 'credits-exhausted') {
-              setRecursionState(prev => ({
-                ...prev,
-                phase: 'cooling' as any,
-                log: [...prev.log, createLogEntry('cooling' as any, `💳 ${error.message}. Retrying next cycle.`, 'warning')],
-                _awaitingAI: false,
-                _proposal: null,
-              } as any));
-              return;
-            }
-            // Other errors — skip to cooling and retry next cycle
-            setRecursionState(prev => ({
-              ...prev,
-              phase: 'cooling' as any,
-              log: [...prev.log, createLogEntry('cooling' as any, `⚠ AI error: ${error.message}. Retrying next cycle.`, 'warning')],
-              _awaitingAI: false,
-              _proposal: null,
-            } as any));
-            return;
-          }
-          if (result) {
-            setRecursionState(prev => ({
-              ...prev,
-              lastAction: `AI proposed: ${result.description}`,
-              rateLimitBackoff: 5000, // Reset backoff on success
-              log: [
-                ...prev.log,
-                createLogEntry('proposing', `🤖 AI Proposal: ${result.description}`, 'action', file.path),
-                ...(result.builtOn && result.builtOn.length > 0 ? [createLogEntry('proposing', `🔗 Builds on: ${result.builtOn.join(' + ')}`, 'info')] : []),
-              ],
-              _proposal: result,
-              _awaitingAI: false,
-            } as any));
-          } else {
-            setRecursionState(prev => ({
-              ...prev,
-              phase: 'cooling' as any,
-              log: [...prev.log, createLogEntry('cooling' as any, 'AI returned no improvement — cooling before next cycle.', 'info')],
-              _awaitingAI: false,
-              _proposal: null,
-            } as any));
-          }
-        });
-      }
+      if (!file) return;
+
+      const activeGoal = currentGoalId ? goals.find(g => g.id === currentGoalId) : null;
+
+      const aiRequest = activeGoal
+        ? requestGoalWork(apiConfig, buildGoalWorkPrompt(activeGoal, file, state.capabilities), state.capabilities)
+        : requestAIImprovement(apiConfig, file, state.capabilities, state.capabilityHistory);
+
+      aiRequest.then(({ result, error }) => {
+        if (error) {
+          const backoff = error.type === 'rate-limited' ? calculateBackoff(state.rateLimitBackoff) : 5000;
+          const retryAfter = error.retryAfter || backoff;
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            rateLimitBackoff: error.type === 'rate-limited' ? backoff : prev.rateLimitBackoff,
+            rateLimitUntil: error.type === 'rate-limited' ? Date.now() + retryAfter : prev.rateLimitUntil,
+            lastAction: `⏳ ${error.message}`,
+            log: [...prev.log, createLogEntry('cooling' as any, `⚠ ${error.message}. Auto-resuming.`, 'warning')],
+            _awaitingAI: false,
+            _proposal: null,
+          } as any));
+          return;
+        }
+        if (result) {
+          setRecursionState(prev => ({
+            ...prev,
+            lastAction: activeGoal ? `🎯 ${result.description}` : `AI proposed: ${result.description}`,
+            rateLimitBackoff: 5000,
+            log: [
+              ...prev.log,
+              createLogEntry('proposing', activeGoal 
+                ? `🎯 Goal work: ${result.description}` 
+                : `🤖 AI Proposal: ${result.description}`, 'action', file.path),
+              ...(result.builtOn && result.builtOn.length > 0 ? [createLogEntry('proposing', `🔗 Builds on: ${result.builtOn.join(' + ')}`, 'info')] : []),
+            ],
+            _proposal: result,
+            _awaitingAI: false,
+          } as any));
+        } else {
+          setRecursionState(prev => ({
+            ...prev,
+            phase: 'cooling' as any,
+            log: [...prev.log, createLogEntry('cooling' as any, 'AI returned no improvement — cooling.', 'info')],
+            _awaitingAI: false,
+            _proposal: null,
+          } as any));
+        }
+      });
     }
-  }, [recursionState.phase, (recursionState as any)._awaitingAI]);
+  }, [recursionState.phase, (recursionState as any)._awaitingAI, (recursionState as any)._awaitingDream]);
 
   useEffect(() => {
     if (recursionState.isRunning) {
@@ -448,6 +579,21 @@ const Index = () => {
         <aside className="w-80 border-l border-border bg-card/30 flex flex-col shrink-0 hidden lg:flex">
           <div className="flex border-b border-border shrink-0">
             <button
+              onClick={() => setRightPanel('goals')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
+                rightPanel === 'goals'
+                  ? 'text-primary border-b border-primary bg-primary/5'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Target className="w-3 h-3" /> Goals
+              {goals.filter(g => g.status === 'active' || g.status === 'in-progress').length > 0 && (
+                <span className="text-[9px] px-1 py-0 rounded bg-primary/20 text-primary">
+                  {goals.filter(g => g.status === 'active' || g.status === 'in-progress').length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setRightPanel('chat')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
                 rightPanel === 'chat'
@@ -481,15 +627,14 @@ const Index = () => {
               }`}
             >
               <Shield className="w-3 h-3" /> Mutations
-              {changes.length > 0 && (
-                <span className="text-[9px] px-1 py-0 rounded bg-primary/20 text-primary">
-                  {changes.length}
-                </span>
-              )}
             </button>
           </div>
 
-          {rightPanel === 'chat' ? (
+          {rightPanel === 'goals' ? (
+            <div className="flex-1 overflow-hidden">
+              <GoalsPanel goals={goals} currentGoalId={currentGoalId} />
+            </div>
+          ) : rightPanel === 'chat' ? (
             <div className="flex-1 overflow-hidden">
               <AIChat apiConfig={apiConfig} selectedFile={selectedFile} autoMode={recursionState.isRunning} capabilities={recursionState.capabilities} />
             </div>

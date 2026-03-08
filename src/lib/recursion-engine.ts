@@ -470,6 +470,91 @@ export async function requestAIImprovement(
   return { result: null };
 }
 
+// Request AI to dream up a goal
+export async function requestGoalDream(
+  config: ApiConfig,
+  prompt: string,
+  capabilities: string[],
+): Promise<{ goal: any | null; error?: AIImprovementError }> {
+  try {
+    if (config.provider !== 'lovable') return { goal: null };
+
+    let url = '', key = '';
+    try { url = import.meta.env.VITE_SUPABASE_URL; key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY; } catch {}
+    if (!url) return { goal: null };
+
+    const res = await fetch(`${url}/functions/v1/self-recurse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ mode: 'dream-goal', capabilities, messages: [{ role: 'user', content: prompt }] }),
+    });
+
+    if (res.status === 429) return { goal: null, error: { type: 'rate-limited', message: 'Rate limited while dreaming', retryAfter: 30000 } };
+    if (res.status === 402) return { goal: null, error: { type: 'credits-exhausted', message: 'Credits exhausted' } };
+    if (!res.ok) return { goal: null, error: { type: 'network', message: `API error: ${res.status}` } };
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) return { goal: null };
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { goal: null, error: { type: 'parse', message: 'No JSON in dream response' } };
+    return { goal: JSON.parse(jsonMatch[0]) };
+  } catch (e) {
+    return { goal: null, error: { type: 'unknown', message: e instanceof Error ? e.message : 'Dream error' } };
+  }
+}
+
+// Request AI to work toward a goal
+export async function requestGoalWork(
+  config: ApiConfig,
+  prompt: string,
+  capabilities: string[],
+): Promise<{ result: (ImprovementResult & { goalProgress?: number; stepCompleted?: number }) | null; error?: AIImprovementError }> {
+  try {
+    if (config.provider !== 'lovable') return { result: null };
+
+    let url = '', key = '';
+    try { url = import.meta.env.VITE_SUPABASE_URL; key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY; } catch {}
+    if (!url) return { result: null };
+
+    const res = await fetch(`${url}/functions/v1/self-recurse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ mode: 'work-goal', capabilities, messages: [{ role: 'user', content: prompt }] }),
+    });
+
+    if (res.status === 429) return { result: null, error: { type: 'rate-limited', message: 'Rate limited while working on goal', retryAfter: 30000 } };
+    if (res.status === 402) return { result: null, error: { type: 'credits-exhausted', message: 'Credits exhausted' } };
+    if (!res.ok) return { result: null, error: { type: 'network', message: `API error: ${res.status}` } };
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) return { result: null };
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { result: null, error: { type: 'parse', message: 'No JSON in goal-work response' } };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.content && parsed.description) {
+      const capName = parsed.capability || 'goal-improvement';
+      return {
+        result: {
+          content: parsed.content,
+          description: `[GOAL] ${parsed.description}`,
+          capability: capName,
+          builtOn: parsed.builtOn || [],
+          goalProgress: parsed.goalProgress,
+          stepCompleted: parsed.stepCompleted,
+        },
+      };
+    }
+    return { result: null };
+  } catch (e) {
+    return { result: null, error: { type: 'unknown', message: e instanceof Error ? e.message : 'Goal work error' } };
+  }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CAPABILITY PERSISTENCE — saves to both localStorage AND src/explorer/
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
