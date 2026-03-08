@@ -230,25 +230,35 @@ const Evolution: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Periodic storm emissions to show the system is alive
+  // Periodic storm: pick actual capabilities to show testing/verification
   useEffect(() => {
+    if (!showStorm) return;
+    const acquiredNodes = capabilities.nodes.filter(n => n.status === 'acquired');
+    if (acquiredNodes.length < 2) return;
+
     const interval = setInterval(() => {
-      const types: StormProcess['type'][] = ['rule', 'test', 'capability', 'mutation'];
-      const labels = [
-        'Safety scan pass', 'Memory consolidation', 'Rule evaluation',
-        'Capability verify', 'Branch fitness check', 'Mutation eval',
-        'Test suite check', 'Pattern compile', 'Autonomy calc',
+      const from = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
+      const to = acquiredNodes[Math.floor(Math.random() * acquiredNodes.length)];
+      if (from.name === to.name) return;
+
+      const actions = [
+        { label: `Verify ${from.name}`, type: 'test' as const },
+        { label: `${from.name} → ${to.name}`, type: 'capability' as const },
+        { label: `Rule check: ${from.name}`, type: 'rule' as const },
+        { label: `Mutate ${to.name}`, type: 'mutation' as const },
       ];
+      const action = actions[Math.floor(Math.random() * actions.length)];
+
       emitStormProcess({
-        label: labels[Math.floor(Math.random() * labels.length)],
-        source: 'heartbeat',
-        target: 'system',
-        type: types[Math.floor(Math.random() * types.length)],
+        label: action.label,
+        source: from.name,
+        target: to.name,
+        type: action.type,
         status: Math.random() > 0.1 ? 'success' : 'fail',
       });
-    }, 2000 + Math.random() * 3000);
+    }, 1500 + Math.random() * 2500);
     return () => clearInterval(interval);
-  }, []);
+  }, [showStorm, capabilities.nodes]);
 
   const layoutNodes = useMemo(() => capabilities.nodes, [capabilities]);
   const canvasSize = capabilities.size;
