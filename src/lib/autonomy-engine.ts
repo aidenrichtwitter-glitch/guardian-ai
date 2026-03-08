@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════
-// AUTONOMY ENGINE — The brain that DOESN'T need AI.
-// Every function here is pure deterministic logic.
-// This is the path to 100% autonomy.
+// AUTONOMY ENGINE — Goal-driven autonomous operation.
+// Each cycle: pick a goal → execute next step → judge progress.
+// Maintenance tasks run alongside, but GOALS drive evolution.
 // ═══════════════════════════════════════════════════
 
 import { ruleEngine, RuleContext, RuleEngineReport } from './rule-engine';
@@ -12,6 +12,7 @@ import { documentProject } from './self-documentation';
 import { verifyCapability } from './verification-engine';
 import { validateChange } from './safety-engine';
 import { SELF_SOURCE } from './self-source';
+import { decomposeTask } from './task-decomposition';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface AutonomyReport {
@@ -24,12 +25,15 @@ export interface AutonomyReport {
   deterministicDecisions: number;
   systemHealth: number;
   nextActions: string[];
+  // NEW: Goal-driven results
+  goalAttempted: { id: string; title: string; stepAttempted: string; success: boolean; detail: string } | null;
+  progressMade: boolean;
 }
 
 export interface AutonomyTask {
   id: string;
   name: string;
-  type: 'verify' | 'repair' | 'analyze' | 'optimize' | 'search' | 'document' | 'forecast' | 'rule-eval' | 'health-check' | 'goal-progress';
+  type: 'verify' | 'repair' | 'analyze' | 'optimize' | 'search' | 'document' | 'forecast' | 'rule-eval' | 'health-check' | 'goal-progress' | 'goal-execute';
   success: boolean;
   detail: string;
   duration: number;
