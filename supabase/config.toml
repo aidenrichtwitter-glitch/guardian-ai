@@ -2,3 +2,6 @@ project_id = "zaklschpxjrfurrvbkyx"
 
 [functions.self-recurse]
 verify_jwt = false
+
+[functions.manage-artifact]
+verify_jwt = false
