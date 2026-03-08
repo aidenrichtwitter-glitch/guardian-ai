@@ -751,6 +751,39 @@ const Index = () => {
     }
   }, [(recursionState as any)._shouldSageMode, recursionState.phase]);
 
+  // SELF-TEST RUNNER — run after every cycle during cooling
+  useEffect(() => {
+    if ((recursionState as any)._shouldSelfTest && recursionState.phase === 'cooling') {
+      setRecursionState(prev => ({ ...prev, _shouldSelfTest: false } as any));
+
+      runSelfTests(recursionState.cycleCount, recursionState.evolutionLevel).then(report => {
+        const emoji = report.verdict === 'HEALTHY' ? '✅' : report.verdict === 'DEGRADED' ? '⚠️' : '🚨';
+        emitTerminalEvent('self-test', 'state', `${emoji} Self-test: ${report.passed}/${report.total} passed (${report.verdict})`);
+
+        setRecursionState(prev => ({
+          ...prev,
+          log: [
+            ...prev.log,
+            createLogEntry('cooling', `🧪 Self-test: ${report.passed}/${report.total} passed — ${report.verdict}`, 
+              report.verdict === 'HEALTHY' ? 'success' : report.verdict === 'DEGRADED' ? 'warning' : 'error'),
+            ...(report.failed > 0 
+              ? report.results.filter(r => !r.passed).map(r => 
+                  createLogEntry('cooling', `  ✗ ${r.suite}/${r.name}: ${r.error}`, 'error'))
+              : []),
+          ],
+        }));
+
+        if (report.verdict === 'CRITICAL') {
+          toast({
+            title: '🚨 CRITICAL: Self-tests failing',
+            description: `${report.failed}/${report.total} tests failed. Evolution may be degrading the system.`,
+            variant: 'destructive',
+          });
+        }
+      });
+    }
+  }, [(recursionState as any)._shouldSelfTest, recursionState.phase]);
+
   // On boot: load latest request from DB into virtual file + trigger sage mode if none exists
   useEffect(() => {
     if (!cloudBooted) return;
