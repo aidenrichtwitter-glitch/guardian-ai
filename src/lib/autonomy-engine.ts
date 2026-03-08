@@ -212,15 +212,19 @@ async function runPatternAnalysis(): Promise<AutonomyTask> {
 
   if (!caps || caps.length < 3) return { id: 'pattern', name: 'Pattern analysis', type: 'analyze', success: true, detail: 'Not enough data yet', duration: performance.now() - start, usedAI: false };
 
-  const history = caps.map(c => ({ cycle: c.cycle_number, level: c.evolution_level, count: 1 }));
-  const patterns = detectPatterns(history);
+  const history = caps.map(c => ({ cycle: c.cycle_number, level: c.evolution_level, name: c.name }));
+  const totalCycles = Math.max(...history.map(h => h.cycle), 1);
+  const patterns = detectPatterns(history, totalCycles);
+
+  const bursts = patterns.filter(p => p.type === 'growth-burst').length;
+  const stagnation = patterns.filter(p => p.type === 'stagnation').length;
 
   return {
     id: 'pattern-analysis',
     name: 'Growth pattern analysis',
     type: 'analyze',
     success: true,
-    detail: `Growth rate: ${patterns.growthRate.toFixed(2)}. Trend: ${patterns.trend}. Bursts: ${patterns.burstPeriods.length}.`,
+    detail: `${patterns.length} patterns found. Bursts: ${bursts}. Stagnation: ${stagnation}.`,
     duration: performance.now() - start,
     usedAI: false,
   };
