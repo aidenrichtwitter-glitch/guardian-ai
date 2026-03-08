@@ -23,6 +23,7 @@ import {
   requestAIImprovement,
   requestGoalDream,
   requestGoalWork,
+  requestGenerateRequests,
   saveCapabilities,
   persistCapability,
   isRateLimited,
