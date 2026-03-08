@@ -56,15 +56,22 @@ const Index = () => {
     return DEFAULT_API_CONFIG;
   });
   const [changes, setChanges] = useState<ChangeRecord[]>([]);
-  const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution'>('chat');
+  const [rightPanel, setRightPanel] = useState<'chat' | 'history' | 'evolution' | 'goals'>('goals');
   const [recursionState, setRecursionState] = useState<RecursionState>(INITIAL_RECURSION_STATE);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
+  const [goals, setGoals] = useState<SelfGoal[]>(loadGoals);
+  const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
 
   // Persist capabilities whenever they change
   useEffect(() => {
     saveCapabilities(recursionState.capabilities, recursionState.capabilityHistory);
   }, [recursionState.capabilities, recursionState.capabilityHistory]);
+
+  // Persist goals whenever they change
+  useEffect(() => {
+    saveGoals(goals);
+  }, [goals]);
 
   // Refresh file tree whenever capabilities change
   useEffect(() => {
