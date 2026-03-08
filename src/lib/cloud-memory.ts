@@ -204,6 +204,75 @@ export async function loadJournal(limit = 50): Promise<JournalEntry[]> {
 
 // ── Boot: Load everything from cloud, fall back to localStorage ──
 
+// ── Chat Messages ──
+
+export interface PersistedChatMessage {
+  id?: string;
+  role: string;
+  content: string;
+  created_at?: string;
+}
+
+export async function loadChatMessages(limit = 100): Promise<PersistedChatMessage[]> {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    if (error || !data) return [];
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+export async function saveChatMessage(role: string, content: string): Promise<void> {
+  try {
+    await supabase
+      .from('chat_messages')
+      .insert([{ role, content }]);
+  } catch {}
+}
+
+export async function clearOldChatMessages(keepLast = 200): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('id, created_at')
+      .order('created_at', { ascending: false })
+      .range(keepLast, keepLast + 500);
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      await supabase.from('chat_messages').delete().in('id', ids);
+    }
+  } catch {}
+}
+
+// ── Requests File (system → human relay) ──
+
+export async function saveRequestToExplorer(content: string): Promise<void> {
+  try {
+    // Save as a virtual file the user can relay
+    const key = 'recursive-requests';
+    const existing = localStorage.getItem(key);
+    const requests = existing ? JSON.parse(existing) : [];
+    requests.push({ content, timestamp: Date.now() });
+    // Keep last 20
+    if (requests.length > 20) requests.splice(0, requests.length - 20);
+    localStorage.setItem(key, JSON.stringify(requests));
+  } catch {}
+}
+
+export function loadRequests(): { content: string; timestamp: number }[] {
+  try {
+    const raw = localStorage.getItem('recursive-requests');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function bootFromCloud(): Promise<{
   evolutionState: PersistedEvolutionState | null;
   goals: SelfGoal[];
