@@ -54,6 +54,18 @@ const Index = () => {
     saveCapabilities(recursionState.capabilities, recursionState.capabilityHistory);
   }, [recursionState.capabilities, recursionState.capabilityHistory]);
 
+  // Refresh file tree when capabilities are added to explorer
+  useEffect(() => {
+    if ((recursionState as any)._needsTreeRefresh) {
+      setFileTreeVersion(v => v + 1);
+      setRecursionState(prev => {
+        const s = { ...prev };
+        delete (s as any)._needsTreeRefresh;
+        return s;
+      });
+    }
+  }, [(recursionState as any)._needsTreeRefresh]);
+
   // --- Autonomous recursion loop ---
   const advancePhase = useCallback(() => {
     setRecursionState(prev => {
