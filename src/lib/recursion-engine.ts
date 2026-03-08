@@ -498,8 +498,21 @@ export function loadCapabilities(): { capabilities: string[]; history: Capabilit
   try {
     // First load explorer files into SELF_SOURCE
     loadExplorerFiles();
-    const caps = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    const caps: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const history: CapabilityRecord[] = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    
+    // Regenerate explorer files from history if they're missing from SELF_SOURCE
+    // This handles the case where capabilities were acquired before explorer persistence was added
+    const existingExplorerFiles = SELF_SOURCE.filter(f => f.path.startsWith('src/explorer/') && f.name !== 'manifest.ts');
+    if (caps.length > 0 && existingExplorerFiles.length === 0) {
+      for (const capRecord of history) {
+        saveCapabilityToExplorer(capRecord);
+      }
+      if (history.length > 0) {
+        saveExplorerManifest(caps, history);
+      }
+    }
+    
     return { capabilities: caps, history };
   } catch {
     return { capabilities: [], history: [] };
