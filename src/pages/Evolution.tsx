@@ -279,7 +279,13 @@ const Evolution: React.FC = () => {
   const title = stats ? getEvolutionTitle(stats.currentLevel) : 'Loading...';
   const metrics = ruleEngine.getMetrics();
 
-  type StormProcess = { type: 'rule' | 'ai' | 'test' | 'capability' | 'mutation' };
+  // Storm node positions for lightning
+  const stormNodes = useMemo(() => layoutNodes.filter(n => n.status === 'acquired').map(n => ({
+    name: n.name,
+    x: n.x,
+    y: n.y,
+    verified: !!n.verified,
+  })), [layoutNodes]);
 
   const nodeColor = (node: CapabilityNode, selected: boolean) => {
     if (node.status === 'planned') return { fill: 'hsl(220 15% 12%)', stroke: 'hsl(220 10% 25%)', dot: 'hsl(220 10% 30%)', text: 'hsl(220 10% 35%)' };
