@@ -340,12 +340,6 @@ const Evolution: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Main area: graph + storm overlay */}
         <main ref={mainRef} className="flex-1 relative overflow-hidden flex items-center justify-center">
-          {/* Storm visualization overlay */}
-          {showStorm && (
-            <div className="absolute inset-0 z-10 pointer-events-none">
-              <TerminalStorm className="w-full h-full" />
-            </div>
-          )}
 
           <svg 
             width={canvasSize} 
