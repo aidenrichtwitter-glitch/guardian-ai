@@ -144,8 +144,11 @@ const Evolution: React.FC = () => {
       const acquiredNames = new Set(acquiredNodes.map(n => n.name));
 
       // Build in-progress / planned nodes from goals
+      // Only show goals that are NOT completed and whose capability isn't already acquired
       const goalNodes: CapabilityNode[] = (goalsRes.data || [])
-        .filter(g => g.unlocks_capability && !acquiredNames.has(g.unlocks_capability))
+        .filter(g => g.unlocks_capability 
+          && !acquiredNames.has(g.unlocks_capability) 
+          && g.status !== 'completed')  // Don't show completed goals as planned
         .map(g => {
           const isInProgress = g.status === 'in-progress';
           const maxLevel = acquiredNodes.length > 0 ? Math.max(...acquiredNodes.map(n => n.level)) : 1;
