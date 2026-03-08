@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.manage-artifact]
 verify_jwt = false
+
+[functions.lambda-proxy]
+verify_jwt = false
+
+[functions.ghost-evolve]
+verify_jwt = false
