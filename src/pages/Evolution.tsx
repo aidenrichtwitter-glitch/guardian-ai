@@ -86,8 +86,6 @@ function layoutGraph(capabilities: CapabilityNode[], containerSize: number): { n
   const result: CapabilityNode[] = [];
   const levelBands: { level: number; label: string; yStart: number; yEnd: number }[] = [];
 
-  const reversedIndex = numLevels - 1 - li;
-
   sortedLevels.forEach((lvl, li) => {
     const nodes = levels.get(lvl)!;
     const ri = numLevels - 1 - li;
