@@ -225,7 +225,7 @@ const Evolution: React.FC = () => {
   }, [layoutNodes]);
 
   const selectedCap = selectedNode ? layoutNodes.find(n => n.name === selectedNode) : null;
-  const title = stats ? (EVOLUTION_TITLES[stats.currentLevel] || `Level ${stats.currentLevel}`) : 'Loading...';
+  const title = stats ? getEvolutionTitle(stats.currentLevel) : 'Loading...';
 
   const nodeColor = (node: CapabilityNode, selected: boolean) => {
     if (node.status === 'planned') return { fill: 'hsl(220 15% 12%)', stroke: 'hsl(220 10% 25%)', dot: 'hsl(220 10% 30%)', text: 'hsl(220 10% 35%)' };
