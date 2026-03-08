@@ -275,6 +275,39 @@ export type Database = {
         }
         Relationships: []
       }
+      lambda_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          description: string
+          id: string
+          payload: Json
+          result: Json | null
+          status: string
+          task_type: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          description: string
+          id?: string
+          payload?: Json
+          result?: Json | null
+          status?: string
+          task_type?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          payload?: Json
+          result?: Json | null
+          status?: string
+          task_type?: string
+        }
+        Relationships: []
+      }
       system_requests: {
         Row: {
           capabilities_count: number
