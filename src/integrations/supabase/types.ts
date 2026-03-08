@@ -179,6 +179,39 @@ export type Database = {
         }
         Relationships: []
       }
+      lambda_evolution_state: {
+        Row: {
+          capabilities: Json
+          created_at: string
+          cycle_number: number
+          evolution_level: number
+          id: string
+          label: string | null
+          merkle_root: string | null
+          state_blob: Json
+        }
+        Insert: {
+          capabilities?: Json
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          label?: string | null
+          merkle_root?: string | null
+          state_blob?: Json
+        }
+        Update: {
+          capabilities?: Json
+          created_at?: string
+          cycle_number?: number
+          evolution_level?: number
+          id?: string
+          label?: string | null
+          merkle_root?: string | null
+          state_blob?: Json
+        }
+        Relationships: []
+      }
       system_requests: {
         Row: {
           capabilities_count: number
