@@ -372,6 +372,16 @@ const Evolution: React.FC = () => {
             {isRunningCycle ? 'Running...' : 'Run Autonomy Cycle'}
           </button>
           <button
+            onClick={() => setLifeProofLoop(v => !v)}
+            className={`text-[9px] px-3 py-1 rounded border transition-colors flex items-center gap-1 ${
+              lifeProofLoop
+                ? 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse'
+                : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'
+            }`}
+          >
+            {lifeProofLoop ? '⏹' : '💓'} {lifeProofLoop ? `Stop (HB #${lifeReport?.heartbeatNumber || 0})` : 'Life Proof Loop'}
+          </button>
+          <button
             onClick={() => setShowStorm(s => !s)}
             className={`text-[9px] px-2 py-1 rounded border transition-colors ${
               showStorm ? 'bg-primary/10 text-primary border-primary/30' : 'bg-muted/30 text-muted-foreground border-border'
