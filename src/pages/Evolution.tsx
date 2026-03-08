@@ -416,6 +416,16 @@ const Evolution: React.FC = () => {
             {lifeProofLoop ? '⏹' : '💓'} {lifeProofLoop ? `Stop (HB #${lifeReport?.heartbeatNumber || 0})` : 'Life Proof Loop'}
           </button>
           <button
+            onClick={() => setMaturityLoop(v => !v)}
+            className={`text-[9px] px-3 py-1 rounded border transition-colors flex items-center gap-1 ${
+              maturityLoop
+                ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 animate-pulse'
+                : 'bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20'
+            }`}
+          >
+            {maturityLoop ? '⏹' : <BarChart3 className="w-3 h-3" />} {maturityLoop ? `Stop Maturity (${maturityReport?.grade || '?'})` : 'Maturity Test'}
+          </button>
+          <button
             onClick={() => setShowStorm(s => !s)}
             className={`text-[9px] px-2 py-1 rounded border transition-colors ${
               showStorm ? 'bg-primary/10 text-primary border-primary/30' : 'bg-muted/30 text-muted-foreground border-border'
