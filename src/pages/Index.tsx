@@ -176,6 +176,11 @@ const Index = () => {
   }, [recursionState.capabilities.length]);
 
   // --- Autonomous recursion loop ---
+  const goalsRef = useRef(goals);
+  goalsRef.current = goals;
+  const currentGoalIdRef = useRef(currentGoalId);
+  currentGoalIdRef.current = currentGoalId;
+
   const advancePhase = useCallback(() => {
     setRecursionState(prev => {
       if (!prev.isRunning) return prev;

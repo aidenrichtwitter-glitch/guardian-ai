@@ -32,33 +32,72 @@ const EVOLUTION_TITLES: Record<number, string> = {
   9: 'Metamorphic', 10: 'Singularity',
 };
 
-const CANVAS_W = 1200;
+const CANVAS_W = 2400;
 const CANVAS_H_MIN = 800;
 
-function layoutGraph(capabilities: CapabilityNode[]): CapabilityNode[] {
-  if (capabilities.length === 0) return [];
+function layoutGraph(capabilities: CapabilityNode[]): { nodes: CapabilityNode[]; width: number; height: number } {
+  if (capabilities.length === 0) return { nodes: [], width: CANVAS_W, height: CANVAS_H_MIN };
 
+  // Separate acquired from future nodes and assign proper levels
+  const acquired = capabilities.filter(n => n.status === 'acquired');
+  const future = capabilities.filter(n => n.status !== 'acquired');
+  
+  // Build dependency depth for future nodes
+  const acquiredNames = new Set(acquired.map(n => n.name));
+  const futureByName = new Map(future.map(n => [n.name, n]));
+  
+  // Assign future levels based on dependency depth
+  const getDepthForFuture = (node: CapabilityNode, visited = new Set<string>()): number => {
+    if (visited.has(node.name)) return 0;
+    visited.add(node.name);
+    const maxAcquiredLevel = acquired.length > 0 ? Math.max(...acquired.map(n => n.level)) : 0;
+    let maxParentDepth = maxAcquiredLevel;
+    for (const dep of node.builtOn) {
+      if (acquiredNames.has(dep)) {
+        const parent = acquired.find(n => n.name === dep);
+        if (parent) maxParentDepth = Math.max(maxParentDepth, parent.level);
+      } else if (futureByName.has(dep)) {
+        maxParentDepth = Math.max(maxParentDepth, getDepthForFuture(futureByName.get(dep)!, visited));
+      }
+    }
+    return maxParentDepth + 1;
+  };
+
+  const leveledFuture = future.map(n => ({
+    ...n,
+    level: getDepthForFuture(n),
+  }));
+
+  const allNodes = [...acquired, ...leveledFuture];
+
+  // Group by level
   const levels = new Map<number, CapabilityNode[]>();
-  capabilities.forEach(cap => {
-    const lvl = cap.level;
-    if (!levels.has(lvl)) levels.set(lvl, []);
-    levels.get(lvl)!.push(cap);
+  allNodes.forEach(cap => {
+    if (!levels.has(cap.level)) levels.set(cap.level, []);
+    levels.get(cap.level)!.push(cap);
   });
 
   const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b);
   const result: CapabilityNode[] = [];
 
+  // Calculate canvas width based on widest level
+  const maxNodesInLevel = Math.max(...Array.from(levels.values()).map(n => n.length), 1);
+  const nodeSpacing = 170;
+  const canvasW = Math.max(CANVAS_W, maxNodesInLevel * nodeSpacing + 200);
+
   sortedLevels.forEach((lvl, li) => {
     const nodes = levels.get(lvl)!;
     const y = 80 + li * 130;
     nodes.forEach((node, ni) => {
-      const totalWidth = nodes.length * 180;
-      const startX = (CANVAS_W - totalWidth) / 2;
-      result.push({ ...node, x: startX + ni * 180 + 90, y });
+      const totalWidth = nodes.length * nodeSpacing;
+      const startX = (canvasW - totalWidth) / 2;
+      result.push({ ...node, x: startX + ni * nodeSpacing + nodeSpacing / 2, y });
     });
   });
 
-  return result;
+  const canvasH = Math.max(CANVAS_H_MIN, sortedLevels.length * 130 + 200);
+
+  return { nodes: result, width: canvasW, height: canvasH };
 }
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
