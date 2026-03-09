@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,19 +12,21 @@ const PROCESSES = [
   { id: 'safety', label: 'Safety Check', description: 'Validate change against safety rules' },
   { id: 'applying', label: 'Applying', description: 'Write mutation to virtual filesystem' },
   { id: 'verification', label: 'Verification', description: 'Prove the capability is real' },
-  { id: 'anomaly', label: 'Anomaly Detection', description: 'Detect drift & unexpected patterns' },
-  { id: 'pattern', label: 'Pattern Recognition', description: 'Identify growth trends & cycles' },
+  { id: 'anomaly', label: 'Anomaly Detect', description: 'Detect drift & unexpected patterns' },
+  { id: 'pattern', label: 'Pattern Recog', description: 'Identify growth trends & cycles' },
   { id: 'forecasting', label: 'Forecasting', description: 'Predict next evolutions' },
-  { id: 'goal-eval', label: 'Goal Evaluation', description: 'Pick highest-priority goal' },
-  { id: 'task-decomp', label: 'Task Decomposition', description: 'Break goal into executable steps' },
-  { id: 'goal-exec', label: 'Goal Execution', description: 'Execute next step toward goal' },
+  { id: 'goal-eval', label: 'Goal Eval', description: 'Pick highest-priority goal' },
+  { id: 'task-decomp', label: 'Task Decomp', description: 'Break goal into executable steps' },
+  { id: 'goal-exec', label: 'Goal Execute', description: 'Execute next step toward goal' },
   { id: 'self-repair', label: 'Self-Repair', description: 'Fix broken capabilities & files' },
-  { id: 'memory', label: 'Memory Consolidation', description: 'Compress & archive long-term state' },
-  { id: 'self-doc', label: 'Self-Documentation', description: 'Auto-generate project docs' },
+  { id: 'memory', label: 'Memory', description: 'Compress & archive long-term state' },
+  { id: 'self-doc', label: 'Self-Doc', description: 'Auto-generate project docs' },
   { id: 'rule-engine', label: 'Rule Engine', description: 'Evaluate governance rules' },
-  { id: 'self-reflect', label: 'Self-Reflection', description: 'Judge progress & adapt strategy' },
+  { id: 'self-reflect', label: 'Self-Reflect', description: 'Judge progress & adapt strategy' },
   { id: 'cooling', label: 'Cooling', description: 'Brief pause before next cycle' },
 ];
+
+const COUNT = PROCESSES.length;
 
 const PatternAnalysis: React.FC = () => {
   const [currentLevel, setCurrentLevel] = useState(0);
@@ -50,41 +52,33 @@ const PatternAnalysis: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Single ring — all 18 in one circle, sequentially connected
+  const radius = 36; // % of container
   const cx = 50;
   const cy = 50;
-  const count = PROCESSES.length;
 
-  // Two rings: inner (first 9) and outer (last 9)
-  const innerCount = Math.ceil(count / 2);
-  const outerCount = count - innerCount;
-  const innerRadius = 22;
-  const outerRadius = 38;
+  const bubbles = useMemo(() =>
+    PROCESSES.map((proc, i) => {
+      const angle = (i / COUNT) * Math.PI * 2 - Math.PI / 2;
+      return {
+        ...proc,
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+        angle,
+        index: i,
+      };
+    }), []
+  );
 
-  const bubbles = PROCESSES.map((proc, i) => {
-    const isInner = i < innerCount;
-    const ring = isInner ? innerCount : outerCount;
-    const idx = isInner ? i : i - innerCount;
-    const angle = (idx / ring) * Math.PI * 2 - Math.PI / 2;
-    const r = isInner ? innerRadius : outerRadius;
-    return {
-      ...proc,
-      x: cx + r * Math.cos(angle),
-      y: cy + r * Math.sin(angle),
-      ring: isInner ? 'inner' : 'outer',
-    };
-  });
-
-  // Sequential connections within each ring
-  const innerBubbles = bubbles.filter(b => b.ring === 'inner');
-  const outerBubbles = bubbles.filter(b => b.ring === 'outer');
-
-  const makeConnections = (ring: typeof innerBubbles) =>
-    ring.map((b, i) => {
-      const next = ring[(i + 1) % ring.length];
+  // Each bubble connects to the next one (circular)
+  const connections = useMemo(() =>
+    bubbles.map((b, i) => {
+      const next = bubbles[(i + 1) % COUNT];
       return { x1: b.x, y1: b.y, x2: next.x, y2: next.y, key: `${b.id}-${next.id}` };
-    });
+    }), [bubbles]
+  );
 
-  const connections = [...makeConnections(innerBubbles), ...makeConnections(outerBubbles)];
+  const activeIndex = activePhase ? PROCESSES.findIndex(p => p.id === activePhase) : -1;
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -115,59 +109,74 @@ const PatternAnalysis: React.FC = () => {
         </div>
       ) : (
         <div className="flex-1 relative overflow-hidden">
-          {/* SVG connections */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
-            {connections.map((c, i) => (
-              <motion.line
-                key={c.key}
-                x1={`${c.x1}%`} y1={`${c.y1}%`}
-                x2={`${c.x2}%`} y2={`${c.y2}%`}
-                className="stroke-primary/15"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.04, duration: 0.3 }}
-              />
-            ))}
-            {/* Pulse dots on inner ring */}
-            {makeConnections(innerBubbles).map((c, i) => (
-              <motion.circle
-                key={`pulse-${c.key}`}
-                r="2.5"
-                className="fill-primary/50"
-                initial={{ cx: `${c.x1}%`, cy: `${c.y1}%` }}
-                animate={{ cx: [`${c.x1}%`, `${c.x2}%`], cy: [`${c.y1}%`, `${c.y2}%`] }}
-                transition={{
-                  delay: i * 0.6,
-                  duration: 1,
-                  repeat: Infinity,
-                  repeatDelay: innerBubbles.length * 0.6 - 1,
-                  ease: 'easeInOut',
-                }}
-              />
-            ))}
+            {/* Connection arcs between sequential steps */}
+            {connections.map((c, i) => {
+              const isActive = activeIndex === i || activeIndex === (i + 1) % COUNT;
+              return (
+                <motion.line
+                  key={c.key}
+                  x1={`${c.x1}%`} y1={`${c.y1}%`}
+                  x2={`${c.x2}%`} y2={`${c.y2}%`}
+                  stroke={isActive ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.15)'}
+                  strokeWidth={isActive ? 2.5 : 1.5}
+                  strokeDasharray={isActive ? 'none' : '4 3'}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: i * 0.04, duration: 0.3 }}
+                />
+              );
+            })}
+
+            {/* Animated pulse traveling the full ring */}
+            <motion.circle
+              r="3"
+              className="fill-primary"
+              animate={{
+                cx: [...bubbles.map(b => `${b.x}%`), `${bubbles[0].x}%`],
+                cy: [...bubbles.map(b => `${b.y}%`), `${bubbles[0].y}%`],
+              }}
+              transition={{
+                duration: COUNT * 0.5,
+                repeat: Infinity,
+                ease: 'linear',
+              }}
+            />
+
+            {/* Faint outer glow ring */}
+            <circle
+              cx="50%"
+              cy="50%"
+              r={`${radius}%`}
+              fill="none"
+              stroke="hsl(var(--primary) / 0.06)"
+              strokeWidth="40"
+            />
           </svg>
 
           {/* Center hub */}
           <div
-            className="absolute flex flex-col items-center justify-center pointer-events-none"
+            className="absolute pointer-events-none"
             style={{ left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, -50%)' }}
           >
             <motion.div
-              className="w-16 h-16 rounded-full border-2 border-primary/20 bg-primary/5 flex flex-col items-center justify-center"
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ duration: 3, repeat: Infinity }}
+              className="w-20 h-20 rounded-full border-2 border-primary/20 bg-background flex flex-col items-center justify-center shadow-lg shadow-primary/10"
+              animate={{ scale: [1, 1.04, 1] }}
+              transition={{ duration: 4, repeat: Infinity }}
             >
-              <span className="text-base font-bold text-primary font-mono">λ</span>
-              <span className="text-[7px] text-muted-foreground">Cycle {totalCycles}</span>
+              <span className="text-xl font-bold text-primary font-mono">λ</span>
+              <span className="text-[8px] text-muted-foreground font-medium">Cycle {totalCycles}</span>
+              <span className="text-[7px] text-muted-foreground/60">{COUNT} steps</span>
             </motion.div>
           </div>
 
           {/* Phase bubbles */}
           {bubbles.map((bubble, i) => {
-            const isInner = bubble.ring === 'inner';
-            const size = isInner ? 'w-[72px] h-[72px]' : 'w-[68px] h-[68px]';
+            const isActive = activePhase === bubble.id;
+            const isNeighbor = activeIndex >= 0 && (
+              (activeIndex + 1) % COUNT === i || (activeIndex - 1 + COUNT) % COUNT === i
+            );
+
             return (
               <motion.div
                 key={bubble.id}
@@ -176,53 +185,70 @@ const PatternAnalysis: React.FC = () => {
                   left: `${bubble.x}%`,
                   top: `${bubble.y}%`,
                   transform: 'translate(-50%, -50%)',
-                  zIndex: 1,
+                  zIndex: isActive ? 10 : 1,
                 }}
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: i * 0.05, type: 'spring', stiffness: 200 }}
+                transition={{ delay: i * 0.04, type: 'spring', stiffness: 260, damping: 20 }}
                 onMouseEnter={() => setActivePhase(bubble.id)}
                 onMouseLeave={() => setActivePhase(null)}
               >
                 <motion.div
                   className={`
-                    ${size} rounded-full flex flex-col items-center justify-center
-                    border transition-colors duration-200
-                    ${activePhase === bubble.id
-                      ? 'border-primary bg-primary/15 shadow-lg shadow-primary/20'
-                      : isInner
-                        ? 'border-border bg-card/80 hover:border-primary/40'
-                        : 'border-border/60 bg-card/60 hover:border-primary/30'
+                    w-[62px] h-[62px] rounded-full flex flex-col items-center justify-center
+                    border-2 transition-all duration-200
+                    ${isActive
+                      ? 'border-primary bg-primary/20 shadow-xl shadow-primary/30 scale-110'
+                      : isNeighbor
+                        ? 'border-primary/40 bg-primary/8 shadow-md shadow-primary/10'
+                        : 'border-border bg-card hover:border-primary/30 hover:bg-card/90'
                     }
                   `}
-                  whileHover={{ scale: 1.12 }}
+                  whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <span className="text-[8px] font-bold text-foreground text-center leading-tight px-1">
+                  <span className={`text-[7px] font-bold text-center leading-tight px-1 ${isActive ? 'text-primary' : 'text-foreground'}`}>
                     {bubble.label}
                   </span>
                 </motion.div>
 
-                <div className={`absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[7px] font-bold flex items-center justify-center ${isInner ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground border border-border'}`}>
+                {/* Step number badge */}
+                <div className={`absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full text-[7px] font-bold flex items-center justify-center
+                  ${isActive
+                    ? 'bg-primary text-primary-foreground shadow-md'
+                    : 'bg-muted text-muted-foreground border border-border'
+                  }`}
+                >
                   {i + 1}
                 </div>
               </motion.div>
             );
           })}
 
-          {/* Tooltip */}
+          {/* Hover tooltip */}
           {activePhase && (
             <motion.div
-              className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card border border-border rounded-lg px-4 py-2 shadow-xl z-10"
-              initial={{ opacity: 0, y: 10 }}
+              className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card border border-primary/20 rounded-lg px-5 py-3 shadow-2xl z-20"
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
             >
-              <p className="text-xs font-semibold text-foreground">
-                {PROCESSES.find(p => p.id === activePhase)?.label}
-              </p>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                  Step {activeIndex + 1}/{COUNT}
+                </span>
+                <span className="text-xs font-bold text-foreground">
+                  {PROCESSES[activeIndex]?.label}
+                </span>
+              </div>
               <p className="text-[10px] text-muted-foreground">
-                {PROCESSES.find(p => p.id === activePhase)?.description}
+                {PROCESSES[activeIndex]?.description}
               </p>
+              <div className="flex items-center gap-1.5 mt-1.5 text-[8px] text-muted-foreground/50">
+                <span>←  {PROCESSES[(activeIndex - 1 + COUNT) % COUNT]?.label}</span>
+                <span>·</span>
+                <span>{PROCESSES[(activeIndex + 1) % COUNT]?.label}  →</span>
+              </div>
             </motion.div>
           )}
         </div>
