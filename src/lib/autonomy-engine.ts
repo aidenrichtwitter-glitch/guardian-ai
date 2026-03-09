@@ -504,7 +504,36 @@ async function executeGoalStep(): Promise<{ task: AutonomyTask; goalResult: Auto
         }
         
         stepSuccess = true;
-        stepDetail = `${opinion} [Queries: ${queries.join(', ')}]`;
+        stepDetail = opinion.slice(0, 100) + '...';
+        
+        // Store the full opinion in outputs
+        return {
+          task: {
+            id: 'goal-exec',
+            name: `Goal: ${goal.title}`,
+            type: 'goal-execute',
+            success: true,
+            detail: `Formed opinion based on ${totalResults} sources`,
+            duration: performance.now() - start,
+            usedAI: false,
+            outputs: {
+              type: 'opinion',
+              data: {
+                opinion,
+                queries,
+                sourceCount: totalResults,
+                sentiment: positiveCount > concernCount * 1.5 ? 'optimistic' : concernCount > positiveCount * 1.5 ? 'cautious' : 'balanced',
+              },
+            },
+          },
+          goalResult: {
+            id: goal.id,
+            title: goal.title,
+            stepAttempted: nextStep.step || nextStep.action || 'unknown',
+            success: true,
+            detail: opinion,
+          },
+        };
       } else {
         stepDetail = 'Search returned no results - unable to form opinion';
       }
