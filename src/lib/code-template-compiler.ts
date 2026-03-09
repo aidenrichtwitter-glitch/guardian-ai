@@ -196,7 +196,7 @@ export function compileTemplate(
   for (const ph of template.placeholders) {
     const value = values[ph.key] ?? ph.defaultValue ?? '';
     const rendered = Array.isArray(value) ? value.join(', ') : String(value);
-    content = content.replaceAll(`{{${ph.key}}}`, rendered);
+    content = content.split(`{{${ph.key}}}`).join(rendered);
   }
 
   // Extract exports from compiled content
