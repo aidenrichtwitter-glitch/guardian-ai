@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, shell, Menu, ipcMain, nativeTheme, session, webContents, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, nativeTheme, session, webContents, dialog, clipboard } = require('electron');
 const os = require('os');
 const fs = require('fs');
 const { exec } = require('child_process');
@@ -591,6 +591,13 @@ function setupIpcHandlers() {
     } catch (error) {
       return { error: error.message };
     }
+  });
+
+  // Read system clipboard text (called from React app's clipboard extractor)
+  ipcMain.handle('read-clipboard', async () => {
+    try {
+      return clipboard.readText() || '';
+    } catch { return ''; }
   });
 
   // Open Grok in a new native BrowserWindow (called from React app)

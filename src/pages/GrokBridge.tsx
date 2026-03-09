@@ -142,8 +142,8 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
   const readClipboard = useCallback(async () => {
     try {
       if (isElectron) {
-        const { clipboard } = (window as any).require('electron');
-        const text = clipboard.readText();
+        const { ipcRenderer } = (window as any).require('electron');
+        const text = await ipcRenderer.invoke('read-clipboard');
         if (text) extractFromText(text);
       } else {
         const text = await navigator.clipboard.readText();
