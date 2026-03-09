@@ -602,6 +602,21 @@ const GrokBridge: React.FC = () => {
               allow="clipboard-write"
               title="Embedded Browser"
             />
+
+            {/* Send-to-Grok quick prompts */}
+            <div className="absolute top-3 left-3 z-10 w-56 bg-card/90 backdrop-blur border border-border/50 rounded-lg p-2.5 space-y-1.5 shadow-xl">
+              <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Send to Grok</p>
+              {outboundPrompts.map(prompt => (
+                <button
+                  key={prompt.id}
+                  onClick={() => copyPromptToClipboard(prompt.label, prompt.content)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded bg-secondary/40 hover:bg-secondary/70 border border-border/30 text-[10px] text-foreground/80 transition-colors"
+                >
+                  <Clipboard className="w-3 h-3 text-primary" />
+                  <span className="truncate">{prompt.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Floating code extractor panel */}
