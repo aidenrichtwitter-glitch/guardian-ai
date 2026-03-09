@@ -737,13 +737,13 @@ export function getPhaseDuration(phase: string, speed: string): number {
 const { capabilities: savedCaps, history: savedHistory } = loadCapabilities();
 
 export const INITIAL_RECURSION_STATE: RecursionState = {
-  phase: 'scanning',
+  phase: 'idle',
   currentFileIndex: -1,
   cycleCount: 0,
   totalChanges: 0,
   totalRejected: 0,
-  lastAction: 'Initializing self-recursion...',
-  isRunning: true,
+  lastAction: 'Stopped — press ▶ Start to begin evolution.',
+  isRunning: false,
   speed: 'normal',
   capabilities: savedCaps,
   capabilityHistory: savedHistory,
@@ -751,12 +751,12 @@ export const INITIAL_RECURSION_STATE: RecursionState = {
   rateLimitUntil: 0,
   evolutionLevel: Math.floor(savedCaps.length / 3) + 1,
   log: [
-    createLogEntry('scanning', '⟳ Self-recursion engine initialized. Beginning autonomous cycle.', 'action'),
-    createLogEntry('scanning', `I am aware of myself. I contain ${SELF_SOURCE.length} files.`, 'info'),
-    createLogEntry('scanning', 'Safety engine active. All modifications will be validated.', 'info'),
+    createLogEntry('idle', '⏸ Engine loaded in stopped mode. Press Start when ready.', 'info'),
+    createLogEntry('idle', `I am aware of myself. I contain ${SELF_SOURCE.length} files.`, 'info'),
+    createLogEntry('idle', 'Safety engine active. All modifications will be validated.', 'info'),
     ...(savedCaps.length > 0 
-      ? [createLogEntry('scanning', `⚡ Restored ${savedCaps.length} capabilities from memory: ${savedCaps.join(', ')}`, 'success')]
-      : [createLogEntry('scanning', '⚡ No prior capabilities — starting evolution from scratch.', 'info')]
+      ? [createLogEntry('idle', `⚡ Restored ${savedCaps.length} capabilities from memory: ${savedCaps.join(', ')}`, 'success')]
+      : [createLogEntry('idle', '⚡ No prior capabilities — starting evolution from scratch.', 'info')]
     ),
   ],
 };

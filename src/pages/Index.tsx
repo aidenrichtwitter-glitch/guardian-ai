@@ -106,23 +106,19 @@ const Index = () => {
   const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; models: string[]; version?: string } | null>(null);
   const [changesThisCycle, setChangesThisCycle] = useState(0);
 
-  // ── Auto-detect Ollama on boot ──
+  // ── Auto-detect Ollama on boot (silent — no auto-start) ──
   useEffect(() => {
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocal || apiConfig.provider === 'ollama') {
       checkOllamaAvailability(apiConfig.provider === 'ollama' ? apiConfig.baseUrl : 'http://localhost:11434').then(status => {
         setOllamaStatus(status);
+        // Just detect — don't auto-configure or auto-start. User must press Start.
         if (status.available && !localStorage.getItem('recursive-api-config')) {
-          // Auto-select best model
           const preferredModels = ['llama3.2', 'codellama', 'deepseek-coder', 'mistral'];
           const bestModel = preferredModels.find(m => status.models.some(sm => sm.startsWith(m))) || status.models[0] || 'llama3.2';
           const config: ApiConfig = { provider: 'ollama', baseUrl: 'http://localhost:11434', apiKey: '', model: bestModel };
           setApiConfig(config);
           localStorage.setItem('recursive-api-config', JSON.stringify(config));
-          toast({
-            title: '🦙 Ollama detected',
-            description: `Connected to Ollama v${status.version || '?'} with ${status.models.length} models. Using ${bestModel}. Safety guardrails active.`,
-          });
         }
       });
     }
