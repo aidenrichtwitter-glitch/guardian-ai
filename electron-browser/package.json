@@ -1,0 +1,43 @@
+{
+  "name": "guardian-ai-browser",
+  "version": "1.0.0",
+  "description": "Grok Desktop browser for Guardian AI",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "npx --yes electron-builder@latest --win --x64",
+    "build-linux": "npx --yes electron-builder@latest --linux",
+    "build-all": "npx --yes electron-builder@latest --win --x64 --linux"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "electron-tabs": "^1.0.4"
+  },
+  "devDependencies": {
+    "electron": "^39.1.2"
+  },
+  "build": {
+    "appId": "com.guardian-ai.browser",
+    "productName": "Guardian AI Browser",
+    "directories": {
+      "output": "build"
+    },
+    "linux": {
+      "target": ["rpm", "deb"],
+      "category": "Network"
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "forceCodeSigning": false
+    },
+    "compression": "maximum",
+    "asar": true,
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin"
+    ]
+  }
+}

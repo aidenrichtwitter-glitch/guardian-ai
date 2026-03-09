@@ -554,86 +554,60 @@ const GrokBridge: React.FC = () => {
         )}
       </div>
 
-      {/* ── Mode: Browser Chat ── */}
+      {/* ── Mode: Desktop Browser ── */}
       {mode === 'browser' && (
         <div className="flex-1 flex flex-col relative min-h-0">
-          {/* Active site indicator */}
-          {currentSite && (
-            <div className="shrink-0 border-b border-border/30 bg-card/40 px-4 py-1.5 flex items-center gap-2">
-              <span className="text-sm">{currentSite.icon}</span>
-              <span className="text-[10px] text-muted-foreground">Last opened: <span className="text-foreground/80 font-medium">{currentSite.name}</span></span>
-              <span className="text-[9px] text-muted-foreground/40 ml-2">Copy AI responses → code auto-extracted below</span>
-            </div>
-          )}
-
-          {/* Browser panel */}
           <div className="flex-1 relative flex flex-col items-center justify-center gap-6 p-8">
-            {/* Site launcher cards */}
-            <div className="text-center space-y-2 max-w-md">
-              <Globe className="w-8 h-8 text-primary mx-auto" />
-              <h2 className="text-sm font-bold text-foreground">AI Browser Bridge</h2>
-              <p className="text-[10px] text-muted-foreground">
-                Open AI sites in a new window, copy prompts below, then paste responses back. Code blocks are auto-extracted from your clipboard.
+            <div className="text-center space-y-3 max-w-md">
+              <Globe className="w-10 h-10 text-primary mx-auto" />
+              <h2 className="text-base font-bold text-foreground">Grok Desktop Browser</h2>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Launch the full Grok Desktop browser with multi-tab support, usage monitoring, and native authentication. Copy AI responses and code blocks will be auto-extracted from your clipboard.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-lg">
+            <button
+              onClick={() => {
+                const w = window as unknown as { __TAURI__?: { shell?: unknown } };
+                if (w.__TAURI__?.shell) {
+                  (w.__TAURI__ as any).shell.Command.create('electron', ['./electron-browser'])
+                    .spawn()
+                    .catch(() => {
+                      setStatusMessage('Could not launch Grok Desktop. Make sure electron is installed: cd electron-browser && npm install');
+                    });
+                } else {
+                  setStatusMessage('Desktop browser requires the desktop app. Run: cd electron-browser && npm start');
+                }
+              }}
+              className="flex items-center gap-3 px-8 py-4 rounded-xl bg-primary/15 border-2 border-primary/40 hover:bg-primary/25 hover:border-primary/60 transition-all hover:scale-105 shadow-lg shadow-primary/10"
+            >
+              <Sparkles className="w-5 h-5 text-primary" />
+              <span className="text-sm font-bold text-primary">Launch Grok Desktop</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
               {BROWSER_SITES.map(site => (
                 <button
                   key={site.id}
                   onClick={() => {
-                    // Try Tauri native window first, fall back to new tab
-                    const w = window as unknown as { __TAURI__?: unknown };
-                    if (w.__TAURI__) {
-                      import('@tauri-apps/api/core').then(({ invoke }) => {
-                        invoke('open_url_window', { url: site.url, title: site.name });
-                      }).catch(() => window.open(site.url, '_blank'));
-                    } else {
-                      window.open(site.url, '_blank');
-                    }
+                    window.open(site.url, '_blank');
                     setBrowserUrl(site.url);
                   }}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-all hover:scale-105 ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
                     browserUrl === site.url
-                      ? 'bg-primary/10 border-primary/40 shadow-lg shadow-primary/10'
-                      : 'bg-card/60 border-border/40 hover:bg-secondary/40 hover:border-border/60'
+                      ? 'bg-primary/10 border-primary/30'
+                      : 'bg-card/60 border-border/40 hover:bg-secondary/40'
                   }`}
                 >
-                  <span className="text-2xl">{site.icon}</span>
-                  <span className="text-xs font-medium text-foreground">{site.name}</span>
+                  <span>{site.icon}</span>
+                  <span className="text-[10px] font-medium text-foreground">{site.name}</span>
                 </button>
               ))}
-              {/* Custom URL launcher */}
-              <div className="flex flex-col items-center gap-2 p-4 rounded-lg border border-dashed border-border/40 bg-card/30">
-                <Globe className="w-6 h-6 text-muted-foreground/50" />
-                <input
-                  value={customUrl}
-                  onChange={e => setCustomUrl(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && customUrl.trim()) {
-                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                      const w = window as unknown as { __TAURI__?: unknown };
-                      if (w.__TAURI__) {
-                        import('@tauri-apps/api/core').then(({ invoke }) => {
-                          invoke('open_url_window', { url, title: 'Custom' });
-                        }).catch(() => window.open(url, '_blank'));
-                      } else {
-                        window.open(url, '_blank');
-                      }
-                      setBrowserUrl(url);
-                      setCustomUrl('');
-                    }
-                  }}
-                  placeholder="Custom URL..."
-                  className="w-full bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
-                />
-              </div>
             </div>
 
-            {/* Quick copy prompts */}
-            <div className="w-full max-w-lg bg-card/60 border border-border/40 rounded-lg p-3 space-y-2">
+            <div className="w-full max-w-sm bg-card/60 border border-border/40 rounded-lg p-3 space-y-2">
               <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
-                <Clipboard className="w-3 h-3" /> Copy prompt to clipboard, then paste into AI
+                <Clipboard className="w-3 h-3" /> Copy prompt to clipboard, then paste into Grok Desktop
               </p>
               <div className="grid grid-cols-2 gap-1.5">
                 {outboundPrompts.map(prompt => (
@@ -648,9 +622,23 @@ const GrokBridge: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {statusMessage && (
+              <div className="w-full max-w-sm bg-card border border-border/50 rounded-lg px-4 py-2 text-[10px] text-muted-foreground">
+                {statusMessage}
+              </div>
+            )}
+
+            <div className="w-full max-w-sm bg-card/30 border border-border/30 rounded-lg p-3 space-y-1.5">
+              <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50">Manual Setup</p>
+              <pre className="text-[9px] font-mono text-muted-foreground/70 bg-background/50 rounded px-2 py-1.5 overflow-x-auto">
+{`cd electron-browser
+npm install
+npm start`}
+              </pre>
+            </div>
           </div>
 
-          {/* Floating code extractor panel */}
           <ClipboardExtractor onApply={applyBlock} />
         </div>
       )}
