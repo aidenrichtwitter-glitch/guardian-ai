@@ -557,65 +557,96 @@ const GrokBridge: React.FC = () => {
       {/* ── Mode: Browser Chat ── */}
       {mode === 'browser' && (
         <div className="flex-1 flex flex-col relative min-h-0">
-          {/* Browser toolbar */}
-          <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-1.5 flex items-center gap-2">
-            <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+          {/* Active site indicator */}
+          {currentSite && (
+            <div className="shrink-0 border-b border-border/30 bg-card/40 px-4 py-1.5 flex items-center gap-2">
+              <span className="text-sm">{currentSite.icon}</span>
+              <span className="text-[10px] text-muted-foreground">Last opened: <span className="text-foreground/80 font-medium">{currentSite.name}</span></span>
+              <span className="text-[9px] text-muted-foreground/40 ml-2">Copy AI responses → code auto-extracted below</span>
+            </div>
+          )}
+
+          {/* Browser panel */}
+          <div className="flex-1 relative flex flex-col items-center justify-center gap-6 p-8">
+            {/* Site launcher cards */}
+            <div className="text-center space-y-2 max-w-md">
+              <Globe className="w-8 h-8 text-primary mx-auto" />
+              <h2 className="text-sm font-bold text-foreground">AI Browser Bridge</h2>
+              <p className="text-[10px] text-muted-foreground">
+                Open AI sites in a new window, copy prompts below, then paste responses back. Code blocks are auto-extracted from your clipboard.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-lg">
               {BROWSER_SITES.map(site => (
                 <button
                   key={site.id}
-                  onClick={() => setBrowserUrl(site.url)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
+                  onClick={() => {
+                    // Try Tauri native window first, fall back to new tab
+                    const w = window as unknown as { __TAURI__?: unknown };
+                    if (w.__TAURI__) {
+                      import('@tauri-apps/api/core').then(({ invoke }) => {
+                        invoke('open_url_window', { url: site.url, title: site.name });
+                      }).catch(() => window.open(site.url, '_blank'));
+                    } else {
+                      window.open(site.url, '_blank');
+                    }
+                    setBrowserUrl(site.url);
+                  }}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-all hover:scale-105 ${
                     browserUrl === site.url
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
+                      ? 'bg-primary/10 border-primary/40 shadow-lg shadow-primary/10'
+                      : 'bg-card/60 border-border/40 hover:bg-secondary/40 hover:border-border/60'
                   }`}
                 >
-                  <span>{site.icon}</span>
-                  <span>{site.name}</span>
+                  <span className="text-2xl">{site.icon}</span>
+                  <span className="text-xs font-medium text-foreground">{site.name}</span>
                 </button>
               ))}
+              {/* Custom URL launcher */}
+              <div className="flex flex-col items-center gap-2 p-4 rounded-lg border border-dashed border-border/40 bg-card/30">
+                <Globe className="w-6 h-6 text-muted-foreground/50" />
+                <input
+                  value={customUrl}
+                  onChange={e => setCustomUrl(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && customUrl.trim()) {
+                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+                      const w = window as unknown as { __TAURI__?: unknown };
+                      if (w.__TAURI__) {
+                        import('@tauri-apps/api/core').then(({ invoke }) => {
+                          invoke('open_url_window', { url, title: 'Custom' });
+                        }).catch(() => window.open(url, '_blank'));
+                      } else {
+                        window.open(url, '_blank');
+                      }
+                      setBrowserUrl(url);
+                      setCustomUrl('');
+                    }
+                  }}
+                  placeholder="Custom URL..."
+                  className="w-full bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <Globe className="w-3 h-3 text-muted-foreground/50" />
-              <input
-                value={customUrl}
-                onChange={e => setCustomUrl(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && customUrl.trim()) {
-                    setBrowserUrl(customUrl.startsWith('http') ? customUrl : `https://${customUrl}`);
-                    setCustomUrl('');
-                  }
-                }}
-                placeholder="Custom URL..."
-                className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
-              />
-            </div>
-          </div>
 
-          {/* Full-height iframe */}
-          <div className="flex-1 relative" style={{ paddingBottom: '0' }}>
-            <iframe
-              key={browserUrl}
-              src={browserUrl}
-              className="w-full h-full border-0 absolute inset-0"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-              allow="clipboard-write"
-              title="Embedded Browser"
-            />
-
-            {/* Send-to-Grok quick prompts */}
-            <div className="absolute top-3 left-3 z-10 w-56 bg-card/90 backdrop-blur border border-border/50 rounded-lg p-2.5 space-y-1.5 shadow-xl">
-              <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Send to Grok</p>
-              {outboundPrompts.map(prompt => (
-                <button
-                  key={prompt.id}
-                  onClick={() => copyPromptToClipboard(prompt.label, prompt.content)}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded bg-secondary/40 hover:bg-secondary/70 border border-border/30 text-[10px] text-foreground/80 transition-colors"
-                >
-                  <Clipboard className="w-3 h-3 text-primary" />
-                  <span className="truncate">{prompt.label}</span>
-                </button>
-              ))}
+            {/* Quick copy prompts */}
+            <div className="w-full max-w-lg bg-card/60 border border-border/40 rounded-lg p-3 space-y-2">
+              <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+                <Clipboard className="w-3 h-3" /> Copy prompt to clipboard, then paste into AI
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {outboundPrompts.map(prompt => (
+                  <button
+                    key={prompt.id}
+                    onClick={() => copyPromptToClipboard(prompt.label, prompt.content)}
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded bg-secondary/40 hover:bg-secondary/70 border border-border/30 text-[10px] text-foreground/80 transition-colors"
+                  >
+                    <Clipboard className="w-3 h-3 text-primary shrink-0" />
+                    <span className="truncate">{prompt.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
