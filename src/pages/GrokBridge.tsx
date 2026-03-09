@@ -153,7 +153,6 @@ const GrokBridge: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showBrowser, setShowBrowser] = useState(true);
   const [browserUrl, setBrowserUrl] = useState('https://grok.com');
-  const [showBrowser, setShowBrowser] = useState(true);
   const [customUrl, setCustomUrl] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
