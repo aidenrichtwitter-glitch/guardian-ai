@@ -3,7 +3,7 @@ import {
   Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
   User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
   Clipboard, ClipboardCheck, Zap, X, ChevronUp, ChevronDown as ChevronDownIcon,
-  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink
+  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Maximize2, Minimize2
 } from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
@@ -554,9 +554,16 @@ interface GrokDesktopBrowserProps {
 
 function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl, onApply, onApplyAll, onResponseCaptured }: GrokDesktopBrowserProps) {
   const webviewRef = useRef<any>(null);
+  const [expanded, setExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const initialUrlRef = useRef(browserUrl);
   const currentUrlRef = useRef(browserUrl);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && expanded) setExpanded(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
 
   const navigateTo = useCallback((url: string) => {
     if (isElectron) {
@@ -641,61 +648,100 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
-        <div className="flex items-center gap-1 flex-1 overflow-x-auto">
-          {BROWSER_SITES.map(site => (
+    <>
+      <div
+        className={`flex-1 flex flex-col min-h-0 ${expanded ? 'fixed inset-0 z-30 bg-background' : 'relative'}`}
+        style={expanded ? undefined : { height: '120px' }}
+      >
+        <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+            {BROWSER_SITES.map(site => (
+              <button
+                key={site.id}
+                data-testid={`button-open-${site.id}`}
+                onClick={() => navigateTo(site.url)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] whitespace-nowrap transition-colors ${
+                  browserUrl.startsWith(site.url)
+                    ? 'bg-primary/15 text-primary border border-primary/30'
+                    : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
+                }`}
+              >
+                <span>{site.icon}</span>
+                <span>{site.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {loading && <Loader2 className="w-3 h-3 text-primary/60 animate-spin" />}
+            <Globe className="w-3 h-3 text-muted-foreground/50" />
+            <input
+              value={customUrl}
+              onChange={e => setCustomUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') openCustom(); }}
+              placeholder="Custom URL..."
+              data-testid="input-custom-url"
+              className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+            />
             <button
-              key={site.id}
-              data-testid={`button-open-${site.id}`}
-              onClick={() => navigateTo(site.url)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] whitespace-nowrap transition-colors ${
-                browserUrl.startsWith(site.url)
-                  ? 'bg-primary/15 text-primary border border-primary/30'
-                  : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
-              }`}
+              onClick={() => setExpanded(e => !e)}
+              data-testid="button-toggle-browser-expand"
+              className="p-1 rounded hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+              title={expanded ? 'Collapse browser' : 'Expand browser'}
             >
-              <span>{site.icon}</span>
-              <span>{site.name}</span>
+              {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             </button>
-          ))}
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {loading && <Loader2 className="w-3 h-3 text-primary/60 animate-spin" />}
-          <Globe className="w-3 h-3 text-muted-foreground/50" />
-          <input
-            value={customUrl}
-            onChange={e => setCustomUrl(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') openCustom(); }}
-            placeholder="Custom URL..."
-            data-testid="input-custom-url"
-            className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
-          />
-        </div>
-      </div>
 
-      <div className="flex-1 relative min-h-0 overflow-hidden">
-        {/* @ts-ignore - webview is an Electron-specific HTML element */}
-        <webview
-          ref={(el: any) => { webviewRef.current = el; }}
-          src={initialUrlRef.current}
-          partition="persist:grok"
-          data-testid="webview-browser"
-          style={{ width: '100%', height: '100%', border: 'none' }}
-          allowpopups="true"
-        />
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-xs text-muted-foreground">Loading {currentSite?.name || 'page'}...</p>
+        <div
+          className="flex-1 relative min-h-0 overflow-hidden cursor-pointer"
+          onClick={expanded ? undefined : () => setExpanded(true)}
+        >
+          {/* @ts-ignore - webview is an Electron-specific HTML element */}
+          <webview
+            ref={(el: any) => { webviewRef.current = el; }}
+            src={initialUrlRef.current}
+            partition="persist:grok"
+            data-testid="webview-browser"
+            style={{ width: '100%', height: '100%', border: 'none', pointerEvents: expanded ? 'auto' : 'none' }}
+            allowpopups="true"
+          />
+          {!expanded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/40 hover:bg-background/20 transition-colors z-10">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-card/80 border border-border/50 shadow-lg">
+                <Maximize2 className="w-4 h-4 text-primary" />
+                <span className="text-xs text-foreground font-medium">Click to expand browser</span>
+              </div>
             </div>
+          )}
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                <p className="text-xs text-muted-foreground">Loading {currentSite?.name || 'page'}...</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {expanded && (
+          <div className="shrink-0 border-t border-border/30 bg-card/40 px-3 py-1.5 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+              <Minimize2 className="w-3 h-3" />
+              <span>Collapse browser to access Code Extractor</span>
+            </div>
+            <button
+              onClick={() => setExpanded(false)}
+              data-testid="button-collapse-from-hint"
+              className="px-2 py-1 rounded text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
+              Collapse
+            </button>
           </div>
         )}
       </div>
-
       <ClipboardExtractor onApply={onApply} onApplyAll={onApplyAll} onResponseCaptured={onResponseCaptured} />
-    </div>
+    </>
   );
 }
 
