@@ -267,7 +267,7 @@ export function learnTemplate(
       type: 'string',
       defaultValue: ifaceName,
     });
-    body = body.replaceAll(ifaceName, `{{${phKey}}}`);
+    body = body.split(ifaceName).join(`{{${phKey}}}`);
   }
 
   const template: CodeTemplate = {
