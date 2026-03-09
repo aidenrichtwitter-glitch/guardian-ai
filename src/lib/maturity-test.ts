@@ -357,8 +357,9 @@ async function testHelpful(): Promise<DimensionResult> {
     checks.push({ name: 'structured-output', pass: false, detail: 'Cannot produce reports' });
   }
 
-  // Check: Has a dashboard (visual output for user)
-  checks.push({ name: 'visual-dashboard', pass: true, detail: 'Evolution dashboard with live visualization' });
+  // Check: Has a dashboard — verify the component actually exists in source
+  const hasDashboard = typeof document !== 'undefined' && !!document.querySelector('[data-testid="dashboard"], .evolution-dashboard, main');
+  checks.push({ name: 'visual-dashboard', pass: hasDashboard, detail: hasDashboard ? 'Dashboard rendered in DOM' : 'Dashboard not detected in DOM' });
 
   // Check: Has goal system (can track what user wants)
   const { data: activeGoals } = await supabase.from('goals').select('id').in('status', ['active', 'in-progress']);
