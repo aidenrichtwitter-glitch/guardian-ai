@@ -111,6 +111,15 @@ const PatternAnalysis: React.FC = () => {
         </div>
       ) : (
         <div className="flex-1 relative overflow-hidden">
+          {/* Purpose statement */}
+          <div className="absolute top-4 left-4 z-20 max-w-xs">
+            <div className="bg-card/80 backdrop-blur-sm border border-border rounded-lg px-4 py-3 shadow-lg">
+              <p className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">Purpose of Evolution</p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                To continuously self-improve through autonomous cycles of introspection, mutation, and verification — building new capabilities while preserving safety and coherence.
+              </p>
+            </div>
+          </div>
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
             {/* Connection arcs between sequential steps */}
             {connections.map((c, i) => {
