@@ -116,8 +116,26 @@ interface ExtractedBlock extends ParsedBlock {
   applied: boolean;
 }
 
+function extractContextSections(fullText: string): string[] {
+  const sections: string[] = [];
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = codeBlockRegex.exec(fullText)) !== null) {
+    const before = fullText.slice(lastIndex, match.index).trim();
+    if (before.length > 5) sections.push(before);
+    lastIndex = match.index + match[0].length;
+  }
+  const after = fullText.slice(lastIndex).trim();
+  if (after.length > 5) sections.push(after);
+  return sections;
+}
+
 function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: string) => void }) {
   const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
+  const [responseContext, setResponseContext] = useState<string>('');
+  const [contextSections, setContextSections] = useState<string[]>([]);
+  const [showContext, setShowContext] = useState(false);
   const [lastClipboard, setLastClipboard] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -133,8 +151,9 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
       applied: false,
     }));
     setBlocks(newBlocks);
+    setResponseContext(text);
+    setContextSections(extractContextSections(text));
     setCollapsed(false);
-    // Flash effect
     setFlash(true);
     setTimeout(() => setFlash(false), 400);
   }, [lastClipboard]);
@@ -226,15 +245,42 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
         </div>
       </div>
 
-      {/* Extracted blocks */}
+      {/* Extracted blocks + context */}
       {!collapsed && (
-        <div className="max-h-72 overflow-auto p-3 space-y-2">
+        <div className="max-h-96 overflow-auto p-3 space-y-2">
           {blocks.length === 0 && (
             <div className="text-center py-4 text-[10px] text-muted-foreground/50">
-              <p>Click copy in Grok — code blocks auto-appear here</p>
+              <p>Click copy in Grok — full response + code blocks auto-appear here</p>
               <p className="mt-1 text-[9px] text-muted-foreground/30">Auto-check runs while this tab is active</p>
             </div>
           )}
+
+          {contextSections.length > 0 && (
+            <div className="rounded-lg border border-border/30 bg-card/30 overflow-hidden">
+              <button
+                onClick={() => setShowContext(c => !c)}
+                data-testid="button-toggle-context"
+                className="w-full px-3 py-1.5 flex items-center justify-between text-[10px] text-muted-foreground hover:bg-card/60 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-3 h-3 text-primary/60" />
+                  <span className="font-medium">Grok Response Context</span>
+                  <span className="text-[8px] text-muted-foreground/50">{contextSections.length} section{contextSections.length > 1 ? 's' : ''}</span>
+                </div>
+                {showContext ? <ChevronUp className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+              </button>
+              {showContext && (
+                <div className="px-3 py-2 border-t border-border/20 space-y-2 max-h-48 overflow-auto">
+                  {contextSections.map((section, i) => (
+                    <div key={i} className="text-[10px] text-foreground/70 leading-relaxed whitespace-pre-wrap">
+                      {section.slice(0, 1000)}{section.length > 1000 ? '\n...' : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {blocks.map(block => (
             <div key={block.id} className={`rounded-lg border overflow-hidden transition-colors ${block.applied ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-card/50'}`}>
               <div className="px-3 py-1.5 flex items-center justify-between gap-2 border-b border-border/20">
@@ -248,11 +294,11 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
                 <div className="flex items-center gap-1.5 shrink-0">
                   {!block.applied && (
                     <>
-                      <button onClick={() => validate(block)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors">
+                      <button onClick={() => validate(block)} data-testid={`button-check-${block.id}`} className="flex items-center gap-1 px-2 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors">
                         <Shield className="w-2.5 h-2.5" /> Check
                       </button>
                       {block.filePath && (
-                        <button onClick={() => apply(block)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/15 text-primary hover:bg-primary/30 text-[9px] font-medium transition-colors">
+                        <button onClick={() => apply(block)} data-testid={`button-apply-${block.id}`} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/15 text-primary hover:bg-primary/30 text-[9px] font-medium transition-colors">
                           <Zap className="w-2.5 h-2.5" /> Apply
                         </button>
                       )}
