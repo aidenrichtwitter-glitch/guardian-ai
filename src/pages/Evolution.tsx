@@ -36,79 +36,165 @@ interface EvolutionStats {
   ghostCount: number;
 }
 
-// Layout based on DEPENDENCY DEPTH — not evolution_level.
-// Roots (no dependencies) at bottom, children above. Every node connects.
-function layoutGraph(capabilities: CapabilityNode[], containerSize: number): { nodes: CapabilityNode[]; size: number; levelBands: { level: number; label: string; yStart: number; yEnd: number }[] } {
+// Journey zones — nested squares from smallest (bottom-left) to largest
+const JOURNEY_ZONES = [
+  { key: 'think', label: 'Can Think', maxLevel: 3, color: 'hsl(var(--primary) / 0.12)', border: 'hsl(var(--primary) / 0.3)' },
+  { key: 'remember', label: 'Can Remember', maxLevel: 6, color: 'hsl(142 71% 45% / 0.08)', border: 'hsl(142 71% 45% / 0.25)' },
+  { key: 'learn', label: 'Can Learn', maxLevel: 10, color: 'hsl(48 96% 53% / 0.07)', border: 'hsl(48 96% 53% / 0.2)' },
+  { key: 'create', label: 'Can Create', maxLevel: 16, color: 'hsl(280 87% 65% / 0.06)', border: 'hsl(280 87% 65% / 0.18)' },
+  { key: 'evolve', label: 'Can Evolve', maxLevel: 23, color: 'hsl(350 89% 60% / 0.05)', border: 'hsl(350 89% 60% / 0.15)' },
+  { key: 'transcend', label: 'Can Transcend', maxLevel: Infinity, color: 'hsl(220 15% 50% / 0.03)', border: 'hsl(220 15% 50% / 0.1)' },
+];
+
+function getZoneIndex(level: number) {
+  return JOURNEY_ZONES.findIndex(z => level <= z.maxLevel);
+}
+
+// Layout nodes into nested squares anchored at bottom-left based on evolution_level.
+function layoutGraph(
+  capabilities: CapabilityNode[], 
+  containerSize: number
+): { 
+  nodes: CapabilityNode[]; 
+  size: number; 
+  zones: { key: string; label: string; x: number; y: number; w: number; h: number; color: string; border: string; nodeCount: number }[];
+  levelBands: { level: number; label: string; yStart: number; yEnd: number }[] 
+} {
   const SIZE = containerSize || 800;
-  if (capabilities.length === 0) return { nodes: [], size: SIZE, levelBands: [] };
+  if (capabilities.length === 0) return { nodes: [], size: SIZE, zones: [], levelBands: [] };
 
-  const byName = new Map(capabilities.map(n => [n.name, n]));
-
-  // Compute dependency depth for every node
-  const depthCache = new Map<string, number>();
-  const getDepth = (name: string, visited = new Set<string>()): number => {
-    if (depthCache.has(name)) return depthCache.get(name)!;
-    if (visited.has(name)) return 0;
-    visited.add(name);
-    const node = byName.get(name);
-    if (!node) return 0;
-    // Only count parents that actually exist in the graph
-    const parentDepths = (node.builtOn || [])
-      .filter(p => byName.has(p))
-      .map(p => getDepth(p, new Set(visited)));
-    const depth = parentDepths.length > 0 ? Math.max(...parentDepths) + 1 : 0;
-    depthCache.set(name, depth);
-    return depth;
-  };
-
-  // Compute all depths
-  const nodesWithDepth = capabilities.map(n => ({
-    ...n,
-    level: getDepth(n.name), // override level with computed depth
-  }));
-
-  // Group by depth
-  const levels = new Map<number, CapabilityNode[]>();
-  nodesWithDepth.forEach(cap => {
-    if (!levels.has(cap.level)) levels.set(cap.level, []);
-    levels.get(cap.level)!.push(cap);
+  // Group nodes by zone based on their evolution_level
+  const zoneNodes = new Map<number, CapabilityNode[]>();
+  capabilities.forEach(n => {
+    const zi = getZoneIndex(n.level);
+    if (!zoneNodes.has(zi)) zoneNodes.set(zi, []);
+    zoneNodes.get(zi)!.push(n);
   });
 
-  const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b);
-  const numLevels = sortedLevels.length;
-  if (numLevels === 0) return { nodes: [], size: SIZE, levelBands: [] };
+  // Find max active zone
+  const maxActiveIndex = Math.max(...Array.from(zoneNodes.keys()), 0);
+  const zonesToShow = JOURNEY_ZONES.slice(0, Math.max(maxActiveIndex + 1, 1));
 
-  const padding = 40;
-  const usable = SIZE - padding * 2;
-  const bandHeight = usable / numLevels;
+  const padding = 30;
+  const totalSize = SIZE - padding * 2;
+  const numZones = zonesToShow.length;
 
+  // Create zone rectangles
+  const zoneRects: { key: string; label: string; x: number; y: number; w: number; h: number; color: string; border: string; nodeCount: number }[] = [];
+  
+  zonesToShow.forEach((zone, i) => {
+    const frac = (i + 1) / numZones;
+    const w = totalSize * frac;
+    const h = totalSize * frac;
+    const x = padding;
+    const y = padding + totalSize - h;
+    const nc = zoneNodes.get(i)?.length || 0;
+    zoneRects.push({ key: zone.key, label: zone.label, x, y, w, h, color: zone.color, border: zone.border, nodeCount: nc });
+  });
+
+  // Place nodes within their zones
   const result: CapabilityNode[] = [];
-  const levelBands: { level: number; label: string; yStart: number; yEnd: number }[] = [];
+  
+  zonesToShow.forEach((zone, zi) => {
+    const nodesInZone = zoneNodes.get(zi) || [];
+    if (nodesInZone.length === 0) return;
 
-  sortedLevels.forEach((lvl, li) => {
-    const nodes = levels.get(lvl)!;
-    const ri = numLevels - 1 - li; // bottom = lowest depth
-    const yCenter = padding + ri * bandHeight + bandHeight / 2;
-    const yStart = padding + ri * bandHeight;
-    const yEnd = yStart + bandHeight;
+    const rect = zoneRects[zi];
+    const innerRect = zi > 0 ? zoneRects[zi - 1] : null;
     
-    levelBands.push({ level: lvl, label: `Depth ${lvl}`, yStart, yEnd });
+    let minX: number, maxX: number, minY: number, maxY: number;
+    
+    if (!innerRect) {
+      // Innermost zone — use full square
+      minX = rect.x + 15;
+      maxX = rect.x + rect.w - 15;
+      minY = rect.y + 18;
+      maxY = rect.y + rect.h - 15;
+    } else {
+      // Ring zone
+      minX = rect.x + 15;
+      maxX = rect.x + rect.w - 15;
+      minY = rect.y + 18;
+      maxY = rect.y + rect.h - 15;
+    }
 
-    const count = nodes.length;
-    const spacing = Math.min(usable / (count + 1), 80);
-    const totalWidth = spacing * (count - 1);
-    const startX = padding + (usable - totalWidth) / 2;
-
-    nodes.forEach((node, ni) => {
-      result.push({
-        ...node,
-        x: count === 1 ? SIZE / 2 : startX + ni * spacing,
-        y: yCenter,
+    const count = nodesInZone.length;
+    
+    if (!innerRect) {
+      // Grid layout in full square
+      const cols = Math.ceil(Math.sqrt(count));
+      const rows = Math.ceil(count / cols);
+      const xStep = (maxX - minX) / Math.max(cols, 1);
+      const yStep = (maxY - minY) / Math.max(rows, 1);
+      
+      nodesInZone.forEach((node, ni) => {
+        const col = ni % cols;
+        const row = Math.floor(ni / cols);
+        result.push({
+          ...node,
+          x: minX + xStep * 0.5 + col * xStep,
+          y: minY + yStep * 0.5 + row * yStep,
+        });
       });
-    });
+    } else {
+      // Ring zone — place in L-shaped area
+      const positions: { x: number; y: number }[] = [];
+      const innerRight = innerRect.x + innerRect.w;
+      const innerTop = innerRect.y;
+      
+      // Top strip
+      const topStripH = innerTop - rect.y;
+      if (topStripH > 20) {
+        const cols = Math.max(1, Math.floor((maxX - minX) / 40));
+        const rows = Math.max(1, Math.floor(topStripH / 40));
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            positions.push({
+              x: minX + ((maxX - minX) / (cols + 1)) * (c + 1),
+              y: minY + (topStripH / (rows + 1)) * (r + 1),
+            });
+          }
+        }
+      }
+      
+      // Right strip
+      const rightStripW = rect.x + rect.w - innerRight;
+      if (rightStripW > 20) {
+        const rsMinY = Math.max(innerTop, minY);
+        const rsMaxY = maxY;
+        const cols = Math.max(1, Math.floor(rightStripW / 40));
+        const rows = Math.max(1, Math.floor((rsMaxY - rsMinY) / 40));
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            positions.push({
+              x: innerRight + (rightStripW / (cols + 1)) * (c + 1),
+              y: rsMinY + ((rsMaxY - rsMinY) / (rows + 1)) * (r + 1),
+            });
+          }
+        }
+      }
+
+      // Fill remaining with circular distribution
+      while (positions.length < count) {
+        const angle = (positions.length / count) * Math.PI * 2;
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const rx = (maxX - minX) * 0.35;
+        const ry = (maxY - minY) * 0.35;
+        positions.push({
+          x: cx + Math.cos(angle) * rx,
+          y: cy + Math.sin(angle) * ry,
+        });
+      }
+
+      nodesInZone.forEach((node, ni) => {
+        const pos = positions[ni % positions.length];
+        result.push({ ...node, x: pos.x, y: pos.y });
+      });
+    }
   });
 
-  return { nodes: result, size: SIZE, levelBands };
+  return { nodes: result, size: SIZE, zones: zoneRects, levelBands: [] };
 }
 
 const Evolution: React.FC = () => {
