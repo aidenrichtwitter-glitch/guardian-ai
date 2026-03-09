@@ -394,12 +394,53 @@ async function executeGoalStep(): Promise<{ task: AutonomyTask; goalResult: Auto
   }
 
   // 2. Attempt the next step using available deterministic tools
-  const stepText = (nextStep.step || nextStep.action || '').toLowerCase();
+  const stepText = (nextStep.step || nextStep.action || nextStep.label || '').toLowerCase();
   let stepSuccess = false;
   let stepDetail = '';
 
   // Strategy: match step to available deterministic capabilities
-  if (stepText.includes('search') || stepText.includes('find') || stepText.includes('research')) {
+  if (stepText.includes('opinion') || stepText.includes('form opinion') || stepText.includes('analyze data')) {
+    // WORLD AWARENESS: Form opinions from web data
+    try {
+      const queries = [
+        'latest AI developments 2024',
+        'autonomous systems news',
+        'self-evolving software trends',
+      ];
+      
+      const results = await batchDeterministicSearch(queries);
+      const totalResults = results.reduce((sum, r) => sum + r.results.length, 0);
+      
+      if (totalResults > 0) {
+        // Form an opinion by analyzing the data
+        const allSnippets = results.flatMap(r => r.results.map(res => res.snippet));
+        const combinedText = allSnippets.join(' ').toLowerCase();
+        
+        // Analyze sentiment and trends
+        const positiveWords = ['breakthrough', 'advancement', 'improvement', 'success', 'innovative', 'efficient'];
+        const concernWords = ['risk', 'challenge', 'limitation', 'failure', 'concern', 'problem'];
+        
+        const positiveCount = positiveWords.filter(w => combinedText.includes(w)).length;
+        const concernCount = concernWords.filter(w => combinedText.includes(w)).length;
+        
+        let opinion = '';
+        if (positiveCount > concernCount * 1.5) {
+          opinion = `Based on ${totalResults} sources, I observe rapid advancement in autonomous systems. The field is experiencing breakthrough innovations in self-evolution and AI-driven development. This aligns with my own evolution trajectory.`;
+        } else if (concernCount > positiveCount * 1.5) {
+          opinion = `Analysis of ${totalResults} sources reveals significant challenges in autonomous systems development. Key concerns include safety, reliability, and ethical constraints. I must prioritize safety mechanisms in my own evolution.`;
+        } else {
+          opinion = `Reviewing ${totalResults} sources shows balanced progress in autonomous systems. The field advances with measured caution, addressing both innovation and safety. This reflects the optimal evolutionary path.`;
+        }
+        
+        stepSuccess = true;
+        stepDetail = `${opinion} [Queries: ${queries.join(', ')}]`;
+      } else {
+        stepDetail = 'Search returned no results - unable to form opinion';
+      }
+    } catch (err) {
+      stepDetail = `Opinion formation failed: ${err instanceof Error ? err.message : 'unknown error'}`;
+    }
+  } else if (stepText.includes('search') || stepText.includes('find') || stepText.includes('research')) {
     // Use web search
     try {
       const result = await deterministicSearch(goal.title);
