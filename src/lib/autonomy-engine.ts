@@ -156,16 +156,19 @@ async function verifyAllCapabilities(): Promise<AutonomyTask> {
 
 async function runAnomalyScan(): Promise<AutonomyTask> {
   const start = performance.now();
-  const { data: caps } = await supabase.from('capabilities').select('name, cycle_number, evolution_level, built_on, verified');
-  const { data: state } = await supabase.from('evolution_state').select('*').eq('id', 'singleton').single();
+  const { data: caps, error: capsErr } = await supabase.from('capabilities').select('name, cycle_number, evolution_level, built_on, verified');
+  const { data: state, error: stateErr } = await supabase.from('evolution_state').select('*').eq('id', 'singleton').single();
 
-  if (!caps || !state) return { id: 'anomaly', name: 'Advanced anomaly scan', type: 'analyze', success: false, detail: 'No data', duration: performance.now() - start, usedAI: false };
+  if (capsErr || stateErr || !caps || !state) {
+    return { id: 'anomaly', name: 'Advanced anomaly scan', type: 'analyze', success: false, detail: `DB error: ${capsErr?.message || stateErr?.message || 'no data'}`, duration: performance.now() - start, usedAI: false };
+  }
 
   const records = caps.map(c => ({ name: c.name, cycle: c.cycle_number, level: c.evolution_level, builtOn: (c.built_on || []) as string[], verified: c.verified }));
   const anomalies = detectAnomalies(records, state.evolution_level, state.cycle_count);
 
   let repaired = 0;
   let quarantined = 0;
+  const repairErrors: string[] = [];
   
   // Auto-fix orphans
   for (const a of anomalies.filter(a => a.type === 'orphan')) {
@@ -174,17 +177,19 @@ async function runAnomalyScan(): Promise<AutonomyTask> {
       const cap = caps.find(c => c.name === a.affectedEntity);
       if (cap) {
         const newBuiltOn = ((cap.built_on || []) as string[]).filter(b => b !== match[1]);
-        await supabase.from('capabilities').update({ built_on: newBuiltOn } as any).eq('name', cap.name);
-        repaired++;
+        const { error } = await supabase.from('capabilities').update({ built_on: newBuiltOn } as any).eq('name', cap.name);
+        if (error) repairErrors.push(`repair ${cap.name}: ${error.message}`);
+        else repaired++;
       }
     }
   }
   
-  // Auto-quarantine future-dated capabilities (cycle > current cycle)
+  // Auto-quarantine future-dated capabilities
   const futureCaps = caps.filter(c => c.cycle_number > state.cycle_count);
   for (const future of futureCaps) {
-    await supabase.from('capabilities').update({ verified: false, verification_method: 'future-cycle-detected' } as any).eq('name', future.name);
-    quarantined++;
+    const { error } = await supabase.from('capabilities').update({ verified: false, verification_method: 'future-cycle-detected' } as any).eq('name', future.name);
+    if (error) repairErrors.push(`quarantine ${future.name}: ${error.message}`);
+    else quarantined++;
   }
   
   // Detect circular dependencies
@@ -192,23 +197,25 @@ async function runAnomalyScan(): Promise<AutonomyTask> {
     const builtOn = (c.built_on || []) as string[];
     return builtOn.some(dep => {
       const depCap = caps.find(dc => dc.name === dep);
-      return depCap && (depCap.built_on || []).includes(c.name);
+      return depCap && ((depCap.built_on || []) as string[]).includes(c.name);
     });
   });
   
-  if (circularDeps.length > 0) {
-    for (const circ of circularDeps) {
-      await supabase.from('capabilities').update({ verified: false, verification_method: 'circular-dependency' } as any).eq('name', circ.name);
-      quarantined++;
-    }
+  for (const circ of circularDeps) {
+    const { error } = await supabase.from('capabilities').update({ verified: false, verification_method: 'circular-dependency' } as any).eq('name', circ.name);
+    if (error) repairErrors.push(`circ ${circ.name}: ${error.message}`);
+    else quarantined++;
   }
 
+  const hasErrors = repairErrors.length > 0;
   return {
     id: 'anomaly-scan',
     name: 'Advanced anomaly scan & self-repair',
     type: 'repair',
-    success: true,
-    detail: `Found ${anomalies.length} anomalies. Repaired ${repaired} orphans. Quarantined ${quarantined} corrupt caps. Detected ${circularDeps.length} circular deps.`,
+    success: !hasErrors,
+    detail: hasErrors
+      ? `Scan ran but ${repairErrors.length} repair(s) failed: ${repairErrors.slice(0, 2).join('; ')}`
+      : `Found ${anomalies.length} anomalies. Repaired ${repaired} orphans. Quarantined ${quarantined} corrupt caps. Detected ${circularDeps.length} circular deps.`,
     duration: performance.now() - start,
     usedAI: false,
   };
