@@ -386,8 +386,7 @@ function projectManagementPlugin(): Plugin {
           }
 
           const results: string[] = [];
-          const { execFileSync } = await import("child_process");
-          const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+          const { execSync } = await import("child_process");
           const validPkg = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
           const safeDeps = (dependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
           const safeDevDeps = (devDependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
@@ -396,7 +395,7 @@ function projectManagementPlugin(): Plugin {
 
           if (safeDeps.length > 0) {
             try {
-              execFileSync(npmCmd, ["install", ...safeDeps], { cwd: projectDir, timeout: 60000, stdio: "pipe" });
+              execSync(`npm install ${safeDeps.join(" ")}`, { cwd: projectDir, timeout: 60000, stdio: "pipe", shell: true });
               results.push(`Installed: ${safeDeps.join(", ")}`);
             } catch (err: any) {
               errors.push(`Failed to install deps: ${err.message}`);
@@ -405,7 +404,7 @@ function projectManagementPlugin(): Plugin {
 
           if (safeDevDeps.length > 0) {
             try {
-              execFileSync(npmCmd, ["install", "--save-dev", ...safeDevDeps], { cwd: projectDir, timeout: 60000, stdio: "pipe" });
+              execSync(`npm install --save-dev ${safeDevDeps.join(" ")}`, { cwd: projectDir, timeout: 60000, stdio: "pipe", shell: true });
               results.push(`Installed dev: ${safeDevDeps.join(", ")}`);
             } catch (err: any) {
               errors.push(`Failed to install dev deps: ${err.message}`);
