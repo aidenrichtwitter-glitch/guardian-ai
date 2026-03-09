@@ -9,7 +9,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "λ Recursive — Self-Referential IDE",
     "windows": [
       {
         "title": "λ Recursive",
