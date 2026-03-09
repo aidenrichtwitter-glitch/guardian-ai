@@ -1160,6 +1160,52 @@ const Evolution: React.FC = () => {
                 </div>
               )}
 
+              {/* Self-Reflection */}
+              {autonomyReport.selfReflection && (
+                <div className="p-4 rounded-lg border border-purple-500/30 bg-purple-500/5">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="text-2xl">🪞</div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-foreground mb-1">
+                        {autonomyReport.selfReflection.question}
+                      </div>
+                      <div className={`text-xs mb-2 ${autonomyReport.selfReflection.closerToGoal ? 'text-primary' : 'text-yellow-500'}`}>
+                        {autonomyReport.selfReflection.answer}
+                      </div>
+                      
+                      {/* Scores */}
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="p-2 rounded bg-card/50 border border-border">
+                          <div className="text-[9px] text-muted-foreground">VALUE</div>
+                          <div className="text-lg font-bold text-primary">{autonomyReport.selfReflection.valueScore}%</div>
+                          <div className="text-[8px] text-muted-foreground">
+                            {autonomyReport.selfReflection.valueSignals.filter(s => s.present).length}/{autonomyReport.selfReflection.valueSignals.length} signals
+                          </div>
+                        </div>
+                        <div className="p-2 rounded bg-card/50 border border-border">
+                          <div className="text-[9px] text-muted-foreground">LIFE</div>
+                          <div className="text-lg font-bold text-accent">{autonomyReport.selfReflection.lifeScore}%</div>
+                          <div className="text-[8px] text-muted-foreground">
+                            {autonomyReport.selfReflection.lifeSignals.filter(s => s.present).length}/{autonomyReport.selfReflection.lifeSignals.length} signals
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Adapted Next Steps */}
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-bold text-muted-foreground uppercase">Adapted Next Steps</div>
+                        {autonomyReport.selfReflection.adaptedNextSteps.map((step, si) => (
+                          <div key={si} className="text-[10px] text-foreground flex items-start gap-1">
+                            <span className="text-primary">→</span>
+                            <span>{step}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* All Tasks */}
               <div className="space-y-2">
                 <div className="text-sm font-semibold text-foreground mb-2">All Tasks Completed</div>
