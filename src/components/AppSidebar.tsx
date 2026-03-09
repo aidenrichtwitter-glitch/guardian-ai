@@ -1,4 +1,4 @@
-import { Home, Dna, Grid3X3, BarChart3, BrainCircuit } from "lucide-react";
+import { Home, Dna, RefreshCw, BrainCircuit } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -16,8 +16,7 @@ import {
 const items = [
   { title: "Home", url: "/", icon: Home },
   { title: "Evolution", url: "/evolution", icon: Dna },
-  { title: "Evolution Matrix", url: "/evolution-matrix", icon: Grid3X3 },
-  { title: "Pattern Analysis", url: "/pattern-analysis", icon: BarChart3 },
+  { title: "Evolution Cycle", url: "/evolution-cycle", icon: RefreshCw },
   { title: "AI Bridge", url: "/grok-bridge", icon: BrainCircuit },
 ];
 

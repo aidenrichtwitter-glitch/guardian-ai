@@ -5,8 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Evolution from "./pages/Evolution";
-import EvolutionMatrix from "./pages/EvolutionMatrix";
-import PatternAnalysis from "./pages/PatternAnalysis";
+import EvolutionCycle from "./pages/PatternAnalysis";
 import GrokBridge from "./pages/GrokBridge";
 import NotFound from "./pages/NotFound";
 import { AppLayout } from "./components/AppLayout";
@@ -23,8 +22,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/evolution" element={<Evolution />} />
-            <Route path="/evolution-matrix" element={<EvolutionMatrix />} />
-            <Route path="/pattern-analysis" element={<PatternAnalysis />} />
+            <Route path="/evolution-cycle" element={<EvolutionCycle />} />
             <Route path="/grok-bridge" element={<GrokBridge />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
