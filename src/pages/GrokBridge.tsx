@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
   User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
@@ -151,25 +151,30 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
     readClipboard();
   }, []);
 
-  // Listen for Ctrl+C / Cmd+C — instant clipboard read after copy
+  // Auto-read clipboard continuously (captures website copy-button writes)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        // Small delay to let clipboard update
-        setTimeout(readClipboard, 100);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        readClipboard();
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    }, 1200);
+    return () => window.clearInterval(interval);
   }, [readClipboard]);
 
-  // Also listen for clipboard changes via focus events (when user switches back to app)
+  // Re-check clipboard when user returns to this tab/window
   useEffect(() => {
-    const handleFocus = () => {
-      readClipboard();
+    const handleFocus = () => readClipboard();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') readClipboard();
     };
+
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [readClipboard]);
 
   const validate = (block: ExtractedBlock) => {
@@ -192,7 +197,7 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
         </div>
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary/10 text-primary text-[9px] border border-primary/20">
           <ClipboardCheck className="w-3 h-3" />
-          <span>Auto-capture on <kbd className="px-1 py-0.5 rounded bg-primary/20 text-[8px] font-bold">Ctrl+C</kbd></span>
+          <span>Auto-detects Grok copy-button responses</span>
         </div>
         <button
           onClick={readClipboard}
@@ -220,8 +225,8 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
         <div className="max-h-72 overflow-auto p-3 space-y-2">
           {blocks.length === 0 && (
             <div className="text-center py-4 text-[10px] text-muted-foreground/50">
-              <p>Copy Grok's response (<kbd className="px-1 py-0.5 rounded bg-secondary text-[8px]">Ctrl+C</kbd>) — code blocks auto-appear here</p>
-              <p className="mt-1 text-[9px] text-muted-foreground/30">Also triggers when you tab back to this window</p>
+              <p>Click copy in Grok — code blocks auto-appear here</p>
+              <p className="mt-1 text-[9px] text-muted-foreground/30">Auto-check runs while this tab is active</p>
             </div>
           )}
           {blocks.map(block => (
@@ -455,6 +460,51 @@ const GrokBridge: React.FC = () => {
   const selectedModel = MODELS.find(m => m.id === model) || MODELS[1];
   const currentSite = BROWSER_SITES.find(s => s.url === browserUrl);
 
+  const outboundPrompts = useMemo(() => {
+    const errors = Array.from(validationResults.values())
+      .flat()
+      .filter(check => check.severity === 'error')
+      .map(check => `- ${check.message}`);
+
+    const recentFiles = appliedChanges.slice(-5).map(change => `- ${change.filePath}`);
+
+    const prompts = [
+      {
+        id: 'errors',
+        label: 'Copy Errors',
+        content: errors.length > 0
+          ? `Fix these build/runtime issues and return patch-ready code blocks with file paths:\n\n${errors.join('\n')}`
+          : `No captured validation errors yet. Ask targeted debugging questions and suggest the fastest next verification step for this app.`,
+      },
+      {
+        id: 'suggestions',
+        label: 'Copy Suggestions Request',
+        content: `Suggest the top 3 highest-impact improvements for this app right now. Prioritize speed, reliability, and clean architecture. Return concise rationale + code patch blocks.`,
+      },
+      {
+        id: 'requests',
+        label: 'Copy Goal Request',
+        content: `Act as my rapid app-building copilot. I need actionable next steps and patch-ready code for current work.${recentFiles.length ? `\n\nRecently changed files:\n${recentFiles.join('\n')}` : ''}`,
+      },
+      {
+        id: 'status',
+        label: 'Copy Current Status',
+        content: `Current bridge status: ${statusMessage || 'No status yet'}\nSite: ${currentSite?.name || browserUrl}\n\nTell me exactly what to do next in Grok and what to paste back.`
+      }
+    ];
+
+    return prompts;
+  }, [validationResults, appliedChanges, statusMessage, currentSite?.name, browserUrl]);
+
+  const copyPromptToClipboard = useCallback(async (label: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setStatusMessage(`✓ Copied: ${label}`);
+    } catch {
+      setStatusMessage('⚠ Clipboard write failed');
+    }
+  }, []);
+
   return (
     <div className="h-full flex flex-col bg-background text-foreground font-mono">
       {/* ── Top bar with mode toggle ── */}
@@ -552,6 +602,21 @@ const GrokBridge: React.FC = () => {
               allow="clipboard-write"
               title="Embedded Browser"
             />
+
+            {/* Send-to-Grok quick prompts */}
+            <div className="absolute top-3 left-3 z-10 w-56 bg-card/90 backdrop-blur border border-border/50 rounded-lg p-2.5 space-y-1.5 shadow-xl">
+              <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Send to Grok</p>
+              {outboundPrompts.map(prompt => (
+                <button
+                  key={prompt.id}
+                  onClick={() => copyPromptToClipboard(prompt.label, prompt.content)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded bg-secondary/40 hover:bg-secondary/70 border border-border/30 text-[10px] text-foreground/80 transition-colors"
+                >
+                  <Clipboard className="w-3 h-3 text-primary" />
+                  <span className="truncate">{prompt.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Floating code extractor panel */}
