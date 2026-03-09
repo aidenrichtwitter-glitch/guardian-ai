@@ -1,16 +1,29 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BarChart3, Zap } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { getEvolutionTitle } from '@/lib/evolution-titles';
 
-const PHASES = [
-  { id: 'observe', label: 'Observe', description: 'Scan environment & gather signals' },
-  { id: 'analyze', label: 'Analyze', description: 'Detect patterns & anomalies' },
-  { id: 'plan', label: 'Plan', description: 'Generate evolution strategy' },
-  { id: 'execute', label: 'Execute', description: 'Apply mutations & changes' },
-  { id: 'verify', label: 'Verify', description: 'Validate & consolidate gains' },
+const PROCESSES = [
+  { id: 'scanning', label: 'Scanning', description: 'Choose next file to analyze' },
+  { id: 'reflecting', label: 'Reflecting', description: 'AI introspects on its own code' },
+  { id: 'proposing', label: 'Proposing', description: 'Generate a self-modification' },
+  { id: 'safety', label: 'Safety Check', description: 'Validate change against safety rules' },
+  { id: 'applying', label: 'Applying', description: 'Write mutation to virtual filesystem' },
+  { id: 'verification', label: 'Verification', description: 'Prove the capability is real' },
+  { id: 'anomaly', label: 'Anomaly Detection', description: 'Detect drift & unexpected patterns' },
+  { id: 'pattern', label: 'Pattern Recognition', description: 'Identify growth trends & cycles' },
+  { id: 'forecasting', label: 'Forecasting', description: 'Predict next evolutions' },
+  { id: 'goal-eval', label: 'Goal Evaluation', description: 'Pick highest-priority goal' },
+  { id: 'task-decomp', label: 'Task Decomposition', description: 'Break goal into executable steps' },
+  { id: 'goal-exec', label: 'Goal Execution', description: 'Execute next step toward goal' },
+  { id: 'self-repair', label: 'Self-Repair', description: 'Fix broken capabilities & files' },
+  { id: 'memory', label: 'Memory Consolidation', description: 'Compress & archive long-term state' },
+  { id: 'self-doc', label: 'Self-Documentation', description: 'Auto-generate project docs' },
+  { id: 'rule-engine', label: 'Rule Engine', description: 'Evaluate governance rules' },
+  { id: 'self-reflect', label: 'Self-Reflection', description: 'Judge progress & adapt strategy' },
+  { id: 'cooling', label: 'Cooling', description: 'Brief pause before next cycle' },
 ];
 
 const PatternAnalysis: React.FC = () => {
@@ -21,17 +34,12 @@ const PatternAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
-    const stateRes = await supabase
-      .from('evolution_state')
-      .select('*')
-      .eq('id', 'singleton')
-      .single();
-
-    const capRes = await supabase.from('capabilities').select('id', { count: 'exact', head: true });
-
-    const state = stateRes.data;
-    setCurrentLevel(state?.evolution_level ?? 0);
-    setTotalCycles(state?.cycle_count ?? 0);
+    const [stateRes, capRes] = await Promise.all([
+      supabase.from('evolution_state').select('*').eq('id', 'singleton').single(),
+      supabase.from('capabilities').select('id', { count: 'exact', head: true }),
+    ]);
+    setCurrentLevel(stateRes.data?.evolution_level ?? 0);
+    setTotalCycles(stateRes.data?.cycle_count ?? 0);
     setTotalCaps(capRes.count ?? 0);
     setLoading(false);
   }, []);
@@ -42,157 +50,165 @@ const PatternAnalysis: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // Layout bubbles in a circle
-  const cx = 50; // center x %
-  const cy = 50; // center y %
-  const radius = 32; // % of container
+  const cx = 50;
+  const cy = 50;
+  const count = PROCESSES.length;
 
-  const bubbles = PHASES.map((phase, i) => {
-    const angle = (i / PHASES.length) * Math.PI * 2 - Math.PI / 2;
-    const x = cx + radius * Math.cos(angle);
-    const y = cy + radius * Math.sin(angle);
-    return { ...phase, x, y, angle };
+  // Two rings: inner (first 9) and outer (last 9)
+  const innerCount = Math.ceil(count / 2);
+  const outerCount = count - innerCount;
+  const innerRadius = 22;
+  const outerRadius = 38;
+
+  const bubbles = PROCESSES.map((proc, i) => {
+    const isInner = i < innerCount;
+    const ring = isInner ? innerCount : outerCount;
+    const idx = isInner ? i : i - innerCount;
+    const angle = (idx / ring) * Math.PI * 2 - Math.PI / 2;
+    const r = isInner ? innerRadius : outerRadius;
+    return {
+      ...proc,
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+      ring: isInner ? 'inner' : 'outer',
+    };
   });
 
-  // Connection lines between sequential phases
-  const connections = bubbles.map((b, i) => {
-    const next = bubbles[(i + 1) % bubbles.length];
-    return { x1: b.x, y1: b.y, x2: next.x, y2: next.y, key: `${b.id}-${next.id}` };
-  });
+  // Sequential connections within each ring
+  const innerBubbles = bubbles.filter(b => b.ring === 'inner');
+  const outerBubbles = bubbles.filter(b => b.ring === 'outer');
+
+  const makeConnections = (ring: typeof innerBubbles) =>
+    ring.map((b, i) => {
+      const next = ring[(i + 1) % ring.length];
+      return { x1: b.x, y1: b.y, x2: next.x, y2: next.y, key: `${b.id}-${next.id}` };
+    });
+
+  const connections = [...makeConnections(innerBubbles), ...makeConnections(outerBubbles)];
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
-      {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
         <div className="px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link to="/evolution" className="text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-4 h-4" />
             </Link>
-            <BarChart3 className="w-4 h-4 text-primary" />
-            <h1 className="text-sm font-bold tracking-tight">Evolution Cycle Map</h1>
+            <RefreshCw className="w-4 h-4 text-primary" />
+            <h1 className="text-sm font-bold tracking-tight">Evolution Cycle</h1>
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 inline-flex items-center gap-1">
               <Zap className="w-2.5 h-2.5" />
               L{currentLevel} {getEvolutionTitle(currentLevel)} · {totalCaps} caps · {totalCycles} cycles
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/evolution" className="text-[9px] px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground transition-colors">
-              Dashboard
-            </Link>
-            <Link to="/evolution-matrix" className="text-[9px] px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground transition-colors">
-              Chronosphere
-            </Link>
-          </div>
+          <Link to="/evolution" className="text-[9px] px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground transition-colors">
+            Dashboard
+          </Link>
         </div>
       </header>
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          >
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
             <Zap className="w-6 h-6 text-primary" />
           </motion.div>
         </div>
       ) : (
         <div className="flex-1 relative overflow-hidden">
-          {/* SVG connection lines */}
+          {/* SVG connections */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
             {connections.map((c, i) => (
               <motion.line
                 key={c.key}
-                x1={`${c.x1}%`}
-                y1={`${c.y1}%`}
-                x2={`${c.x2}%`}
-                y2={`${c.y2}%`}
-                className="stroke-primary/20"
-                strokeWidth={2}
-                strokeDasharray="6 4"
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={{ delay: i * 0.15, duration: 0.5 }}
+                x1={`${c.x1}%`} y1={`${c.y1}%`}
+                x2={`${c.x2}%`} y2={`${c.y2}%`}
+                className="stroke-primary/15"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: i * 0.04, duration: 0.3 }}
               />
             ))}
-            {/* Animated pulse along connections */}
-            {connections.map((c, i) => (
+            {/* Pulse dots on inner ring */}
+            {makeConnections(innerBubbles).map((c, i) => (
               <motion.circle
                 key={`pulse-${c.key}`}
-                r="3"
-                className="fill-primary/60"
+                r="2.5"
+                className="fill-primary/50"
                 initial={{ cx: `${c.x1}%`, cy: `${c.y1}%` }}
-                animate={{
-                  cx: [`${c.x1}%`, `${c.x2}%`],
-                  cy: [`${c.y1}%`, `${c.y2}%`],
-                }}
+                animate={{ cx: [`${c.x1}%`, `${c.x2}%`], cy: [`${c.y1}%`, `${c.y2}%`] }}
                 transition={{
-                  delay: i * 0.8,
-                  duration: 1.2,
+                  delay: i * 0.6,
+                  duration: 1,
                   repeat: Infinity,
-                  repeatDelay: PHASES.length * 0.8 - 1.2,
+                  repeatDelay: innerBubbles.length * 0.6 - 1,
                   ease: 'easeInOut',
                 }}
               />
             ))}
           </svg>
 
-          {/* Center label */}
+          {/* Center hub */}
           <div
             className="absolute flex flex-col items-center justify-center pointer-events-none"
             style={{ left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, -50%)' }}
           >
             <motion.div
-              className="w-20 h-20 rounded-full border-2 border-primary/20 bg-primary/5 flex flex-col items-center justify-center"
+              className="w-16 h-16 rounded-full border-2 border-primary/20 bg-primary/5 flex flex-col items-center justify-center"
               animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 3, repeat: Infinity }}
             >
-              <span className="text-lg font-bold text-primary font-mono">λ</span>
-              <span className="text-[8px] text-muted-foreground">Cycle {totalCycles}</span>
+              <span className="text-base font-bold text-primary font-mono">λ</span>
+              <span className="text-[7px] text-muted-foreground">Cycle {totalCycles}</span>
             </motion.div>
           </div>
 
           {/* Phase bubbles */}
-          {bubbles.map((bubble, i) => (
-            <motion.div
-              key={bubble.id}
-              className="absolute cursor-pointer"
-              style={{
-                left: `${bubble.x}%`,
-                top: `${bubble.y}%`,
-                transform: 'translate(-50%, -50%)',
-                zIndex: 1,
-              }}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: i * 0.12, type: 'spring', stiffness: 200 }}
-              onMouseEnter={() => setActivePhase(bubble.id)}
-              onMouseLeave={() => setActivePhase(null)}
-            >
+          {bubbles.map((bubble, i) => {
+            const isInner = bubble.ring === 'inner';
+            const size = isInner ? 'w-[72px] h-[72px]' : 'w-[68px] h-[68px]';
+            return (
               <motion.div
-                className={`
-                  w-24 h-24 rounded-full flex flex-col items-center justify-center
-                  border-2 transition-colors duration-200
-                  ${activePhase === bubble.id
-                    ? 'border-primary bg-primary/15 shadow-lg shadow-primary/20'
-                    : 'border-border bg-card/80 hover:border-primary/40'
-                  }
-                `}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.95 }}
+                key={bubble.id}
+                className="absolute cursor-pointer"
+                style={{
+                  left: `${bubble.x}%`,
+                  top: `${bubble.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 1,
+                }}
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: i * 0.05, type: 'spring', stiffness: 200 }}
+                onMouseEnter={() => setActivePhase(bubble.id)}
+                onMouseLeave={() => setActivePhase(null)}
               >
-                <span className="text-[10px] font-bold text-foreground">{bubble.label}</span>
-                <span className="text-[7px] text-muted-foreground text-center px-2 mt-1 leading-tight">
-                  {bubble.description}
-                </span>
-              </motion.div>
+                <motion.div
+                  className={`
+                    ${size} rounded-full flex flex-col items-center justify-center
+                    border transition-colors duration-200
+                    ${activePhase === bubble.id
+                      ? 'border-primary bg-primary/15 shadow-lg shadow-primary/20'
+                      : isInner
+                        ? 'border-border bg-card/80 hover:border-primary/40'
+                        : 'border-border/60 bg-card/60 hover:border-primary/30'
+                    }
+                  `}
+                  whileHover={{ scale: 1.12 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <span className="text-[8px] font-bold text-foreground text-center leading-tight px-1">
+                    {bubble.label}
+                  </span>
+                </motion.div>
 
-              {/* Step number */}
-              <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
-                {i + 1}
-              </div>
-            </motion.div>
-          ))}
+                <div className={`absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[7px] font-bold flex items-center justify-center ${isInner ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground border border-border'}`}>
+                  {i + 1}
+                </div>
+              </motion.div>
+            );
+          })}
 
           {/* Tooltip */}
           {activePhase && (
@@ -202,10 +218,10 @@ const PatternAnalysis: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-xs font-semibold text-foreground">
-                {PHASES.find(p => p.id === activePhase)?.label}
+                {PROCESSES.find(p => p.id === activePhase)?.label}
               </p>
               <p className="text-[10px] text-muted-foreground">
-                {PHASES.find(p => p.id === activePhase)?.description}
+                {PROCESSES.find(p => p.id === activePhase)?.description}
               </p>
             </motion.div>
           )}
