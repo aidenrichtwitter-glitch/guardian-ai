@@ -118,13 +118,12 @@ interface ExtractedBlock extends ParsedBlock {
 
 function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: string) => void }) {
   const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
-  const [monitoring, setMonitoring] = useState(false);
   const [lastClipboard, setLastClipboard] = useState('');
   const [collapsed, setCollapsed] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [flash, setFlash] = useState(false);
 
   const extractFromText = useCallback((text: string) => {
-    if (text === lastClipboard) return;
+    if (text === lastClipboard || text.length < 10) return;
     setLastClipboard(text);
     const parsed = parseCodeBlocks(text);
     if (parsed.length === 0) return;
@@ -135,6 +134,9 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
     }));
     setBlocks(newBlocks);
     setCollapsed(false);
+    // Flash effect
+    setFlash(true);
+    setTimeout(() => setFlash(false), 400);
   }, [lastClipboard]);
 
   const readClipboard = useCallback(async () => {
@@ -144,14 +146,31 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
     } catch { /* permission denied */ }
   }, [extractFromText]);
 
+  // Auto-read clipboard on mount to catch any existing content
   useEffect(() => {
-    if (monitoring) {
-      intervalRef.current = setInterval(readClipboard, 1500);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [monitoring, readClipboard]);
+    readClipboard();
+  }, []);
+
+  // Listen for Ctrl+C / Cmd+C — instant clipboard read after copy
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        // Small delay to let clipboard update
+        setTimeout(readClipboard, 100);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [readClipboard]);
+
+  // Also listen for clipboard changes via focus events (when user switches back to app)
+  useEffect(() => {
+    const handleFocus = () => {
+      readClipboard();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [readClipboard]);
 
   const validate = (block: ExtractedBlock) => {
     const checks = validateChange(block.code, block.filePath || 'unknown.ts');
