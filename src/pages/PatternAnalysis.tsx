@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { getEvolutionTitle } from '@/lib/evolution-titles';
 
 const PROCESSES = [
+  { id: 'prev-notes', label: 'Review Notes', description: 'Check previous evolution notes & learnings' },
   { id: 'scanning', label: 'Scanning', description: 'Choose next file to analyze' },
   { id: 'reflecting', label: 'Reflecting', description: 'AI introspects on its own code' },
   { id: 'proposing', label: 'Proposing', description: 'Generate a self-modification' },
@@ -23,6 +24,7 @@ const PROCESSES = [
   { id: 'self-doc', label: 'Self-Doc', description: 'Auto-generate project docs' },
   { id: 'rule-engine', label: 'Rule Engine', description: 'Evaluate governance rules' },
   { id: 'self-reflect', label: 'Self-Reflect', description: 'Judge progress & adapt strategy' },
+  { id: 'recommendations', label: 'Next Recs', description: 'Recommendations for next evolution cycle' },
   { id: 'cooling', label: 'Cooling', description: 'Brief pause before next cycle' },
 ];
 
