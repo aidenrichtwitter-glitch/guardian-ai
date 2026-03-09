@@ -253,7 +253,7 @@ export function learnTemplate(
       type: 'string',
       defaultValue: funcName,
     });
-    body = body.replaceAll(funcName, `{{${phKey}}}`);
+    body = body.split(funcName).join(`{{${phKey}}}`);
   }
 
   // Find exported interface names
