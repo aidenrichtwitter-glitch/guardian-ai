@@ -152,7 +152,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured }: { onApp
   const [contextSections, setContextSections] = useState<string[]>([]);
   const [showContext, setShowContext] = useState(false);
   const [lastClipboard, setLastClipboard] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [flash, setFlash] = useState(false);
   const [showPasteBox, setShowPasteBox] = useState(false);
   const [clipboardAvailable, setClipboardAvailable] = useState(true);
@@ -224,7 +224,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured }: { onApp
   };
 
   return (
-    <div className={`absolute bottom-0 left-0 right-0 z-20 border-t bg-background/95 backdrop-blur-sm shadow-2xl transition-colors ${flash ? 'border-primary bg-primary/10' : 'border-primary/30'}`}>
+    <div className={`shrink-0 border-t bg-background/95 backdrop-blur-sm shadow-2xl transition-colors z-20 ${flash ? 'border-primary bg-primary/10' : 'border-primary/30'}`}>
       {/* Toolbar */}
       <div className="px-4 py-2 flex items-center gap-3 border-b border-border/30">
         <div className="flex items-center gap-2">
@@ -607,7 +607,7 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
 
   if (!isElectron) {
     return (
-      <div className="flex-1 flex flex-col relative min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
           <div className="flex items-center gap-1 flex-1 overflow-x-auto">
             {BROWSER_SITES.map(site => (
@@ -623,7 +623,7 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
             ))}
           </div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 min-h-0">
           <div className="text-center space-y-3 max-w-lg">
             <Globe className="w-10 h-10 text-primary/60 mx-auto" />
             <h2 className="text-base font-bold text-foreground" data-testid="text-browser-status">Web Mode</h2>
@@ -638,7 +638,7 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
   }
 
   return (
-    <div className="flex-1 flex flex-col relative min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
         <div className="flex items-center gap-1 flex-1 overflow-x-auto">
           {BROWSER_SITES.map(site => (
