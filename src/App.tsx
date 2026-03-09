@@ -9,6 +9,7 @@ import EvolutionMatrix from "./pages/EvolutionMatrix";
 import PatternAnalysis from "./pages/PatternAnalysis";
 import GrokBridge from "./pages/GrokBridge";
 import NotFound from "./pages/NotFound";
+import { AppLayout } from "./components/AppLayout";
 
 const queryClient = new QueryClient();
 
@@ -18,15 +19,16 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/evolution" element={<Evolution />} />
-          <Route path="/evolution-matrix" element={<EvolutionMatrix />} />
-          <Route path="/pattern-analysis" element={<PatternAnalysis />} />
-          <Route path="/grok-bridge" element={<GrokBridge />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AppLayout>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/evolution" element={<Evolution />} />
+            <Route path="/evolution-matrix" element={<EvolutionMatrix />} />
+            <Route path="/pattern-analysis" element={<PatternAnalysis />} />
+            <Route path="/grok-bridge" element={<GrokBridge />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AppLayout>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
