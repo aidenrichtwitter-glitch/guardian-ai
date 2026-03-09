@@ -151,9 +151,8 @@ const GrokBridge: React.FC = () => {
   const [appliedChanges, setAppliedChanges] = useState<AppliedChange[]>([]);
   const [validationResults, setValidationResults] = useState<Map<string, SafetyCheck[]>>(new Map());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [browserUrl, setBrowserUrl] = useState('https://grok.com');
   const [showBrowser, setShowBrowser] = useState(true);
+  const [browserUrl, setBrowserUrl] = useState('https://grok.com');
   const [customUrl, setCustomUrl] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -391,110 +390,96 @@ const GrokBridge: React.FC = () => {
 
   return (
     <div className="h-full flex bg-background text-foreground font-mono">
-      {/* Sidebar — conversation history */}
-      {showSidebar && (
-        <div className="w-56 border-r border-border/30 bg-card/30 flex flex-col shrink-0">
-          <div className="p-3 border-b border-border/30">
-            <button
-              onClick={newConversation}
-              className="w-full px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-medium transition-colors"
-            >
-              + New Chat
-            </button>
-          </div>
-          <div className="flex-1 overflow-auto p-2 space-y-1">
-            {conversations.map(c => (
-              <div
-                key={c.id}
-                className={`group flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors text-[10px] ${
-                  c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
-                }`}
-                onClick={() => switchConversation(c.id)}
-              >
-                <span className="flex-1 truncate">{c.title}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
-                >
-                  <Trash2 className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            ))}
-            {conversations.length === 0 && (
-              <p className="text-[9px] text-muted-foreground/40 text-center py-4">No conversations yet</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main area: chat + embedded browser */}
-      <div className="flex-1 flex min-w-0">
-        {/* Chat panel */}
-        <div className={`flex flex-col min-w-0 ${showBrowser ? 'w-1/2' : 'flex-1'}`}>
-          {/* Header */}
+      {/* Left panel: chat (with inline conversation list) */}
+      <div className={`flex flex-col min-w-0 ${showBrowser ? 'w-[360px] shrink-0' : 'flex-1'} border-r border-border/30`}>
+        {/* Header */}
           <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowSidebar(!showSidebar)}
-                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
-                >
-                  <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
-                </button>
-                <h1 className="text-sm font-bold text-foreground">AI Bridge</h1>
+            <div className="px-3 py-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
+                <h1 className="text-xs font-bold text-foreground">AI Chat</h1>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowBrowser(!showBrowser)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[10px] font-medium transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[9px] font-medium transition-colors"
                 >
                   {showBrowser ? <PanelRightClose className="w-3 h-3" /> : <PanelRight className="w-3 h-3" />}
-                  {showBrowser ? 'Hide Browser' : 'Show Browser'}
+                  {showBrowser ? 'Hide' : 'Browser'}
                 </button>
-              </div>
-
-              {/* Model picker */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowModelPicker(!showModelPicker)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
-                >
-                  {selectedModel.name}
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-                {showModelPicker && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
-                    {MODELS.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => { setModel(m.id); setShowModelPicker(false); }}
-                        className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
-                          m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-[9px] text-muted-foreground">{m.desc}</div>
-                        </div>
-                        {m.id === model && <Check className="w-3 h-3 text-primary" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Model picker */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowModelPicker(!showModelPicker)}
+                    className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[9px] text-muted-foreground transition-colors"
+                  >
+                    {selectedModel.name}
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
+                  {showModelPicker && (
+                    <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                      {MODELS.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setModel(m.id); setShowModelPicker(false); }}
+                          className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
+                            m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-medium">{m.name}</div>
+                            <div className="text-[9px] text-muted-foreground">{m.desc}</div>
+                          </div>
+                          {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* Conversation list + new chat button */}
+          <div className="border-b border-border/30 bg-card/30 px-2 py-2 shrink-0 space-y-1">
+            <button
+              onClick={newConversation}
+              className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors"
+            >
+              + New Chat
+            </button>
+            {conversations.length > 0 && (
+              <div className="max-h-24 overflow-auto space-y-0.5">
+                {conversations.map(c => (
+                  <div
+                    key={c.id}
+                    className={`group flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors text-[9px] ${
+                      c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                    onClick={() => switchConversation(c.id)}
+                  >
+                    <span className="flex-1 truncate">{c.title}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Chat messages */}
-          <div className="flex-1 overflow-auto p-6 space-y-4">
+          <div className="flex-1 overflow-auto p-4 space-y-3">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-                <Bot className="w-10 h-10 text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-50">
+                <Bot className="w-8 h-8 text-muted-foreground" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
-                    Code blocks with file paths can be validated and applied instantly
-                  </p>
-                  <p className="text-[9px] text-muted-foreground/40 mt-3">
-                    Model: {selectedModel.name} — {selectedModel.desc}
+                  <p className="text-xs text-muted-foreground">Chat with Grok</p>
+                  <p className="text-[9px] text-muted-foreground/40 mt-1">
+                    {selectedModel.name} — {selectedModel.desc}
                   </p>
                 </div>
               </div>
@@ -558,81 +543,80 @@ const GrokBridge: React.FC = () => {
           </div>
         </div>
 
-        {/* ═══ Embedded Browser Panel ═══ */}
-        {showBrowser && (
-          <div className="w-1/2 border-l border-border/30 flex flex-col bg-card/20">
-            {/* Browser toolbar */}
-            <div className="border-b border-border/30 bg-card/50 px-3 py-2 flex items-center gap-2 shrink-0">
-              {/* Site quick-select buttons */}
-              <div className="flex items-center gap-1 flex-1 overflow-x-auto">
-                {BROWSER_SITES.map(site => (
-                  <button
-                    key={site.id}
-                    onClick={() => setBrowserUrl(site.url)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
-                      browserUrl === site.url
-                        ? 'bg-primary/15 text-primary border border-primary/30'
-                        : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
-                    }`}
-                  >
-                    <span>{site.icon}</span>
-                    <span>{site.name}</span>
-                  </button>
-                ))}
-              </div>
-              {/* Custom URL input */}
-              <div className="flex items-center gap-1 shrink-0">
-                <input
-                  value={customUrl}
-                  onChange={e => setCustomUrl(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && customUrl.trim()) {
-                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                      setBrowserUrl(url);
-                      setCustomUrl('');
-                    }
-                  }}
-                  placeholder="URL..."
-                  className="w-32 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
-                />
+      {/* ═══ Embedded Browser Panel ═══ */}
+      {showBrowser && (
+        <div className="flex-1 flex flex-col bg-card/20 min-w-0">
+          {/* Browser toolbar */}
+          <div className="border-b border-border/30 bg-card/50 px-3 py-2 flex items-center gap-2 shrink-0">
+            {/* Site quick-select buttons */}
+            <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+              {BROWSER_SITES.map(site => (
                 <button
-                  onClick={() => {
-                    if (customUrl.trim()) {
-                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                      setBrowserUrl(url);
-                      setCustomUrl('');
-                    }
-                  }}
-                  className="p-1 rounded bg-secondary/50 hover:bg-secondary/80 transition-colors"
+                  key={site.id}
+                  onClick={() => setBrowserUrl(site.url)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
+                    browserUrl === site.url
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
+                  }`}
                 >
-                  <Globe className="w-3 h-3 text-muted-foreground" />
+                  <span>{site.icon}</span>
+                  <span>{site.name}</span>
                 </button>
-              </div>
+              ))}
             </div>
-
-            {/* Browser address bar */}
-            <div className="border-b border-border/20 bg-card/30 px-3 py-1.5 flex items-center gap-2">
-              <Globe className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-              <span className="text-[10px] text-muted-foreground/70 truncate flex-1">{browserUrl}</span>
-              {currentSite && (
-                <span className="text-[9px] text-primary/60 shrink-0">{currentSite.name}</span>
-              )}
-            </div>
-
-            {/* Iframe */}
-            <div className="flex-1 relative">
-              <iframe
-                key={browserUrl}
-                src={browserUrl}
-                className="w-full h-full border-0"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                allow="clipboard-write"
-                title="Embedded Browser"
+            {/* Custom URL input */}
+            <div className="flex items-center gap-1 shrink-0">
+              <input
+                value={customUrl}
+                onChange={e => setCustomUrl(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && customUrl.trim()) {
+                    const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+                    setBrowserUrl(url);
+                    setCustomUrl('');
+                  }
+                }}
+                placeholder="URL..."
+                className="w-32 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
               />
+              <button
+                onClick={() => {
+                  if (customUrl.trim()) {
+                    const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+                    setBrowserUrl(url);
+                    setCustomUrl('');
+                  }
+                }}
+                className="p-1 rounded bg-secondary/50 hover:bg-secondary/80 transition-colors"
+              >
+                <Globe className="w-3 h-3 text-muted-foreground" />
+              </button>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Browser address bar */}
+          <div className="border-b border-border/20 bg-card/30 px-3 py-1.5 flex items-center gap-2">
+            <Globe className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+            <span className="text-[10px] text-muted-foreground/70 truncate flex-1">{browserUrl}</span>
+            {currentSite && (
+              <span className="text-[9px] text-primary/60 shrink-0">{currentSite.name}</span>
+            )}
+          </div>
+
+          {/* Iframe */}
+          <div className="flex-1 relative">
+            <iframe
+              key={browserUrl}
+              src={browserUrl}
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              allow="clipboard-write"
+              title="Embedded Browser"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
