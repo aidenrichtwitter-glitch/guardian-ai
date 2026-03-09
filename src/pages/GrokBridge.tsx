@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot, User, Loader2, Code2 } from 'lucide-react';
+import { Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot, User, Loader2, Code2, Trash2, ChevronDown, Download } from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
@@ -19,6 +19,20 @@ interface AppliedChange {
   timestamp: number;
 }
 
+interface Conversation {
+  id: string;
+  title: string;
+  messages: Msg[];
+  model: string;
+  createdAt: number;
+}
+
+const MODELS = [
+  { id: 'grok-3', name: 'Grok 3', desc: 'Most capable' },
+  { id: 'grok-3-mini', name: 'Grok 3 Mini', desc: 'Fast & efficient' },
+  { id: 'grok-3-fast', name: 'Grok 3 Fast', desc: 'Speed optimized' },
+];
+
 function parseCodeBlocks(text: string): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
   const regex = /(?:(?:\/\/|#|<!--)\s*(?:file:\s*)?(\S+\.(?:tsx?|jsx?|css|html|json|md))\s*(?:-->)?\s*\n)?```(\w+)?\n([\s\S]*?)```/g;
@@ -36,11 +50,13 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/grok-chat`;
 
 async function streamGrok({
   messages,
+  model,
   onDelta,
   onDone,
   onError,
 }: {
   messages: Msg[];
+  model: string;
   onDelta: (text: string) => void;
   onDone: () => void;
   onError: (err: string) => void;
@@ -52,7 +68,7 @@ async function streamGrok({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, model }),
     });
 
     if (!resp.ok) {
@@ -84,7 +100,7 @@ async function streamGrok({
           const parsed = JSON.parse(json);
           const content = parsed.choices?.[0]?.delta?.content;
           if (content) onDelta(content);
-        } catch { /* partial json, wait for more */ }
+        } catch { /* partial json */ }
       }
     }
     onDone();
@@ -93,21 +109,87 @@ async function streamGrok({
   }
 }
 
+function generateTitle(messages: Msg[]): string {
+  const first = messages.find(m => m.role === 'user');
+  if (!first) return 'New conversation';
+  return first.content.slice(0, 50) + (first.content.length > 50 ? '...' : '');
+}
+
+const STORAGE_KEY = 'grok-conversations';
+
+function loadConversations(): Conversation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveConversations(convos: Conversation[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(convos.slice(0, 50)));
+}
+
 const GrokBridge: React.FC = () => {
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations());
+  const [activeConvoId, setActiveConvoId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [model, setModel] = useState('grok-3-mini');
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [appliedChanges, setAppliedChanges] = useState<AppliedChange[]>([]);
   const [validationResults, setValidationResults] = useState<Map<string, SafetyCheck[]>>(new Map());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const virtualFiles = SELF_SOURCE.map(f => f.path).sort();
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Persist conversations
+  useEffect(() => {
+    saveConversations(conversations);
+  }, [conversations]);
+
+  const newConversation = useCallback(() => {
+    const convo: Conversation = {
+      id: crypto.randomUUID(),
+      title: 'New conversation',
+      messages: [],
+      model,
+      createdAt: Date.now(),
+    };
+    setConversations(prev => [convo, ...prev]);
+    setActiveConvoId(convo.id);
+    setMessages([]);
+    setAppliedChanges([]);
+    setValidationResults(new Map());
+  }, [model]);
+
+  const switchConversation = useCallback((id: string) => {
+    // Save current
+    if (activeConvoId && messages.length > 0) {
+      setConversations(prev => prev.map(c =>
+        c.id === activeConvoId ? { ...c, messages, title: generateTitle(messages) } : c
+      ));
+    }
+    const convo = conversations.find(c => c.id === id);
+    if (convo) {
+      setActiveConvoId(id);
+      setMessages(convo.messages);
+      setModel(convo.model);
+      setAppliedChanges([]);
+    }
+  }, [activeConvoId, messages, conversations]);
+
+  const deleteConversation = useCallback((id: string) => {
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (activeConvoId === id) {
+      setActiveConvoId(null);
+      setMessages([]);
+    }
+  }, [activeConvoId]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -115,14 +197,24 @@ const GrokBridge: React.FC = () => {
 
     const userMsg: Msg = { role: 'user', content: text };
     setInput('');
-    setMessages(prev => [...prev, userMsg]);
+    const allMessages = [...messages, userMsg];
+    setMessages(allMessages);
     setIsLoading(true);
 
+    // Auto-create conversation if none active
+    let convoId = activeConvoId;
+    if (!convoId) {
+      convoId = crypto.randomUUID();
+      const convo: Conversation = { id: convoId, title: text.slice(0, 50), messages: [], model, createdAt: Date.now() };
+      setConversations(prev => [convo, ...prev]);
+      setActiveConvoId(convoId);
+    }
+
     let assistantSoFar = '';
-    const allMessages = [...messages, userMsg];
 
     await streamGrok({
       messages: allMessages,
+      model,
       onDelta: (chunk) => {
         assistantSoFar += chunk;
         setMessages(prev => {
@@ -133,13 +225,19 @@ const GrokBridge: React.FC = () => {
           return [...prev, { role: 'assistant', content: assistantSoFar }];
         });
       },
-      onDone: () => setIsLoading(false),
+      onDone: () => {
+        setIsLoading(false);
+        // Save to conversation
+        setConversations(prev => prev.map(c =>
+          c.id === convoId ? { ...c, messages: [...allMessages, { role: 'assistant' as const, content: assistantSoFar }], title: generateTitle(allMessages), model } : c
+        ));
+      },
       onError: (err) => {
         setIsLoading(false);
         setStatusMessage(`⚠ ${err}`);
       },
     });
-  }, [input, isLoading, messages]);
+  }, [input, isLoading, messages, model, activeConvoId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -276,92 +374,169 @@ const GrokBridge: React.FC = () => {
     );
   };
 
+  const selectedModel = MODELS.find(m => m.id === model) || MODELS[1];
+
   return (
-    <div className="h-full flex flex-col bg-background text-foreground font-mono">
-      {/* Header */}
-      <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-[hsl(var(--terminal-amber))]" />
-            <h1 className="text-sm font-bold text-foreground">Grok Bridge</h1>
-            <span className="text-[9px] uppercase tracking-widest text-muted-foreground/50 border border-border/50 px-1.5 py-0.5 rounded">
-              native xAI chat
-            </span>
-          </div>
-          {statusMessage && (
-            <span className="text-[10px] text-[hsl(var(--terminal-amber))] animate-fade-in">{statusMessage}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Chat messages */}
-      <div className="flex-1 overflow-auto p-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-            <Bot className="w-10 h-10 text-muted-foreground" />
-            <div>
-              <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
-              <p className="text-[10px] text-muted-foreground/60 mt-1">
-                Ask for code changes — code blocks with file paths can be validated and applied instantly
-              </p>
-            </div>
-          </div>
-        )}
-        {messages.map((msg, i) => renderMessage(msg, i))}
-        {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-          <div className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
-              <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
-            </div>
-            <div className="text-xs text-muted-foreground">Thinking...</div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* Applied changes bar */}
-      {appliedChanges.length > 0 && (
-        <div className="border-t border-border/30 bg-card/30 px-6 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
-          <span className="text-[9px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
-          {appliedChanges.map((change, i) => (
+    <div className="h-full flex bg-background text-foreground font-mono">
+      {/* Sidebar — conversation history */}
+      {showSidebar && (
+        <div className="w-56 border-r border-border/30 bg-card/30 flex flex-col shrink-0">
+          <div className="p-3 border-b border-border/30">
             <button
-              key={i}
-              onClick={() => rollback(change)}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group"
+              onClick={newConversation}
+              className="w-full px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-medium transition-colors"
             >
-              <FileCode className="w-2.5 h-2.5" />
-              {change.filePath.split('/').pop()}
-              <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              + New Chat
             </button>
-          ))}
+          </div>
+          <div className="flex-1 overflow-auto p-2 space-y-1">
+            {conversations.map(c => (
+              <div
+                key={c.id}
+                className={`group flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors text-[10px] ${
+                  c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
+                }`}
+                onClick={() => switchConversation(c.id)}
+              >
+                <span className="flex-1 truncate">{c.title}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ))}
+            {conversations.length === 0 && (
+              <p className="text-[9px] text-muted-foreground/40 text-center py-4">No conversations yet</p>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border/50 bg-card/50 p-4 shrink-0">
-        <div className="flex gap-3 items-end max-w-4xl mx-auto">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Grok to modify code..."
-            rows={1}
-            className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
-            style={{ height: 'auto', overflow: 'hidden' }}
-            onInput={e => {
-              const t = e.currentTarget;
-              t.style.height = 'auto';
-              t.style.height = Math.min(t.scrollHeight, 128) + 'px';
-            }}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || isLoading}
-            className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0"
-          >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
+      {/* Main chat area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
+          <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowSidebar(!showSidebar)}
+                className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+              >
+                <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
+              </button>
+              <h1 className="text-sm font-bold text-foreground">Grok Bridge</h1>
+            </div>
+
+            {/* Model picker */}
+            <div className="relative">
+              <button
+                onClick={() => setShowModelPicker(!showModelPicker)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
+              >
+                {selectedModel.name}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showModelPicker && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                  {MODELS.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => { setModel(m.id); setShowModelPicker(false); }}
+                      className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
+                        m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-medium">{m.name}</div>
+                        <div className="text-[9px] text-muted-foreground">{m.desc}</div>
+                      </div>
+                      {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {statusMessage && (
+              <span className="text-[10px] text-[hsl(var(--terminal-amber))] animate-fade-in hidden sm:inline">{statusMessage}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Chat messages */}
+        <div className="flex-1 overflow-auto p-6 space-y-4">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
+              <Bot className="w-10 h-10 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">
+                  Code blocks with file paths can be validated and applied instantly
+                </p>
+                <p className="text-[9px] text-muted-foreground/40 mt-3">
+                  Model: {selectedModel.name} — {selectedModel.desc}
+                </p>
+              </div>
+            </div>
+          )}
+          {messages.map((msg, i) => renderMessage(msg, i))}
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+            <div className="flex gap-3">
+              <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
+              </div>
+              <div className="text-xs text-muted-foreground">Thinking...</div>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Applied changes bar */}
+        {appliedChanges.length > 0 && (
+          <div className="border-t border-border/30 bg-card/30 px-6 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
+            <span className="text-[9px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
+            {appliedChanges.map((change, i) => (
+              <button
+                key={i}
+                onClick={() => rollback(change)}
+                className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group"
+              >
+                <FileCode className="w-2.5 h-2.5" />
+                {change.filePath.split('/').pop()}
+                <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="border-t border-border/50 bg-card/50 p-4 shrink-0">
+          <div className="flex gap-3 items-end max-w-4xl mx-auto">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask Grok to modify code..."
+              rows={1}
+              className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
+              style={{ height: 'auto', overflow: 'hidden' }}
+              onInput={e => {
+                const t = e.currentTarget;
+                t.style.height = 'auto';
+                t.style.height = Math.min(t.scrollHeight, 128) + 'px';
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || isLoading}
+              className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
