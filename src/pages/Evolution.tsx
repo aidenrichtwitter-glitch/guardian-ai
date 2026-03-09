@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { mean, std } from 'mathjs';
@@ -130,6 +131,7 @@ const Evolution: React.FC = () => {
   const [maturityReport, setMaturityReport] = useState<MaturityReport | null>(null);
   const [isRunningMaturity, setIsRunningMaturity] = useState(false);
   const [maturityLoop, setMaturityLoop] = useState(false);
+  const [showAutonomyDetails, setShowAutonomyDetails] = useState(false);
   const lifeProofRef = React.useRef(false);
   const maturityRef = React.useRef(false);
   const mainRef = React.useRef<HTMLDivElement>(null);
@@ -845,50 +847,55 @@ const Evolution: React.FC = () => {
               {/* Last Autonomy Report */}
               {autonomyReport && (
                 <div className="space-y-2">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <Activity className="w-3 h-3" /> Last Cycle
-                  </div>
-                  
-                  {/* Goal attempt highlight */}
-                  {autonomyReport.goalAttempted && (
-                    <div className={`p-2 rounded border ${autonomyReport.goalAttempted.success ? 'bg-primary/5 border-primary/30' : 'bg-destructive/5 border-destructive/30'}`}>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Target className={`w-3 h-3 ${autonomyReport.goalAttempted.success ? 'text-primary' : 'text-destructive'}`} />
-                        <span className="text-[10px] font-semibold text-foreground/80 truncate">
-                          {autonomyReport.goalAttempted.title}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-foreground/60 mb-1">
-                        Attempted: {autonomyReport.goalAttempted.stepAttempted}
-                      </div>
-                      <div className={`text-[8px] ${autonomyReport.goalAttempted.success ? 'text-primary/80' : 'text-destructive/80'}`}>
-                        {autonomyReport.goalAttempted.detail}
-                      </div>
+                  <button
+                    onClick={() => setShowAutonomyDetails(true)}
+                    className="w-full text-left hover:bg-muted/30 rounded p-2 transition-colors border border-transparent hover:border-primary/20"
+                  >
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1 mb-2">
+                      <Activity className="w-3 h-3" /> Last Cycle
                     </div>
-                  )}
-
-                  <div className="space-y-1">
-                    {autonomyReport.tasksCompleted.filter(t => t.id !== 'goal-exec').map(task => (
-                      <div
-                        key={task.id}
-                        className={`text-[9px] px-2 py-1.5 rounded border ${
-                          task.success
-                            ? task.usedAI
-                              ? 'bg-accent/5 border-accent/20 text-accent'
-                              : 'bg-primary/5 border-primary/20 text-primary'
-                            : 'bg-destructive/5 border-destructive/20 text-destructive'
-                        }`}
-                      >
-                        <span className="font-bold text-[7px] uppercase">
-                          [{task.usedAI ? 'AI' : '⚙️'}]
-                        </span>{' '}
-                        {task.name}: {task.detail.slice(0, 60)}
+                    
+                    {/* Goal attempt highlight */}
+                    {autonomyReport.goalAttempted && (
+                      <div className={`p-2 rounded border ${autonomyReport.goalAttempted.success ? 'bg-primary/5 border-primary/30' : 'bg-destructive/5 border-destructive/30'}`}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Target className={`w-3 h-3 ${autonomyReport.goalAttempted.success ? 'text-primary' : 'text-destructive'}`} />
+                          <span className="text-[10px] font-semibold text-foreground/80 truncate">
+                            {autonomyReport.goalAttempted.title}
+                          </span>
+                        </div>
+                        <div className="text-[9px] text-foreground/60 mb-1">
+                          Attempted: {autonomyReport.goalAttempted.stepAttempted}
+                        </div>
+                        <div className={`text-[8px] ${autonomyReport.goalAttempted.success ? 'text-primary/80' : 'text-destructive/80'}`}>
+                          {autonomyReport.goalAttempted.detail}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  <div className="text-[8px] text-muted-foreground/50">
-                    Duration: {autonomyReport.duration.toFixed(0)}ms
-                  </div>
+                    )}
+
+                    <div className="space-y-1 mt-2">
+                      {autonomyReport.tasksCompleted.filter(t => t.id !== 'goal-exec').slice(0, 2).map(task => (
+                        <div
+                          key={task.id}
+                          className={`text-[9px] px-2 py-1.5 rounded border ${
+                            task.success
+                              ? task.usedAI
+                                ? 'bg-accent/5 border-accent/20 text-accent'
+                                : 'bg-primary/5 border-primary/20 text-primary'
+                              : 'bg-destructive/5 border-destructive/20 text-destructive'
+                          }`}
+                        >
+                          <span className="font-bold text-[7px] uppercase">
+                            [{task.usedAI ? 'AI' : '⚙️'}]
+                          </span>{' '}
+                          {task.name}: {task.detail.slice(0, 60)}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-[8px] text-primary/60 mt-2 flex items-center gap-1">
+                      Click for full details →
+                    </div>
+                  </button>
                 </div>
               )}
 
@@ -1099,6 +1106,103 @@ const Evolution: React.FC = () => {
           {layoutNodes.filter(n => n.status === 'planned').length} planned
         </span>
       </footer>
+
+      {/* Autonomy Details Dialog */}
+      <Dialog open={showAutonomyDetails} onOpenChange={setShowAutonomyDetails}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" />
+              Full Autonomy Cycle Results
+            </DialogTitle>
+          </DialogHeader>
+          {autonomyReport && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="p-4 rounded-lg border border-border bg-card/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold text-foreground">Autonomy Score</div>
+                  <div className="text-2xl font-bold text-primary">{autonomyReport.score}%</div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Duration</div>
+                    <div className="font-semibold text-foreground">{autonomyReport.duration.toFixed(0)}ms</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Tasks Completed</div>
+                    <div className="font-semibold text-foreground">{autonomyReport.tasksCompleted.length}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">AI Tasks</div>
+                    <div className="font-semibold text-accent">{autonomyReport.tasksCompleted.filter(t => t.usedAI).length}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Goal Attempted */}
+              {autonomyReport.goalAttempted && (
+                <div className={`p-4 rounded-lg border ${autonomyReport.goalAttempted.success ? 'bg-primary/5 border-primary/30' : 'bg-destructive/5 border-destructive/30'}`}>
+                  <div className="flex items-start gap-3 mb-3">
+                    <Target className={`w-5 h-5 shrink-0 ${autonomyReport.goalAttempted.success ? 'text-primary' : 'text-destructive'}`} />
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-foreground mb-1">
+                        {autonomyReport.goalAttempted.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-2">
+                        Step Attempted: {autonomyReport.goalAttempted.stepAttempted}
+                      </div>
+                      <div className={`text-xs ${autonomyReport.goalAttempted.success ? 'text-primary' : 'text-destructive'}`}>
+                        {autonomyReport.goalAttempted.detail}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* All Tasks */}
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-foreground mb-2">All Tasks Completed</div>
+                {autonomyReport.tasksCompleted.map((task, idx) => (
+                  <div
+                    key={task.id}
+                    className={`p-3 rounded-lg border ${
+                      task.success
+                        ? task.usedAI
+                          ? 'bg-accent/5 border-accent/20'
+                          : 'bg-primary/5 border-primary/20'
+                        : 'bg-destructive/5 border-destructive/20'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                        task.usedAI ? 'bg-accent/20 text-accent' : 'bg-primary/20 text-primary'
+                      }`}>
+                        {task.usedAI ? 'AI' : '⚙️'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs font-semibold text-foreground mb-1">
+                          {task.name}
+                        </div>
+                        <div className={`text-xs ${
+                          task.success
+                            ? task.usedAI ? 'text-accent' : 'text-primary'
+                            : 'text-destructive'
+                        }`}>
+                          {task.detail}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          Type: {task.type} • Success: {task.success ? '✓' : '✗'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
