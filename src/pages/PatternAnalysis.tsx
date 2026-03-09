@@ -24,7 +24,9 @@ const PROCESSES = [
   { id: 'self-doc', label: 'Self-Doc', description: 'Auto-generate project docs' },
   { id: 'rule-engine', label: 'Rule Engine', description: 'Evaluate governance rules' },
   { id: 'self-reflect', label: 'Self-Reflect', description: 'Judge progress & adapt strategy' },
+  { id: 'plan-batch', label: 'Plan Next Batch', description: 'Generate greyed-out planned capabilities for the next evolution level' },
   { id: 'recommendations', label: 'Next Recs', description: 'Recommendations for next evolution cycle' },
+  { id: 'update-dashboard', label: 'Update Dashboard', description: 'Push new level, capabilities & planned nodes to the Evolution tab' },
   { id: 'cooling', label: 'Cooling', description: 'Brief pause before next cycle' },
 ];
 
