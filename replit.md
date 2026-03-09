@@ -60,8 +60,9 @@ supabase/
 ## Desktop App (Electron)
 - **Desktop mode**: `npm run electron:dev` — starts Vite + Electron together
   - Vite dev server on port 5000, Electron loads it as the main window
-  - GrokBridge opens Grok/ChatGPT/Claude in native Electron BrowserWindow via IPC
-  - IPC handlers: `open-grok-browser`, `open-url-browser` (in electron-browser/src/main.js)
+  - GrokBridge embeds Grok/ChatGPT/Claude directly in the page via Electron `<webview>` tag
+  - Uses `partition="persist:grok"` for persistent login sessions across reloads
+  - Clicking site tabs navigates the embedded webview (no separate windows)
 - **Desktop build**: `npm run electron:build` — builds Vite then packages Electron
 - **Web mode**: Sites open in new browser tabs (fallback when not in Electron)
 - Detection: `typeof window.require === 'function'` → Electron; otherwise web mode

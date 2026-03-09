@@ -280,16 +280,9 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
   );
 }
 
-// ─── Grok Desktop Browser (Electron native windows) ─────────────────────────
+// ─── Grok Desktop Browser (Electron embedded webview) ────────────────────────
 
 const isElectron = typeof window !== 'undefined' && typeof (window as any).require === 'function';
-
-function getIpcRenderer() {
-  if (!isElectron) return null;
-  try {
-    return (window as any).require('electron').ipcRenderer;
-  } catch { return null; }
-}
 
 interface GrokDesktopBrowserProps {
   browserUrl: string;
@@ -300,57 +293,83 @@ interface GrokDesktopBrowserProps {
 }
 
 function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl, onApply }: GrokDesktopBrowserProps) {
-  const [grokOpen, setGrokOpen] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const webviewRef = useRef<HTMLElement | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [webviewReady, setWebviewReady] = useState(false);
 
-  const openGrok = useCallback(async () => {
-    const ipc = getIpcRenderer();
-    if (ipc) {
-      await ipc.invoke('open-grok-browser');
-      setGrokOpen(true);
-      setBrowserUrl('https://grok.com');
-      setStatusMessage('Grok opened in native browser window');
-    } else {
-      window.open('https://grok.com', '_blank');
-      setStatusMessage('Opened in new browser tab');
-    }
-  }, [setBrowserUrl]);
-
-  const openSite = useCallback(async (url: string, name: string) => {
-    const ipc = getIpcRenderer();
-    if (ipc) {
-      await ipc.invoke('open-url-browser', url, name);
+  const navigateTo = useCallback((url: string) => {
+    if (isElectron) {
       setBrowserUrl(url);
-      setStatusMessage(`${name} opened in native browser window`);
+      setLoading(true);
     } else {
       window.open(url, '_blank');
-      setStatusMessage(`${name} opened in new tab`);
     }
   }, [setBrowserUrl]);
 
-  const openCustomUrl = useCallback(async () => {
+  const openCustom = useCallback(() => {
     if (!customUrl.trim()) return;
     const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-    let title: string;
-    try { title = new URL(url).hostname; } catch { title = url; }
-    const ipc = getIpcRenderer();
-    if (ipc) {
-      await ipc.invoke('open-url-browser', url, title);
-      setBrowserUrl(url);
-      setStatusMessage(`${title} opened in native browser window`);
-    } else {
-      window.open(url, '_blank');
-    }
+    navigateTo(url);
     setCustomUrl('');
-  }, [customUrl, setCustomUrl, setBrowserUrl]);
+  }, [customUrl, setCustomUrl, navigateTo]);
 
   useEffect(() => {
-    if (isElectron && !grokOpen) {
-      openGrok();
-    }
-  }, []);
+    if (!isElectron) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
 
-  const currentSite = BROWSER_SITES.find(s => s.url === browserUrl);
+    const onLoading = () => setLoading(true);
+    const onLoaded = () => { setLoading(false); setWebviewReady(true); };
+    const onNavigation = (e: any) => {
+      if (e.url) setBrowserUrl(e.url);
+    };
+
+    wv.addEventListener('did-start-loading', onLoading);
+    wv.addEventListener('did-stop-loading', onLoaded);
+    wv.addEventListener('did-navigate', onNavigation);
+    wv.addEventListener('did-navigate-in-page', onNavigation);
+
+    return () => {
+      wv.removeEventListener('did-start-loading', onLoading);
+      wv.removeEventListener('did-stop-loading', onLoaded);
+      wv.removeEventListener('did-navigate', onNavigation);
+      wv.removeEventListener('did-navigate-in-page', onNavigation);
+    };
+  }, [setBrowserUrl, webviewReady]);
+
+  const currentSite = BROWSER_SITES.find(s => browserUrl.startsWith(s.url));
+
+  if (!isElectron) {
+    return (
+      <div className="flex-1 flex flex-col relative min-h-0">
+        <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+            {BROWSER_SITES.map(site => (
+              <button
+                key={site.id}
+                data-testid={`button-open-${site.id}`}
+                onClick={() => window.open(site.url, '_blank')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] whitespace-nowrap transition-colors bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent"
+              >
+                <span>{site.icon}</span>
+                <span>{site.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+          <div className="text-center space-y-3 max-w-lg">
+            <Globe className="w-10 h-10 text-primary/60 mx-auto" />
+            <h2 className="text-base font-bold text-foreground" data-testid="text-browser-status">Web Mode</h2>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Running in web mode. Sites open in new browser tabs. For the full embedded browser experience, run the desktop app with <code className="text-primary/80">npm run electron:dev</code>
+            </p>
+          </div>
+        </div>
+        <ClipboardExtractor onApply={onApply} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col relative min-h-0">
@@ -360,9 +379,9 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
             <button
               key={site.id}
               data-testid={`button-open-${site.id}`}
-              onClick={() => site.id === 'grok' ? openGrok() : openSite(site.url, site.name)}
+              onClick={() => navigateTo(site.url)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] whitespace-nowrap transition-colors ${
-                browserUrl === site.url
+                browserUrl.startsWith(site.url)
                   ? 'bg-primary/15 text-primary border border-primary/30'
                   : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
               }`}
@@ -373,11 +392,12 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
           ))}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {loading && <Loader2 className="w-3 h-3 text-primary/60 animate-spin" />}
           <Globe className="w-3 h-3 text-muted-foreground/50" />
           <input
             value={customUrl}
             onChange={e => setCustomUrl(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') openCustomUrl(); }}
+            onKeyDown={e => { if (e.key === 'Enter') openCustom(); }}
             placeholder="Custom URL..."
             data-testid="input-custom-url"
             className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
@@ -385,34 +405,24 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-        <div className="text-center space-y-3 max-w-lg">
-          <div className="flex items-center justify-center gap-3">
-            <Globe className="w-10 h-10 text-primary/60" />
-            {currentSite && <span className="text-2xl">{currentSite.icon}</span>}
+      <div className="flex-1 relative min-h-0">
+        {/* @ts-ignore - webview is an Electron-specific HTML element */}
+        <webview
+          ref={(el: any) => { webviewRef.current = el; }}
+          src={browserUrl}
+          partition="persist:grok"
+          data-testid="webview-browser"
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          allowpopups="true"
+        />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <p className="text-xs text-muted-foreground">Loading {currentSite?.name || 'page'}...</p>
+            </div>
           </div>
-          <h2 className="text-base font-bold text-foreground" data-testid="text-browser-status">
-            {grokOpen ? `${currentSite?.name || 'Browser'} — Open in native window` : 'Grok Desktop Browser'}
-          </h2>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            {isElectron
-              ? 'Sites open in native Electron browser windows with full authentication support. Click a site above to open it, then copy code from the AI — the clipboard extractor below will auto-detect code blocks.'
-              : 'Running in web mode. Sites open in new browser tabs. For the full native browser experience, run the desktop app with npm run electron:dev.'
-            }
-          </p>
-          {statusMessage && (
-            <p className="text-[10px] text-primary/70 mt-1">{statusMessage}</p>
-          )}
-        </div>
-
-        <button
-          onClick={openGrok}
-          data-testid="button-launch-grok"
-          className="flex items-center gap-3 px-8 py-4 rounded-xl bg-primary/15 border-2 border-primary/40 hover:bg-primary/25 hover:border-primary/60 transition-all hover:scale-105 shadow-lg shadow-primary/10"
-        >
-          <Sparkles className="w-5 h-5 text-primary" />
-          <span className="text-sm font-bold text-primary">{grokOpen ? 'Focus Grok Window' : 'Open Grok'}</span>
-        </button>
+        )}
       </div>
 
       <ClipboardExtractor onApply={onApply} />
