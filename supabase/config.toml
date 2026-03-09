@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.ghost-evolve]
 verify_jwt = false
+
+[functions.grok-chat]
+verify_jwt = false
