@@ -225,8 +225,8 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
         <div className="max-h-72 overflow-auto p-3 space-y-2">
           {blocks.length === 0 && (
             <div className="text-center py-4 text-[10px] text-muted-foreground/50">
-              <p>Copy Grok's response (<kbd className="px-1 py-0.5 rounded bg-secondary text-[8px]">Ctrl+C</kbd>) — code blocks auto-appear here</p>
-              <p className="mt-1 text-[9px] text-muted-foreground/30">Also triggers when you tab back to this window</p>
+              <p>Click copy in Grok — code blocks auto-appear here</p>
+              <p className="mt-1 text-[9px] text-muted-foreground/30">Auto-check runs while this tab is active</p>
             </div>
           )}
           {blocks.map(block => (
