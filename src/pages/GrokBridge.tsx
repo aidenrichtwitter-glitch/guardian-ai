@@ -1,12 +1,14 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot, User, Loader2, Code2, Trash2, ChevronDown, Download, Globe, PanelRightClose, PanelRight } from 'lucide-react';
+import {
+  Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
+  User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
+  Clipboard, ClipboardCheck, Zap, X, ChevronUp, ChevronDown as ChevronDownIcon
+} from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
 
-// Detect if running inside Tauri
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-
+type Mode = 'api' | 'browser';
 type Msg = { role: 'user' | 'assistant'; content: string };
 
 interface ParsedBlock {
@@ -41,8 +43,7 @@ const BROWSER_SITES = [
   { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com', icon: '💬' },
   { id: 'claude', name: 'Claude', url: 'https://claude.ai', icon: '🧠' },
   { id: 'github', name: 'GitHub', url: 'https://github.com', icon: '🐙' },
-  { id: 'google', name: 'Google', url: 'https://google.com', icon: '🔍' },
-  { id: 'docs', name: 'Tauri Docs', url: 'https://tauri.app/v2/guides/', icon: '📚' },
+  { id: 'perplexity', name: 'Perplexity', url: 'https://perplexity.ai', icon: '🔍' },
 ];
 
 function parseCodeBlocks(text: string): ParsedBlock[] {
@@ -60,65 +61,37 @@ function parseCodeBlocks(text: string): ParsedBlock[] {
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/grok-chat`;
 
-async function streamGrok({
-  messages,
-  model,
-  onDelta,
-  onDone,
-  onError,
-}: {
-  messages: Msg[];
-  model: string;
-  onDelta: (text: string) => void;
-  onDone: () => void;
-  onError: (err: string) => void;
+async function streamGrok({ messages, model, onDelta, onDone, onError }: {
+  messages: Msg[]; model: string;
+  onDelta: (text: string) => void; onDone: () => void; onError: (err: string) => void;
 }) {
   try {
     const resp = await fetch(CHAT_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
       body: JSON.stringify({ messages, model }),
     });
-
-    if (!resp.ok) {
-      const data = await resp.json().catch(() => ({}));
-      onError(data.error || `Error ${resp.status}`);
-      return;
-    }
-
+    if (!resp.ok) { const d = await resp.json().catch(() => ({})); onError(d.error || `Error ${resp.status}`); return; }
     if (!resp.body) { onError('No response body'); return; }
-
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-
       let idx: number;
       while ((idx = buf.indexOf('\n')) !== -1) {
-        let line = buf.slice(0, idx);
-        buf = buf.slice(idx + 1);
+        let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
         if (line.endsWith('\r')) line = line.slice(0, -1);
         if (!line.startsWith('data: ')) continue;
         const json = line.slice(6).trim();
         if (json === '[DONE]') { onDone(); return; }
-        try {
-          const parsed = JSON.parse(json);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) onDelta(content);
-        } catch { /* partial json */ }
+        try { const p = JSON.parse(json); const c = p.choices?.[0]?.delta?.content; if (c) onDelta(c); } catch { }
       }
     }
     onDone();
-  } catch (e) {
-    onError(e instanceof Error ? e.message : 'Stream failed');
-  }
+  } catch (e) { onError(e instanceof Error ? e.message : 'Stream failed'); }
 }
 
 function generateTitle(messages: Msg[]): string {
@@ -128,19 +101,173 @@ function generateTitle(messages: Msg[]): string {
 }
 
 const STORAGE_KEY = 'grok-conversations';
-
 function loadConversations(): Conversation[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
-
 function saveConversations(convos: Conversation[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(convos.slice(0, 50)));
 }
 
+// ─── Browser Mode — clipboard-based code extractor ───────────────────────────
+
+interface ExtractedBlock extends ParsedBlock {
+  id: string;
+  validationResult?: SafetyCheck[];
+  applied: boolean;
+}
+
+function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: string) => void }) {
+  const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
+  const [monitoring, setMonitoring] = useState(false);
+  const [lastClipboard, setLastClipboard] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const extractFromText = useCallback((text: string) => {
+    if (text === lastClipboard) return;
+    setLastClipboard(text);
+    const parsed = parseCodeBlocks(text);
+    if (parsed.length === 0) return;
+    const newBlocks: ExtractedBlock[] = parsed.map(b => ({
+      ...b,
+      id: crypto.randomUUID(),
+      applied: false,
+    }));
+    setBlocks(newBlocks);
+    setCollapsed(false);
+  }, [lastClipboard]);
+
+  const readClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      extractFromText(text);
+    } catch { /* permission denied */ }
+  }, [extractFromText]);
+
+  useEffect(() => {
+    if (monitoring) {
+      intervalRef.current = setInterval(readClipboard, 1500);
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [monitoring, readClipboard]);
+
+  const validate = (block: ExtractedBlock) => {
+    const checks = validateChange(block.code, block.filePath || 'unknown.ts');
+    setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, validationResult: checks } : b));
+  };
+
+  const apply = (block: ExtractedBlock) => {
+    onApply(block.filePath, block.code);
+    setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
+  };
+
+  return (
+    <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-primary/30 bg-background/95 backdrop-blur-sm shadow-2xl">
+      {/* Toolbar */}
+      <div className="px-4 py-2 flex items-center gap-3 border-b border-border/30">
+        <div className="flex items-center gap-2">
+          <Zap className="w-3.5 h-3.5 text-primary animate-pulse" />
+          <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Code Extractor</span>
+        </div>
+        <button
+          onClick={() => setMonitoring(m => !m)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+            monitoring
+              ? 'bg-primary/20 text-primary border border-primary/40'
+              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary/80'
+          }`}
+        >
+          {monitoring ? <ClipboardCheck className="w-3 h-3" /> : <Clipboard className="w-3 h-3" />}
+          {monitoring ? '● Monitoring clipboard' : 'Monitor clipboard'}
+        </button>
+        <button
+          onClick={readClipboard}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
+        >
+          <Clipboard className="w-3 h-3" /> Paste now
+        </button>
+        {blocks.length > 0 && (
+          <span className="text-[9px] text-primary/70 ml-1">{blocks.length} block{blocks.length > 1 ? 's' : ''} detected</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {blocks.length > 0 && (
+            <button onClick={() => setBlocks([])} className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors">
+              <X className="w-3 h-3" />
+            </button>
+          )}
+          <button onClick={() => setCollapsed(c => !c)} className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors">
+            {collapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Extracted blocks */}
+      {!collapsed && (
+        <div className="max-h-72 overflow-auto p-3 space-y-2">
+          {blocks.length === 0 && (
+            <div className="text-center py-6 text-[10px] text-muted-foreground/40">
+              {monitoring
+                ? 'Watching clipboard... copy a Grok response with code blocks'
+                : 'Click "Monitor clipboard" or "Paste now" to extract code from Grok'}
+            </div>
+          )}
+          {blocks.map(block => (
+            <div key={block.id} className={`rounded-lg border overflow-hidden transition-colors ${block.applied ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-card/50'}`}>
+              <div className="px-3 py-1.5 flex items-center justify-between gap-2 border-b border-border/20">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Code2 className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <span className="text-[10px] text-foreground/80 font-mono truncate">
+                    {block.filePath || `${block.language} block`}
+                  </span>
+                  <span className="text-[8px] text-muted-foreground/50 shrink-0">{block.code.split('\n').length} lines</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!block.applied && (
+                    <>
+                      <button onClick={() => validate(block)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors">
+                        <Shield className="w-2.5 h-2.5" /> Check
+                      </button>
+                      {block.filePath && (
+                        <button onClick={() => apply(block)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/15 text-primary hover:bg-primary/30 text-[9px] font-medium transition-colors">
+                          <Zap className="w-2.5 h-2.5" /> Apply
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {block.applied && (
+                    <span className="flex items-center gap-1 text-[9px] text-primary font-medium">
+                      <Check className="w-2.5 h-2.5" /> Applied
+                    </span>
+                  )}
+                </div>
+              </div>
+              <pre className="px-3 py-2 text-[9px] font-mono text-foreground/60 max-h-28 overflow-auto leading-relaxed whitespace-pre-wrap">
+                {block.code.slice(0, 600)}{block.code.length > 600 ? '\n...' : ''}
+              </pre>
+              {block.validationResult && (
+                <div className="px-3 py-1 border-t border-border/20 space-y-0.5">
+                  {block.validationResult.map((c, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[8px]">
+                      {c.severity === 'error' ? <AlertTriangle className="w-2.5 h-2.5 text-destructive" /> : <Check className="w-2.5 h-2.5 text-primary" />}
+                      <span className={c.severity === 'error' ? 'text-destructive' : 'text-primary/70'}>{c.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 const GrokBridge: React.FC = () => {
+  const [mode, setMode] = useState<Mode>('browser');
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations());
   const [activeConvoId, setActiveConvoId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -151,29 +278,16 @@ const GrokBridge: React.FC = () => {
   const [appliedChanges, setAppliedChanges] = useState<AppliedChange[]>([]);
   const [validationResults, setValidationResults] = useState<Map<string, SafetyCheck[]>>(new Map());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [showBrowser, setShowBrowser] = useState(true);
   const [browserUrl, setBrowserUrl] = useState('https://grok.com');
   const [customUrl, setCustomUrl] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Persist conversations
-  useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { saveConversations(conversations); }, [conversations]);
 
   const newConversation = useCallback(() => {
-    const convo: Conversation = {
-      id: crypto.randomUUID(),
-      title: 'New conversation',
-      messages: [],
-      model,
-      createdAt: Date.now(),
-    };
+    const convo: Conversation = { id: crypto.randomUUID(), title: 'New conversation', messages: [], model, createdAt: Date.now() };
     setConversations(prev => [convo, ...prev]);
     setActiveConvoId(convo.id);
     setMessages([]);
@@ -183,37 +297,25 @@ const GrokBridge: React.FC = () => {
 
   const switchConversation = useCallback((id: string) => {
     if (activeConvoId && messages.length > 0) {
-      setConversations(prev => prev.map(c =>
-        c.id === activeConvoId ? { ...c, messages, title: generateTitle(messages) } : c
-      ));
+      setConversations(prev => prev.map(c => c.id === activeConvoId ? { ...c, messages, title: generateTitle(messages) } : c));
     }
     const convo = conversations.find(c => c.id === id);
-    if (convo) {
-      setActiveConvoId(id);
-      setMessages(convo.messages);
-      setModel(convo.model);
-      setAppliedChanges([]);
-    }
+    if (convo) { setActiveConvoId(id); setMessages(convo.messages); setModel(convo.model); setAppliedChanges([]); }
   }, [activeConvoId, messages, conversations]);
 
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id));
-    if (activeConvoId === id) {
-      setActiveConvoId(null);
-      setMessages([]);
-    }
+    if (activeConvoId === id) { setActiveConvoId(null); setMessages([]); }
   }, [activeConvoId]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
-
     const userMsg: Msg = { role: 'user', content: text };
     setInput('');
     const allMessages = [...messages, userMsg];
     setMessages(allMessages);
     setIsLoading(true);
-
     let convoId = activeConvoId;
     if (!convoId) {
       convoId = crypto.randomUUID();
@@ -221,40 +323,27 @@ const GrokBridge: React.FC = () => {
       setConversations(prev => [convo, ...prev]);
       setActiveConvoId(convoId);
     }
-
     let assistantSoFar = '';
-
     await streamGrok({
-      messages: allMessages,
-      model,
+      messages: allMessages, model,
       onDelta: (chunk) => {
         assistantSoFar += chunk;
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role === 'assistant') {
-            return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-          }
+          if (last?.role === 'assistant') return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
           return [...prev, { role: 'assistant', content: assistantSoFar }];
         });
       },
       onDone: () => {
         setIsLoading(false);
-        setConversations(prev => prev.map(c =>
-          c.id === convoId ? { ...c, messages: [...allMessages, { role: 'assistant' as const, content: assistantSoFar }], title: generateTitle(allMessages), model } : c
-        ));
+        setConversations(prev => prev.map(c => c.id === convoId ? { ...c, messages: [...allMessages, { role: 'assistant' as const, content: assistantSoFar }], title: generateTitle(allMessages), model } : c));
       },
-      onError: (err) => {
-        setIsLoading(false);
-        setStatusMessage(`⚠ ${err}`);
-      },
+      onError: (err) => { setIsLoading(false); setStatusMessage(`⚠ ${err}`); },
     });
   }, [input, isLoading, messages, model, activeConvoId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const runValidation = useCallback((blockKey: string, code: string, filePath: string) => {
@@ -263,24 +352,16 @@ const GrokBridge: React.FC = () => {
   }, []);
 
   const applyBlock = useCallback((code: string, filePath: string) => {
-    if (!filePath) {
-      setStatusMessage('⚠ No file path detected for this block');
-      return;
-    }
+    if (!filePath) { setStatusMessage('⚠ No file path detected'); return; }
     const existing = SELF_SOURCE.find(f => f.path === filePath);
     const previousContent = existing?.content || '';
-
-    if (existing) {
-      existing.content = code;
-      existing.isModified = true;
-      existing.lastModified = Date.now();
-    } else {
+    if (existing) { existing.content = code; existing.isModified = true; existing.lastModified = Date.now(); }
+    else {
       const name = filePath.split('/').pop() || filePath;
       const ext = name.split('.').pop() || 'ts';
       const langMap: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', css: 'css', json: 'json' };
       SELF_SOURCE.push({ name, path: filePath, content: code, language: langMap[ext] || 'plaintext', isModified: true, lastModified: Date.now() });
     }
-
     setAppliedChanges(prev => [...prev, { filePath, previousContent, newContent: code, timestamp: Date.now() }]);
     setStatusMessage(`✓ Applied to ${filePath}`);
   }, []);
@@ -305,10 +386,8 @@ const GrokBridge: React.FC = () => {
         </div>
       );
     }
-
     const blocks = parseCodeBlocks(msg.content);
     const textParts = msg.content.split(/```[\s\S]*?```/);
-
     return (
       <div key={idx} className="flex gap-3">
         <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0 mt-1">
@@ -317,60 +396,37 @@ const GrokBridge: React.FC = () => {
         <div className="flex-1 min-w-0 space-y-3 max-w-[85%]">
           {textParts.map((text, ti) => (
             <React.Fragment key={ti}>
-              {text.trim() && (
-                <p className="text-xs text-foreground/80 whitespace-pre-wrap leading-relaxed">{text.trim()}</p>
-              )}
+              {text.trim() && <p className="text-xs text-foreground/80 whitespace-pre-wrap leading-relaxed">{text.trim()}</p>}
               {blocks[ti] && (() => {
                 const block = blocks[ti];
                 const blockKey = `${idx}-${ti}`;
                 const checks = validationResults.get(blockKey);
                 const isApplied = appliedChanges.some(c => c.newContent === block.code && c.filePath === block.filePath);
-
                 return (
                   <div className="bg-card border border-border/50 rounded-lg overflow-hidden">
                     <div className="px-3 py-1.5 border-b border-border/30 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <Code2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                        <span className="text-[10px] text-muted-foreground truncate">
-                          {block.filePath || block.language}
-                        </span>
+                        <span className="text-[10px] text-muted-foreground truncate">{block.filePath || block.language}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          onClick={() => runValidation(blockKey, block.code, block.filePath)}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors"
-                        >
+                        <button onClick={() => runValidation(blockKey, block.code, block.filePath)} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors">
                           <Shield className="w-2.5 h-2.5" /> Check
                         </button>
                         {block.filePath && (
-                          <button
-                            onClick={() => applyBlock(block.code, block.filePath)}
-                            disabled={isApplied}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[9px] transition-colors disabled:opacity-30"
-                          >
+                          <button onClick={() => applyBlock(block.code, block.filePath)} disabled={isApplied} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[9px] transition-colors disabled:opacity-30">
                             <Check className="w-2.5 h-2.5" /> {isApplied ? 'Applied' : 'Apply'}
                           </button>
                         )}
                       </div>
                     </div>
-                    <pre className="p-3 text-[10px] text-foreground/70 max-h-48 overflow-auto whitespace-pre-wrap leading-relaxed font-mono">
-                      {block.code}
-                    </pre>
+                    <pre className="p-3 text-[10px] text-foreground/70 max-h-48 overflow-auto whitespace-pre-wrap leading-relaxed font-mono">{block.code}</pre>
                     {checks && (
                       <div className="px-3 py-1.5 border-t border-border/30 space-y-0.5">
                         {checks.map((check, j) => (
                           <div key={j} className="flex items-center gap-1.5 text-[9px]">
-                            {check.severity === 'error' ? (
-                              <AlertTriangle className="w-2.5 h-2.5 text-destructive shrink-0" />
-                            ) : check.severity === 'warning' ? (
-                              <AlertTriangle className="w-2.5 h-2.5 text-[hsl(var(--terminal-amber))] shrink-0" />
-                            ) : (
-                              <Check className="w-2.5 h-2.5 text-primary shrink-0" />
-                            )}
-                            <span className={
-                              check.severity === 'error' ? 'text-destructive' :
-                              check.severity === 'warning' ? 'text-[hsl(var(--terminal-amber))]' : 'text-primary/70'
-                            }>{check.message}</span>
+                            {check.severity === 'error' ? <AlertTriangle className="w-2.5 h-2.5 text-destructive" /> : <Check className="w-2.5 h-2.5 text-primary" />}
+                            <span className={check.severity === 'error' ? 'text-destructive' : 'text-primary/70'}>{check.message}</span>
                           </div>
                         ))}
                       </div>
@@ -389,172 +445,65 @@ const GrokBridge: React.FC = () => {
   const currentSite = BROWSER_SITES.find(s => s.url === browserUrl);
 
   return (
-    <div className="h-full flex bg-background text-foreground font-mono">
-      {/* Left panel: chat (with inline conversation list) */}
-      <div className={`flex flex-col min-w-0 ${showBrowser ? 'w-[360px] shrink-0' : 'flex-1'} border-r border-border/30`}>
-        {/* Header */}
-          <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-            <div className="px-3 py-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
-                <h1 className="text-xs font-bold text-foreground">AI Chat</h1>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setShowBrowser(!showBrowser)}
-                  className="flex items-center gap-1 px-2 py-1 rounded bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[9px] font-medium transition-colors"
-                >
-                  {showBrowser ? <PanelRightClose className="w-3 h-3" /> : <PanelRight className="w-3 h-3" />}
-                  {showBrowser ? 'Hide' : 'Browser'}
-                </button>
-                {/* Model picker */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowModelPicker(!showModelPicker)}
-                    className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[9px] text-muted-foreground transition-colors"
-                  >
-                    {selectedModel.name}
-                    <ChevronDown className="w-2.5 h-2.5" />
-                  </button>
-                  {showModelPicker && (
-                    <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
-                      {MODELS.map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => { setModel(m.id); setShowModelPicker(false); }}
-                          className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
-                            m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-medium">{m.name}</div>
-                            <div className="text-[9px] text-muted-foreground">{m.desc}</div>
-                          </div>
-                          {m.id === model && <Check className="w-3 h-3 text-primary" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Conversation list + new chat button */}
-          <div className="border-b border-border/30 bg-card/30 px-2 py-2 shrink-0 space-y-1">
-            <button
-              onClick={newConversation}
-              className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors"
-            >
-              + New Chat
-            </button>
-            {conversations.length > 0 && (
-              <div className="max-h-24 overflow-auto space-y-0.5">
-                {conversations.map(c => (
-                  <div
-                    key={c.id}
-                    className={`group flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors text-[9px] ${
-                      c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
-                    }`}
-                    onClick={() => switchConversation(c.id)}
-                  >
-                    <span className="flex-1 truncate">{c.title}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Chat messages */}
-          <div className="flex-1 overflow-auto p-4 space-y-3">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-50">
-                <Bot className="w-8 h-8 text-muted-foreground" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Chat with Grok</p>
-                  <p className="text-[9px] text-muted-foreground/40 mt-1">
-                    {selectedModel.name} — {selectedModel.desc}
-                  </p>
-                </div>
-              </div>
-            )}
-            {messages.map((msg, i) => renderMessage(msg, i))}
-            {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-              <div className="flex gap-3">
-                <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
-                  <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
-                </div>
-                <div className="text-xs text-muted-foreground">Thinking...</div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Applied changes bar */}
-          {appliedChanges.length > 0 && (
-            <div className="border-t border-border/30 bg-card/30 px-6 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
-              <span className="text-[9px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
-              {appliedChanges.map((change, i) => (
-                <button
-                  key={i}
-                  onClick={() => rollback(change)}
-                  className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group"
-                >
-                  <FileCode className="w-2.5 h-2.5" />
-                  {change.filePath.split('/').pop()}
-                  <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Input */}
-          <div className="border-t border-border/50 bg-card/50 p-4 shrink-0">
-            <div className="flex gap-3 items-end">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask Grok to modify code..."
-                rows={1}
-                className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
-                style={{ height: 'auto', overflow: 'hidden' }}
-                onInput={e => {
-                  const t = e.currentTarget;
-                  t.style.height = 'auto';
-                  t.style.height = Math.min(t.scrollHeight, 128) + 'px';
-                }}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!input.trim() || isLoading}
-                className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0"
-              >
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+    <div className="h-full flex flex-col bg-background text-foreground font-mono">
+      {/* ── Top bar with mode toggle ── */}
+      <div className="shrink-0 border-b border-border/40 bg-card/60 px-4 py-2 flex items-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
+          <span className="text-xs font-bold text-foreground">AI Bridge</span>
         </div>
 
-      {/* ═══ Embedded Browser Panel ═══ */}
-      {showBrowser && (
-        <div className="flex-1 flex flex-col bg-card/20 min-w-0">
+        {/* Mode toggle */}
+        <div className="flex items-center gap-0.5 bg-secondary/40 rounded-lg p-0.5">
+          <button
+            onClick={() => setMode('browser')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+              mode === 'browser' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Globe className="w-3 h-3" /> Browser Chat
+          </button>
+          <button
+            onClick={() => setMode('api')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+              mode === 'api' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <MessageSquare className="w-3 h-3" /> API Chat
+          </button>
+        </div>
+
+        {/* Status message */}
+        {statusMessage && (
+          <span className="text-[9px] text-primary/70 ml-2">{statusMessage}</span>
+        )}
+
+        {/* Applied changes */}
+        {appliedChanges.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5 overflow-x-auto">
+            <span className="text-[8px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
+            {appliedChanges.map((change, i) => (
+              <button key={i} onClick={() => rollback(change)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group">
+                <FileCode className="w-2.5 h-2.5" />
+                {change.filePath.split('/').pop()}
+                <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Mode: Browser Chat ── */}
+      {mode === 'browser' && (
+        <div className="flex-1 flex flex-col relative min-h-0">
           {/* Browser toolbar */}
-          <div className="border-b border-border/30 bg-card/50 px-3 py-2 flex items-center gap-2 shrink-0">
-            {/* Site quick-select buttons */}
+          <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-1.5 flex items-center gap-2">
             <div className="flex items-center gap-1 flex-1 overflow-x-auto">
               {BROWSER_SITES.map(site => (
                 <button
                   key={site.id}
                   onClick={() => setBrowserUrl(site.url)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
                     browserUrl === site.url
                       ? 'bg-primary/15 text-primary border border-primary/30'
                       : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
@@ -565,55 +514,136 @@ const GrokBridge: React.FC = () => {
                 </button>
               ))}
             </div>
-            {/* Custom URL input */}
             <div className="flex items-center gap-1 shrink-0">
+              <Globe className="w-3 h-3 text-muted-foreground/50" />
               <input
                 value={customUrl}
                 onChange={e => setCustomUrl(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && customUrl.trim()) {
-                    const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                    setBrowserUrl(url);
+                    setBrowserUrl(customUrl.startsWith('http') ? customUrl : `https://${customUrl}`);
                     setCustomUrl('');
                   }
                 }}
-                placeholder="URL..."
-                className="w-32 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+                placeholder="Custom URL..."
+                className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
               />
-              <button
-                onClick={() => {
-                  if (customUrl.trim()) {
-                    const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                    setBrowserUrl(url);
-                    setCustomUrl('');
-                  }
-                }}
-                className="p-1 rounded bg-secondary/50 hover:bg-secondary/80 transition-colors"
-              >
-                <Globe className="w-3 h-3 text-muted-foreground" />
-              </button>
             </div>
           </div>
 
-          {/* Browser address bar */}
-          <div className="border-b border-border/20 bg-card/30 px-3 py-1.5 flex items-center gap-2">
-            <Globe className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-            <span className="text-[10px] text-muted-foreground/70 truncate flex-1">{browserUrl}</span>
-            {currentSite && (
-              <span className="text-[9px] text-primary/60 shrink-0">{currentSite.name}</span>
-            )}
-          </div>
-
-          {/* Iframe */}
-          <div className="flex-1 relative">
+          {/* Full-height iframe */}
+          <div className="flex-1 relative" style={{ paddingBottom: '0' }}>
             <iframe
               key={browserUrl}
               src={browserUrl}
-              className="w-full h-full border-0"
+              className="w-full h-full border-0 absolute inset-0"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
               allow="clipboard-write"
               title="Embedded Browser"
             />
+          </div>
+
+          {/* Floating code extractor panel */}
+          <ClipboardExtractor onApply={applyBlock} />
+        </div>
+      )}
+
+      {/* ── Mode: API Chat ── */}
+      {mode === 'api' && (
+        <div className="flex-1 flex min-h-0">
+          {/* Conversations sidebar */}
+          <div className="w-52 border-r border-border/30 bg-card/30 flex flex-col shrink-0">
+            <div className="p-2 border-b border-border/30">
+              <button onClick={newConversation} className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors">
+                + New Chat
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+              {conversations.map(c => (
+                <div
+                  key={c.id}
+                  className={`group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors text-[10px] ${
+                    c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
+                  }`}
+                  onClick={() => switchConversation(c.id)}
+                >
+                  <span className="flex-1 truncate">{c.title}</span>
+                  <button onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
+                    <Trash2 className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              {conversations.length === 0 && (
+                <p className="text-[9px] text-muted-foreground/40 text-center py-4">No conversations yet</p>
+              )}
+            </div>
+          </div>
+
+          {/* Chat area */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Model picker header */}
+            <div className="shrink-0 border-b border-border/30 bg-card/30 px-4 py-2 flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground/50">Grok API — direct streaming</span>
+              <div className="relative">
+                <button onClick={() => setShowModelPicker(!showModelPicker)} className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors">
+                  {selectedModel.name} <ChevronDown className="w-3 h-3" />
+                </button>
+                {showModelPicker && (
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                    {MODELS.map(m => (
+                      <button key={m.id} onClick={() => { setModel(m.id); setShowModelPicker(false); }} className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'}`}>
+                        <div><div className="font-medium">{m.name}</div><div className="text-[9px] text-muted-foreground">{m.desc}</div></div>
+                        {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-auto p-5 space-y-4">
+              {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
+                  <Bot className="w-10 h-10 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">Chat with Grok via API</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-1">Code blocks are auto-validated and one-click applied</p>
+                    <p className="text-[9px] text-muted-foreground/40 mt-2">{selectedModel.name} — {selectedModel.desc}</p>
+                  </div>
+                </div>
+              )}
+              {messages.map((msg, i) => renderMessage(msg, i))}
+              {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+                <div className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                    <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Thinking...</div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="shrink-0 border-t border-border/50 bg-card/50 p-4">
+              <div className="flex gap-3 items-end">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask Grok to modify code... (Enter to send)"
+                  rows={1}
+                  className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
+                  style={{ height: 'auto', overflow: 'hidden' }}
+                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 128) + 'px'; }}
+                />
+                <button onClick={sendMessage} disabled={!input.trim() || isLoading} className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0">
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
