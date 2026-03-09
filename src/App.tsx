@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Evolution from "./pages/Evolution";
 import EvolutionMatrix from "./pages/EvolutionMatrix";
+import PatternAnalysis from "./pages/PatternAnalysis";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
