@@ -316,29 +316,37 @@ async function testGrowth(): Promise<LifeTestResult> {
 // ── STAGE 7: AUTONOMY — Can it think for itself? ──
 async function testAutonomy(): Promise<LifeTestResult> {
   const start = performance.now();
-  const tests: { name: string; pass: boolean }[] = [];
+  const tests: { name: string; pass: boolean; error?: string }[] = [];
 
   // Has deterministic rules?
   const rules = ruleEngine.getRules();
   tests.push({ name: 'has-rules', pass: rules.length >= 5 });
 
-  // Can evaluate rules without AI?
-  const report = ruleEngine.evaluate({
-    capabilities: ['rule-engine'], evolutionLevel: 36, cycleCount: 60,
-    lastTestVerdict: 'HEALTHY', failedTests: [], capabilityCount: 36,
-    timeSinceLastEvolution: 1000, codeFiles: [],
-  });
-  tests.push({ name: 'rules-execute', pass: report.rulesEvaluated > 0 });
+  // Can evaluate rules without AI? Must return valid report with numeric fields
+  try {
+    const report = ruleEngine.evaluate({
+      capabilities: ['rule-engine'], evolutionLevel: 36, cycleCount: 60,
+      lastTestVerdict: 'HEALTHY', failedTests: [], capabilityCount: 36,
+      timeSinceLastEvolution: 1000, codeFiles: [],
+    });
+    const valid = typeof report.rulesEvaluated === 'number' && report.rulesEvaluated > 0 && typeof report.autonomyScore === 'number';
+    tests.push({ name: 'rules-execute', pass: valid, error: valid ? undefined : 'Report missing expected numeric fields' });
+  } catch (err) { tests.push({ name: 'rules-execute', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
   // Can forecast without AI?
-  const preds = predictNextEvolutions(['rule-engine', 'safety-engine'], 36, 60);
-  tests.push({ name: 'forecasts-without-ai', pass: preds.length > 0 });
+  try {
+    const preds = predictNextEvolutions(['rule-engine', 'safety-engine'], 36, 60);
+    tests.push({ name: 'forecasts-without-ai', pass: Array.isArray(preds) && preds.length > 0 });
+  } catch (err) { tests.push({ name: 'forecasts-without-ai', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Can detect anomalies without AI?
-  const anomalies = detectAnomalies(
-    [{ name: 'x', cycle: 1, level: 1, builtOn: ['nonexistent'], verified: true }], 1, 1
-  );
-  tests.push({ name: 'detects-anomalies-alone', pass: anomalies.length > 0 });
+  // Can detect anomalies without AI? Must actually find the orphan dependency
+  try {
+    const anomalies = detectAnomalies(
+      [{ name: 'x', cycle: 1, level: 1, builtOn: ['nonexistent'], verified: true }], 1, 1
+    );
+    const foundOrphan = anomalies.some(a => a.type === 'orphan');
+    tests.push({ name: 'detects-anomalies-alone', pass: foundOrphan, error: foundOrphan ? undefined : `Got ${anomalies.length} anomalies but none of type 'orphan'` });
+  } catch (err) { tests.push({ name: 'detects-anomalies-alone', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
   // Has self-documentation?
   tests.push({ name: 'self-documents', pass: SELF_SOURCE.length > 3 });
@@ -351,7 +359,7 @@ async function testAutonomy(): Promise<LifeTestResult> {
 
   return {
     stage: 'autonomy', name: '🤖 Autonomy', passed: score >= 60, score,
-    detail: `${passed}/${tests.length} autonomous: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}`).join(', ')}`,
+    detail: `${passed}/${tests.length} autonomous: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}${t.error ? `(${t.error})` : ''}`).join(', ')}`,
     duration: performance.now() - start,
   };
 }
