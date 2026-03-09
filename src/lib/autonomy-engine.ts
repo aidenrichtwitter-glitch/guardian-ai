@@ -38,6 +38,7 @@ export interface AutonomyTask {
   detail: string;
   duration: number;
   usedAI: boolean;
+  outputs?: { type: string; data: any }; // Structured outputs: opinions, search results, suggestions
 }
 
 // ── DETERMINISTIC WEB SEARCH (no AI needed) ──
