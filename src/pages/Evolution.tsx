@@ -357,6 +357,22 @@ const Evolution: React.FC = () => {
     return 'none';
   };
 
+  // Calculate reflection metrics from latest state
+  const reflectionMetrics = React.useMemo(() => {
+    if (!stats) return null;
+    
+    const valueScore = Math.min(100, 
+      (stats.verifiedCount > 10 ? 100 : stats.verifiedCount * 10) + 
+      (stats.totalGoalsCompleted > 5 ? 25 : stats.totalGoalsCompleted * 5)
+    );
+    
+    const lifeScore = Math.min(100,
+      (stats.verifiedCount > 0 ? 100 : 0)
+    );
+    
+    return { valueScore, lifeScore };
+  }, [stats]);
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Header */}
@@ -370,10 +386,22 @@ const Evolution: React.FC = () => {
             <span className="text-primary text-glow">λ</span> Evolution Dashboard
           </h1>
           {stats && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 inline-flex items-center gap-1">
-              <Zap className="w-2.5 h-2.5" />
-              {title} · {stats.verifiedCount}/{stats.totalCapabilities} verified
-            </span>
+            <>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 inline-flex items-center gap-1">
+                <Zap className="w-2.5 h-2.5" />
+                {title} · L{stats.currentLevel} · {stats.verifiedCount}/{stats.totalCapabilities} verified
+              </span>
+              {reflectionMetrics && (
+                <>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-terminal-green/10 text-terminal-green border border-terminal-green/20">
+                    💎 Value {reflectionMetrics.valueScore}%
+                  </span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                    💓 Life {reflectionMetrics.lifeScore}%
+                  </span>
+                </>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
