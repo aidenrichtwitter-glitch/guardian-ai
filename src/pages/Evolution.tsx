@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Zap, Activity, Brain, Shield, TrendingUp, Network, Target, CheckCircle2, Circle, Loader, Cpu, Bot, Cog, Play, Search, BarChart3, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { mean, std } from 'mathjs';
