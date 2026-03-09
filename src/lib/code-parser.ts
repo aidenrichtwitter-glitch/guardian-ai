@@ -121,6 +121,25 @@ export function isLikelySnippet(code: string, existingContent: string): boolean 
   return existingLines > 20 && (codeLines / existingLines) < 0.5;
 }
 
+function extractFilePathFromPrecedingText(text: string, fenceIndex: number): string {
+  const preceding = text.substring(Math.max(0, fenceIndex - 500), fenceIndex);
+  const lines = preceding.split('\n').reverse();
+  const fileExtRe = new RegExp(`\`((?:[\\w./-]+/)?${FILE_EXT_PATTERN})\``, 'i');
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const m = line.match(fileExtRe);
+    if (m) {
+      const candidate = m[1];
+      if (/^[a-z]+:\/\//i.test(candidate)) continue;
+      if (candidate.includes(' ')) continue;
+      return candidate;
+    }
+    if (line.startsWith('```')) break;
+  }
+  return '';
+}
+
 export function parseCodeBlocks(text: string): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -140,6 +159,10 @@ export function parseCodeBlocks(text: string): ParsedBlock[] {
         filePath = extracted.filePath;
         code = extracted.cleanedCode;
       }
+    }
+
+    if (!filePath) {
+      filePath = extractFilePathFromPrecedingText(normalized, match.index);
     }
 
     if (code.length > 0) blocks.push({ filePath, code, language });
