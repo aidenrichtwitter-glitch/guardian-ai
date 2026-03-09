@@ -8,6 +8,8 @@ import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
 
+const isElectron = typeof window !== 'undefined' && typeof (window as any).require === 'function';
+
 type Mode = 'api' | 'browser';
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -22,6 +24,17 @@ interface AppliedChange {
   previousContent: string;
   newContent: string;
   timestamp: number;
+  backupPath?: string;
+}
+
+type ApplyStage = 'confirm' | 'writing' | 'checking' | 'committing' | 'done' | 'error';
+
+interface PendingApply {
+  filePath: string;
+  newContent: string;
+  oldContent: string;
+  exists: boolean;
+  safetyChecks: SafetyCheck[];
 }
 
 interface Conversation {
@@ -209,7 +222,9 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
 
   const apply = (block: ExtractedBlock) => {
     onApply(block.filePath, block.code);
-    setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
+    if (!isElectron) {
+      setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
+    }
   };
 
   return (
@@ -332,9 +347,149 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
   );
 }
 
-// ─── Grok Desktop Browser (Electron embedded webview) ────────────────────────
+// ─── Apply Confirmation Dialog ───────────────────────────────────────────────
 
-const isElectron = typeof window !== 'undefined' && typeof (window as any).require === 'function';
+function simpleDiff(oldText: string, newText: string): { type: 'same' | 'add' | 'remove'; line: string }[] {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const result: { type: 'same' | 'add' | 'remove'; line: string }[] = [];
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  let oi = 0, ni = 0;
+  while (oi < oldLines.length || ni < newLines.length) {
+    if (oi < oldLines.length && ni < newLines.length && oldLines[oi] === newLines[ni]) {
+      result.push({ type: 'same', line: oldLines[oi] });
+      oi++; ni++;
+    } else if (oi < oldLines.length && (ni >= newLines.length || !newLines.slice(ni).includes(oldLines[oi]))) {
+      result.push({ type: 'remove', line: oldLines[oi] });
+      oi++;
+    } else {
+      result.push({ type: 'add', line: newLines[ni] });
+      ni++;
+    }
+    if (result.length > 200) {
+      result.push({ type: 'same', line: `... (${maxLen - 200} more lines)` });
+      break;
+    }
+  }
+  return result;
+}
+
+function ApplyConfirmDialog({
+  pending,
+  stage,
+  stageMessage,
+  compileError,
+  onConfirm,
+  onCancel,
+  onRollback,
+}: {
+  pending: PendingApply;
+  stage: ApplyStage;
+  stageMessage: string;
+  compileError: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onRollback: () => void;
+}) {
+  const diff = useMemo(() => simpleDiff(pending.oldContent, pending.newContent), [pending.oldContent, pending.newContent]);
+  const hasErrors = pending.safetyChecks.some(c => c.severity === 'error');
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" data-testid="dialog-apply-confirm">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileCode className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold">{pending.exists ? 'Modify' : 'Create'} File</span>
+            <span className="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">{pending.filePath}</span>
+          </div>
+          {stage === 'confirm' && (
+            <button onClick={onCancel} data-testid="button-cancel-apply" className="p-1 text-muted-foreground hover:text-foreground">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {pending.safetyChecks.length > 0 && (
+          <div className="px-4 py-2 border-b border-border/50 space-y-1">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Safety Checks</span>
+            {pending.safetyChecks.map((c, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                {c.severity === 'error' ? <AlertTriangle className="w-3 h-3 text-destructive" /> : <Check className="w-3 h-3 text-primary" />}
+                <span className={c.severity === 'error' ? 'text-destructive' : 'text-primary/70'}>{c.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-auto px-4 py-2 min-h-0">
+          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+            {pending.exists ? 'Changes' : 'New File Content'} ({pending.newContent.split('\n').length} lines)
+          </div>
+          <div className="rounded border border-border/50 bg-card/30 overflow-auto max-h-64">
+            <pre className="text-[9px] font-mono leading-relaxed p-2">
+              {diff.slice(0, 150).map((d, i) => (
+                <div
+                  key={i}
+                  className={
+                    d.type === 'add' ? 'bg-green-500/15 text-green-400' :
+                    d.type === 'remove' ? 'bg-red-500/15 text-red-400 line-through' :
+                    'text-foreground/50'
+                  }
+                >
+                  {d.type === 'add' ? '+ ' : d.type === 'remove' ? '- ' : '  '}{d.line}
+                </div>
+              ))}
+            </pre>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[10px]">
+            {stage === 'writing' && <><Loader2 className="w-3 h-3 animate-spin text-primary" /><span className="text-primary">Writing file...</span></>}
+            {stage === 'checking' && <><Loader2 className="w-3 h-3 animate-spin text-yellow-500" /><span className="text-yellow-500">Checking for errors...</span></>}
+            {stage === 'committing' && <><Loader2 className="w-3 h-3 animate-spin text-blue-400" /><span className="text-blue-400">Git commit...</span></>}
+            {stage === 'done' && <><Check className="w-3 h-3 text-primary" /><span className="text-primary">{stageMessage}</span></>}
+            {stage === 'error' && (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-destructive" /><span className="text-destructive">{stageMessage}</span></div>
+                {compileError && <pre className="text-[8px] text-destructive/70 max-h-20 overflow-auto whitespace-pre-wrap">{compileError}</pre>}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {stage === 'confirm' && (
+              <>
+                <button onClick={onCancel} data-testid="button-cancel" className="px-3 py-1.5 rounded text-xs bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors">Cancel</button>
+                <button
+                  onClick={onConfirm}
+                  data-testid="button-confirm-apply"
+                  disabled={hasErrors}
+                  className="px-3 py-1.5 rounded text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  <Zap className="w-3 h-3" /> Write to Disk
+                </button>
+              </>
+            )}
+            {stage === 'error' && (
+              <>
+                <button onClick={onRollback} data-testid="button-rollback" className="px-3 py-1.5 rounded text-xs bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors flex items-center gap-1">
+                  <Undo2 className="w-3 h-3" /> Rollback
+                </button>
+                <button onClick={onCancel} data-testid="button-dismiss-error" className="px-3 py-1.5 rounded text-xs bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors">Dismiss</button>
+              </>
+            )}
+            {stage === 'done' && (
+              <button onClick={onCancel} data-testid="button-done" className="px-3 py-1.5 rounded text-xs bg-primary/15 text-primary hover:bg-primary/25 transition-colors">Done</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Grok Desktop Browser (Electron embedded webview) ────────────────────────
 
 interface GrokDesktopBrowserProps {
   browserUrl: string;
@@ -576,26 +731,158 @@ const GrokBridge: React.FC = () => {
     setValidationResults(prev => new Map(prev).set(blockKey, checks));
   }, []);
 
-  const applyBlock = useCallback((filePath: string, code: string) => {
+  const [pendingApply, setPendingApply] = useState<PendingApply | null>(null);
+  const [applyStage, setApplyStage] = useState<ApplyStage>('confirm');
+  const [applyStageMessage, setApplyStageMessage] = useState('');
+  const [applyCompileError, setApplyCompileError] = useState('');
+  const lastBackupPathRef = useRef('');
+
+  const applyBlock = useCallback(async (filePath: string, code: string) => {
     if (!filePath) { setStatusMessage('⚠ No file path detected'); return; }
-    const existing = SELF_SOURCE.find(f => f.path === filePath);
-    const previousContent = existing?.content || '';
-    if (existing) { existing.content = code; existing.isModified = true; existing.lastModified = Date.now(); }
-    else {
-      const name = filePath.split('/').pop() || filePath;
-      const ext = name.split('.').pop() || 'ts';
-      const langMap: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', css: 'css', json: 'json' };
-      SELF_SOURCE.push({ name, path: filePath, content: code, language: langMap[ext] || 'plaintext', isModified: true, lastModified: Date.now() });
+
+    if (isElectron) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        const readResult = await ipcRenderer.invoke('read-file', { filePath });
+        if (!readResult.success) { setStatusMessage(`⚠ ${readResult.error}`); return; }
+        const safetyChecks = validateChange(code, filePath);
+        setPendingApply({
+          filePath,
+          newContent: code,
+          oldContent: readResult.content || '',
+          exists: readResult.exists ?? false,
+          safetyChecks,
+        });
+        setApplyStage('confirm');
+        setApplyStageMessage('');
+        setApplyCompileError('');
+        lastBackupPathRef.current = '';
+      } catch (e: any) {
+        setStatusMessage(`⚠ ${e.message || 'Failed to read file'}`);
+      }
+    } else {
+      const existing = SELF_SOURCE.find(f => f.path === filePath);
+      const previousContent = existing?.content || '';
+      if (existing) { existing.content = code; existing.isModified = true; existing.lastModified = Date.now(); }
+      else {
+        const name = filePath.split('/').pop() || filePath;
+        const ext = name.split('.').pop() || 'ts';
+        const langMap: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', css: 'css', json: 'json' };
+        SELF_SOURCE.push({ name, path: filePath, content: code, language: langMap[ext] || 'plaintext', isModified: true, lastModified: Date.now() });
+      }
+      setAppliedChanges(prev => [...prev, { filePath, previousContent, newContent: code, timestamp: Date.now() }]);
+      setStatusMessage(`✓ Applied to ${filePath} (in-memory)`);
     }
-    setAppliedChanges(prev => [...prev, { filePath, previousContent, newContent: code, timestamp: Date.now() }]);
-    setStatusMessage(`✓ Applied to ${filePath}`);
   }, []);
 
-  const rollback = useCallback((change: AppliedChange) => {
-    const file = SELF_SOURCE.find(f => f.path === change.filePath);
-    if (file) { file.content = change.previousContent; file.isModified = true; file.lastModified = Date.now(); }
-    setAppliedChanges(prev => prev.filter(c => c !== change));
-    setStatusMessage(`↩ Rolled back ${change.filePath}`);
+  const confirmApply = useCallback(async () => {
+    if (!pendingApply || !isElectron) return;
+    const { filePath, newContent, oldContent } = pendingApply;
+    try {
+      const { ipcRenderer } = (window as any).require('electron');
+
+      setApplyStage('writing');
+      const writeResult = await ipcRenderer.invoke('write-file', { filePath, content: newContent });
+      if (!writeResult.success) {
+        setApplyStage('error');
+        setApplyStageMessage(`Write failed: ${writeResult.error}`);
+        return;
+      }
+      lastBackupPathRef.current = writeResult.backupPath || '';
+
+      setApplyStage('checking');
+      const compileResult = await ipcRenderer.invoke('check-compile', { filePath });
+      if (compileResult.hasErrors) {
+        setApplyStage('error');
+        setApplyStageMessage('Compile errors detected — rollback recommended');
+        setApplyCompileError(compileResult.errorText);
+        return;
+      }
+
+      setApplyStage('committing');
+      const commitResult = await ipcRenderer.invoke('git-commit', {
+        filePath,
+        message: `Guardian AI: apply suggestion to ${filePath}`,
+      });
+
+      const existing = SELF_SOURCE.find(f => f.path === filePath);
+      if (existing) { existing.content = newContent; existing.isModified = true; existing.lastModified = Date.now(); }
+      else {
+        const name = filePath.split('/').pop() || filePath;
+        const ext = name.split('.').pop() || 'ts';
+        const langMap: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', css: 'css', json: 'json' };
+        SELF_SOURCE.push({ name, path: filePath, content: newContent, language: langMap[ext] || 'plaintext', isModified: true, lastModified: Date.now() });
+      }
+
+      setAppliedChanges(prev => [...prev, {
+        filePath,
+        previousContent: oldContent,
+        newContent,
+        timestamp: Date.now(),
+        backupPath: lastBackupPathRef.current,
+      }]);
+
+      setApplyStage('done');
+      const gitNote = commitResult.success ? ' + committed' : ' (git: ' + (commitResult.error || 'skipped') + ')';
+      setApplyStageMessage(`Written to ${filePath}${gitNote}`);
+    } catch (e: any) {
+      setApplyStage('error');
+      setApplyStageMessage(`IPC error: ${e.message || 'Unknown failure'}`);
+    }
+  }, [pendingApply]);
+
+  const rollbackPending = useCallback(async () => {
+    if (!pendingApply || !isElectron) { setPendingApply(null); return; }
+    if (!lastBackupPathRef.current) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        const check = await ipcRenderer.invoke('read-file', { filePath: pendingApply.filePath });
+        if (check.success && check.exists) {
+          const { ipcRenderer: ipc2 } = (window as any).require('electron');
+          await ipc2.invoke('write-file', { filePath: pendingApply.filePath, content: '' });
+        }
+      } catch (_) {}
+      setStatusMessage(`↩ Rolled back ${pendingApply.filePath} (new file removed)`);
+      setPendingApply(null);
+      return;
+    }
+    try {
+      const { ipcRenderer } = (window as any).require('electron');
+      const result = await ipcRenderer.invoke('rollback-file', {
+        filePath: pendingApply.filePath,
+        backupPath: lastBackupPathRef.current,
+      });
+      if (result.success) {
+        setStatusMessage(`↩ Rolled back ${pendingApply.filePath}`);
+      } else {
+        setStatusMessage(`⚠ Rollback failed: ${result.error}`);
+      }
+    } catch (e: any) {
+      setStatusMessage(`⚠ Rollback error: ${e.message || 'Unknown'}`);
+    }
+    setPendingApply(null);
+  }, [pendingApply]);
+
+  const rollback = useCallback(async (change: AppliedChange) => {
+    try {
+      if (isElectron && change.backupPath) {
+        const { ipcRenderer } = (window as any).require('electron');
+        const result = await ipcRenderer.invoke('rollback-file', {
+          filePath: change.filePath,
+          backupPath: change.backupPath,
+        });
+        if (!result.success) {
+          setStatusMessage(`⚠ Rollback failed: ${result.error}`);
+          return;
+        }
+      }
+      const file = SELF_SOURCE.find(f => f.path === change.filePath);
+      if (file) { file.content = change.previousContent; file.isModified = true; file.lastModified = Date.now(); }
+      setAppliedChanges(prev => prev.filter(c => c !== change));
+      setStatusMessage(`↩ Rolled back ${change.filePath}`);
+    } catch (e: any) {
+      setStatusMessage(`⚠ Rollback error: ${e.message || 'Unknown'}`);
+    }
   }, []);
 
   const renderMessage = (msg: Msg, idx: number) => {
@@ -716,6 +1003,17 @@ const GrokBridge: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-background text-foreground font-mono">
+      {pendingApply && (
+        <ApplyConfirmDialog
+          pending={pendingApply}
+          stage={applyStage}
+          stageMessage={applyStageMessage}
+          compileError={applyCompileError}
+          onConfirm={confirmApply}
+          onCancel={() => setPendingApply(null)}
+          onRollback={rollbackPending}
+        />
+      )}
       {/* ── Top bar with mode toggle ── */}
       <div className="shrink-0 border-b border-border/40 bg-card/60 px-4 py-2 flex items-center gap-4">
         <div className="flex items-center gap-1.5">

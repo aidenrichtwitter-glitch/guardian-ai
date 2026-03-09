@@ -2,7 +2,7 @@
 const { app, BrowserWindow, shell, Menu, ipcMain, nativeTheme, session, webContents, dialog, clipboard } = require('electron');
 const os = require('os');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 
 // GPU acceleration detection and graceful fallback
 function configureGpuAcceleration() {
@@ -598,6 +598,167 @@ function setupIpcHandlers() {
     try {
       return clipboard.readText() || '';
     } catch { return ''; }
+  });
+
+  // ─── Guardian AI: File system operations for code apply pipeline ───────────
+
+  function getProjectRoot() {
+    const isDev = !app.isPackaged;
+    if (isDev) {
+      return path.resolve(process.cwd());
+    }
+    return path.resolve(app.getAppPath(), '..', '..');
+  }
+
+  function isPathSafe(filePath) {
+    const projectRoot = getProjectRoot();
+    const resolved = path.resolve(projectRoot, filePath);
+    if (!resolved.startsWith(projectRoot + path.sep) && resolved !== projectRoot) {
+      return { safe: false, resolved: '', error: `Path traversal blocked: "${filePath}" resolves outside project root` };
+    }
+    try {
+      const parentDir = path.dirname(resolved);
+      if (fs.existsSync(parentDir)) {
+        const realParent = fs.realpathSync(parentDir);
+        const realRoot = fs.realpathSync(projectRoot);
+        if (!realParent.startsWith(realRoot + path.sep) && realParent !== realRoot) {
+          return { safe: false, resolved: '', error: `Symlink escape blocked: "${filePath}" resolves outside project root` };
+        }
+      }
+    } catch (_) {}
+    const dangerous = ['node_modules', '.git', '.env', 'package-lock.json'];
+    const relParts = path.relative(projectRoot, resolved).split(path.sep);
+    for (const part of relParts) {
+      if (dangerous.includes(part)) {
+        return { safe: false, resolved: '', error: `Protected path: cannot write to "${part}"` };
+      }
+    }
+    return { safe: true, resolved, error: '' };
+  }
+
+  const BACKUP_DIR = path.join(getProjectRoot(), '.guardian-backup');
+
+  ipcMain.handle('read-file', async (_event, { filePath }) => {
+    try {
+      const check = isPathSafe(filePath);
+      if (!check.safe) return { success: false, error: check.error };
+      if (!fs.existsSync(check.resolved)) return { success: true, content: '', exists: false };
+      const content = fs.readFileSync(check.resolved, 'utf-8');
+      return { success: true, content, exists: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('write-file', async (_event, { filePath, content }) => {
+    try {
+      const check = isPathSafe(filePath);
+      if (!check.safe) return { success: false, error: check.error };
+
+      let backupPath = '';
+      if (fs.existsSync(check.resolved)) {
+        if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+        const timestamp = Date.now();
+        const safeName = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_');
+        backupPath = path.join(BACKUP_DIR, `${timestamp}-${safeName}`);
+        fs.copyFileSync(check.resolved, backupPath);
+      }
+
+      const dir = path.dirname(check.resolved);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      fs.writeFileSync(check.resolved, content, 'utf-8');
+      return { success: true, backupPath };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('rollback-file', async (_event, { filePath, backupPath }) => {
+    try {
+      const check = isPathSafe(filePath);
+      if (!check.safe) return { success: false, error: check.error };
+      if (!backupPath || !fs.existsSync(backupPath)) {
+        return { success: false, error: 'Backup file not found' };
+      }
+      const resolvedBackup = path.resolve(backupPath);
+      const relToBackup = path.relative(BACKUP_DIR, resolvedBackup);
+      if (!relToBackup || relToBackup.startsWith('..') || path.isAbsolute(relToBackup)) {
+        return { success: false, error: 'Invalid backup path' };
+      }
+      fs.copyFileSync(backupPath, check.resolved);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('git-commit', async (_event, { filePath, message }) => {
+    const projectRoot = getProjectRoot();
+    const check = isPathSafe(filePath);
+    if (!check.safe) return { success: false, error: check.error };
+    return new Promise((resolve) => {
+      execFile('git', ['add', '--', filePath], { cwd: projectRoot, timeout: 10000 }, (addErr, _addOut, addStderr) => {
+        if (addErr) {
+          resolve({ success: false, error: addStderr || addErr.message });
+          return;
+        }
+        execFile('git', ['commit', '-m', message], { cwd: projectRoot, timeout: 10000 }, (commitErr, commitOut, commitStderr) => {
+          if (commitErr) {
+            resolve({ success: false, error: commitStderr || commitErr.message });
+          } else {
+            resolve({ success: true, output: commitOut });
+          }
+        });
+      });
+    });
+  });
+
+  ipcMain.handle('check-compile', async (_event, { filePath }) => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const projectRoot = getProjectRoot();
+        const ext = path.extname(filePath).toLowerCase();
+        if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+          const check = isPathSafe(filePath);
+          if (!check.safe) { resolve({ hasErrors: false, errorText: '' }); return; }
+          const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+          execFile(npxCmd, ['tsc', '--noEmit', '--pretty', 'false', check.resolved], { cwd: projectRoot, timeout: 15000 }, (error, stdout, stderr) => {
+            const output = (stdout || '') + (stderr || '');
+            if (error && output.includes('error TS')) {
+              resolve({ hasErrors: true, errorText: output.slice(0, 2000) });
+            } else {
+              resolve({ hasErrors: false, errorText: '' });
+            }
+          });
+          return;
+        }
+        resolve({ hasErrors: false, errorText: '' });
+      }, 1500);
+    });
+  });
+
+  ipcMain.handle('list-project-files', async () => {
+    try {
+      const projectRoot = getProjectRoot();
+      const results = [];
+      function walk(dir, prefix) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.guardian-backup') continue;
+          if (entry.isDirectory()) {
+            walk(path.join(dir, entry.name), rel);
+          } else {
+            results.push(rel);
+          }
+        }
+      }
+      walk(projectRoot, '');
+      return { success: true, files: results };
+    } catch (e) {
+      return { success: false, error: e.message, files: [] };
+    }
   });
 
   // Open Grok in a new native BrowserWindow (called from React app)

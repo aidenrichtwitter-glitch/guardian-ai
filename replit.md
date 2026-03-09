@@ -67,6 +67,16 @@ supabase/
 - **Web mode**: Sites open in new browser tabs (fallback when not in Electron)
 - Detection: `typeof window.require === 'function'` → Electron; otherwise web mode
 - Tauri has been fully removed from the project
+- **Code Apply Pipeline** (Electron only):
+  - Clipboard extractor detects code blocks + full Grok response context
+  - Click "Apply" → reads current file from disk → shows confirmation dialog with diff
+  - Safety checks run (balanced brackets, circular imports, infinite loops)
+  - On confirm: backs up file → writes to disk → checks TypeScript compilation → auto git commit
+  - If compile errors detected: shows errors + offers one-click rollback from backup
+  - Rollback restores the pre-write backup; non-fatal git failures shown as warnings
+  - Backups stored in `.guardian-backup/` (gitignored)
+  - IPC handlers: `read-file`, `write-file`, `rollback-file`, `git-commit`, `check-compile`, `list-project-files`
+  - Path traversal protection: all paths validated to be inside project root; node_modules/.git/.env blocked
 
 ## Development
 - Dev server: `npx vite` (port 5000) — web-only mode
