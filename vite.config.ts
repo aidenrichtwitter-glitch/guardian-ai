@@ -336,19 +336,31 @@ function projectManagementPlugin(): Plugin {
           if (hasPkg && !hasNodeModules) {
             try {
               const { execSync } = await import("child_process");
-              execSync("npm install", { cwd: projectDir, timeout: 30000, stdio: "pipe" });
+              execSync("npm install", { cwd: projectDir, timeout: 30000, stdio: "pipe", shell: true });
             } catch {}
           }
 
           const child = spawn("npx", ["vite", "--host", "0.0.0.0", "--port", String(port)], {
             cwd: projectDir,
             stdio: "pipe",
+            shell: true,
+            detached: false,
             env: { ...process.env, BROWSER: "none" },
           });
 
           previewProcesses.set(name, { process: child, port });
 
-          child.on("exit", () => { previewProcesses.delete(name); });
+          child.on("error", (err: any) => {
+            console.error(`Preview process error for ${name}:`, err.message);
+            previewProcesses.delete(name);
+          });
+
+          child.on("exit", (code: number | null) => {
+            if (code !== 0 && code !== null) {
+              console.error(`Preview process for ${name} exited with code ${code}`);
+            }
+            previewProcesses.delete(name);
+          });
 
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ port, started: true }));
@@ -364,7 +376,14 @@ function projectManagementPlugin(): Plugin {
           const { name } = JSON.parse(await readBody(req));
           const entry = previewProcesses.get(name);
           if (entry) {
-            entry.process.kill("SIGTERM");
+            try {
+              if (process.platform === "win32") {
+                const { execSync } = await import("child_process");
+                execSync(`taskkill /pid ${entry.process.pid} /T /F`, { stdio: "pipe" });
+              } else {
+                entry.process.kill("SIGTERM");
+              }
+            } catch {}
             previewProcesses.delete(name);
           }
           res.setHeader("Content-Type", "application/json");
