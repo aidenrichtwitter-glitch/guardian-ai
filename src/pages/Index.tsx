@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock, Target, ScrollText, Network, Rocket, Code2 } from 'lucide-react';
+import { Settings, Terminal, Brain, Shield, Activity, FileCode, RefreshCw, Eye, Zap, Clock, Target, ScrollText, Network, Rocket, Code2, Pause, Play, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import DesktopWindow from '@/components/DesktopWindow';
 import FileTree from '@/components/FileTree';
@@ -57,6 +57,7 @@ import { saveSnapshot, computeMerkleRoot } from '@/lib/memory-palace';
 import { installPresetCapabilities } from '@/lib/preinstall';
 import { runSelfTests, SelfTestReport } from '@/lib/self-test-runner';
 import CodeEvolution from '@/components/CodeEvolution';
+import { checkOllamaAvailability, validateOllamaChange, loadGuardConfig, saveGuardConfig, type OllamaGuardConfig } from '@/lib/ollama-safety-guard';
 
 const PHASE_SEQUENCE: RecursionState['phase'][] = ['scanning', 'reflecting', 'proposing', 'validating', 'applying', 'cooling'];
 
@@ -101,6 +102,31 @@ const Index = () => {
   const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
   const [journalRefresh, setJournalRefresh] = useState(0);
   const [cloudBooted, setCloudBooted] = useState(false);
+  const [guardConfig, setGuardConfig] = useState<OllamaGuardConfig>(() => loadGuardConfig());
+  const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; models: string[]; version?: string } | null>(null);
+  const [changesThisCycle, setChangesThisCycle] = useState(0);
+
+  // ── Auto-detect Ollama on boot ──
+  useEffect(() => {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocal || apiConfig.provider === 'ollama') {
+      checkOllamaAvailability(apiConfig.provider === 'ollama' ? apiConfig.baseUrl : 'http://localhost:11434').then(status => {
+        setOllamaStatus(status);
+        if (status.available && !localStorage.getItem('recursive-api-config')) {
+          // Auto-select best model
+          const preferredModels = ['llama3.2', 'codellama', 'deepseek-coder', 'mistral'];
+          const bestModel = preferredModels.find(m => status.models.some(sm => sm.startsWith(m))) || status.models[0] || 'llama3.2';
+          const config: ApiConfig = { provider: 'ollama', baseUrl: 'http://localhost:11434', apiKey: '', model: bestModel };
+          setApiConfig(config);
+          localStorage.setItem('recursive-api-config', JSON.stringify(config));
+          toast({
+            title: '🦙 Ollama detected',
+            description: `Connected to Ollama v${status.version || '?'} with ${status.models.length} models. Using ${bestModel}. Safety guardrails active.`,
+          });
+        }
+      });
+    }
+  }, []);
 
   // ── Boot from cloud on mount + pre-install capabilities ──
   useEffect(() => {
@@ -310,18 +336,49 @@ const Index = () => {
         const proposal = (prev as any)._proposal;
         const file = SELF_SOURCE[prev.currentFileIndex >= 0 ? prev.currentFileIndex : 0];
         if (proposal && file) {
-          const checks = validateChange(proposal.content, file.path);
-          const hasErrors = checks.some(c => c.severity === 'error');
-          if (hasErrors) {
-            newState.totalRejected = prev.totalRejected + 1;
-            newState.lastAction = `⚠ Change rejected — safety violation`;
-            newLog.push(createLogEntry('validating', `REJECTED: ${checks.filter(c => c.severity === 'error').map(c => c.message).join('; ')}`, 'error', file.path));
-            (newState as any)._proposal = null;
+          // ── Ollama Safety Guard: extra validation layer ──
+          const isOllama = apiConfig.provider === 'ollama';
+          if (isOllama && guardConfig.enabled) {
+            const verdict = validateOllamaChange(file.path, file.content, proposal.content, guardConfig);
+            if (!verdict.allowed) {
+              newState.totalRejected = prev.totalRejected + 1;
+              newState.lastAction = `🛡️ Ollama blocked: ${verdict.reason}`;
+              newLog.push(createLogEntry('validating', `🛡️ GUARD: ${verdict.reason}`, 'error', file.path));
+              (newState as any)._proposal = null;
+            } else {
+              // Passed guard — continue to standard validation
+              const checks = validateChange(proposal.content, file.path);
+              const hasErrors = checks.some(c => c.severity === 'error');
+              if (hasErrors) {
+                newState.totalRejected = prev.totalRejected + 1;
+                newState.lastAction = `⚠ Change rejected — safety violation`;
+                newLog.push(createLogEntry('validating', `REJECTED: ${checks.filter(c => c.severity === 'error').map(c => c.message).join('; ')}`, 'error', file.path));
+                (newState as any)._proposal = null;
+              } else {
+                const warnings = checks.filter(c => c.severity === 'warning');
+                if (verdict.warnings.length > 0) {
+                  newLog.push(createLogEntry('validating', `🛡️ Guard warnings: ${verdict.warnings.join('; ')}`, 'warning', file.path));
+                }
+                newState.lastAction = `Validated. ${warnings.length} warnings.`;
+                newLog.push(createLogEntry('validating', `✓ Safety + Guard passed${warnings.length ? ` (${warnings.length} warnings)` : ''}`, 'success', file.path));
+                (newState as any)._safetyChecks = checks;
+              }
+            }
           } else {
-            const warnings = checks.filter(c => c.severity === 'warning');
-            newState.lastAction = `Validated. ${warnings.length} warnings.`;
-            newLog.push(createLogEntry('validating', `✓ Safety passed${warnings.length ? ` (${warnings.length} warnings)` : ''}`, 'success', file.path));
-            (newState as any)._safetyChecks = checks;
+            // Non-Ollama or guard disabled — original validation
+            const checks = validateChange(proposal.content, file.path);
+            const hasErrors = checks.some(c => c.severity === 'error');
+            if (hasErrors) {
+              newState.totalRejected = prev.totalRejected + 1;
+              newState.lastAction = `⚠ Change rejected — safety violation`;
+              newLog.push(createLogEntry('validating', `REJECTED: ${checks.filter(c => c.severity === 'error').map(c => c.message).join('; ')}`, 'error', file.path));
+              (newState as any)._proposal = null;
+            } else {
+              const warnings = checks.filter(c => c.severity === 'warning');
+              newState.lastAction = `Validated. ${warnings.length} warnings.`;
+              newLog.push(createLogEntry('validating', `✓ Safety passed${warnings.length ? ` (${warnings.length} warnings)` : ''}`, 'success', file.path));
+              (newState as any)._safetyChecks = checks;
+            }
           }
         } else {
           newState.lastAction = 'Nothing to validate';
@@ -926,6 +983,43 @@ const Index = () => {
             )}
           </button>
         ))}
+
+        {/* ═══ PAUSE / PLAY — prominent control ═══ */}
+        <button
+          onClick={handleToggleRunning}
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
+            recursionState.isRunning
+              ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 animate-pulse'
+              : 'bg-primary/20 text-primary hover:bg-primary/30'
+          }`}
+          title={recursionState.isRunning ? 'PAUSE (stop Ollama)' : 'RESUME autonomy'}
+        >
+          {recursionState.isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        </button>
+
+        {/* Ollama guard status */}
+        {apiConfig.provider === 'ollama' && (
+          <button
+            onClick={() => {
+              const newConfig = { ...guardConfig, enabled: !guardConfig.enabled };
+              setGuardConfig(newConfig);
+              saveGuardConfig(newConfig);
+              toast({
+                title: newConfig.enabled ? '🛡️ Guard ON' : '⚠️ Guard OFF',
+                description: newConfig.enabled ? 'Ollama safety guardrails active' : 'Ollama can modify any file — be careful!',
+                variant: newConfig.enabled ? 'default' : 'destructive',
+              });
+            }}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
+              guardConfig.enabled
+                ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                : 'text-destructive bg-destructive/10 hover:bg-destructive/20'
+            }`}
+            title={guardConfig.enabled ? 'Guard: ON (click to disable)' : 'Guard: OFF (click to enable)'}
+          >
+            <ShieldAlert className="w-4 h-4" />
+          </button>
+        )}
 
         <div className="flex-1" />
 

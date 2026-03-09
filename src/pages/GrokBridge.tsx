@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot, User, Loader2, Code2, Trash2, ChevronDown, Download, Globe } from 'lucide-react';
+import { Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot, User, Loader2, Code2, Trash2, ChevronDown, Download, Globe, PanelRightClose, PanelRight } from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
@@ -34,6 +34,15 @@ const MODELS = [
   { id: 'grok-3', name: 'Grok 3', desc: 'Most capable' },
   { id: 'grok-3-mini', name: 'Grok 3 Mini', desc: 'Fast & efficient' },
   { id: 'grok-3-fast', name: 'Grok 3 Fast', desc: 'Speed optimized' },
+];
+
+const BROWSER_SITES = [
+  { id: 'grok', name: 'Grok', url: 'https://grok.com', icon: '🤖' },
+  { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com', icon: '💬' },
+  { id: 'claude', name: 'Claude', url: 'https://claude.ai', icon: '🧠' },
+  { id: 'github', name: 'GitHub', url: 'https://github.com', icon: '🐙' },
+  { id: 'google', name: 'Google', url: 'https://google.com', icon: '🔍' },
+  { id: 'docs', name: 'Tauri Docs', url: 'https://tauri.app/v2/guides/', icon: '📚' },
 ];
 
 function parseCodeBlocks(text: string): ParsedBlock[] {
@@ -143,6 +152,9 @@ const GrokBridge: React.FC = () => {
   const [validationResults, setValidationResults] = useState<Map<string, SafetyCheck[]>>(new Map());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [browserUrl, setBrowserUrl] = useState('https://grok.com');
+  const [showBrowser, setShowBrowser] = useState(true);
+  const [customUrl, setCustomUrl] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -171,7 +183,6 @@ const GrokBridge: React.FC = () => {
   }, [model]);
 
   const switchConversation = useCallback((id: string) => {
-    // Save current
     if (activeConvoId && messages.length > 0) {
       setConversations(prev => prev.map(c =>
         c.id === activeConvoId ? { ...c, messages, title: generateTitle(messages) } : c
@@ -204,7 +215,6 @@ const GrokBridge: React.FC = () => {
     setMessages(allMessages);
     setIsLoading(true);
 
-    // Auto-create conversation if none active
     let convoId = activeConvoId;
     if (!convoId) {
       convoId = crypto.randomUUID();
@@ -230,7 +240,6 @@ const GrokBridge: React.FC = () => {
       },
       onDone: () => {
         setIsLoading(false);
-        // Save to conversation
         setConversations(prev => prev.map(c =>
           c.id === convoId ? { ...c, messages: [...allMessages, { role: 'assistant' as const, content: assistantSoFar }], title: generateTitle(allMessages), model } : c
         ));
@@ -378,6 +387,7 @@ const GrokBridge: React.FC = () => {
   };
 
   const selectedModel = MODELS.find(m => m.id === model) || MODELS[1];
+  const currentSite = BROWSER_SITES.find(s => s.url === browserUrl);
 
   return (
     <div className="h-full flex bg-background text-foreground font-mono">
@@ -417,151 +427,231 @@ const GrokBridge: React.FC = () => {
         </div>
       )}
 
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-          <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowSidebar(!showSidebar)}
-                className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
-              >
-                <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
-              </button>
-              <h1 className="text-sm font-bold text-foreground">Grok Bridge</h1>
-              
-              {/* Open Grok in native webview (Tauri only) or new tab */}
-              <button
-                onClick={async () => {
-                  if (isTauri) {
-                    try {
-                      const { invoke } = await import('@tauri-apps/api/core');
-                      await invoke('open_grok_window');
-                    } catch (e) {
-                      console.error('Failed to open Grok window:', e);
-                      window.open('https://grok.com', '_blank');
-                    }
-                  } else {
-                    window.open('https://grok.com', '_blank');
-                  }
+      {/* Main area: chat + embedded browser */}
+      <div className="flex-1 flex min-w-0">
+        {/* Chat panel */}
+        <div className={`flex flex-col min-w-0 ${showBrowser ? 'w-1/2' : 'flex-1'}`}>
+          {/* Header */}
+          <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
+            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowSidebar(!showSidebar)}
+                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
+                </button>
+                <h1 className="text-sm font-bold text-foreground">AI Bridge</h1>
+                <button
+                  onClick={() => setShowBrowser(!showBrowser)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[10px] font-medium transition-colors"
+                >
+                  {showBrowser ? <PanelRightClose className="w-3 h-3" /> : <PanelRight className="w-3 h-3" />}
+                  {showBrowser ? 'Hide Browser' : 'Show Browser'}
+                </button>
+              </div>
+
+              {/* Model picker */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowModelPicker(!showModelPicker)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
+                >
+                  {selectedModel.name}
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                {showModelPicker && (
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                    {MODELS.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => { setModel(m.id); setShowModelPicker(false); }}
+                        className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
+                          m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-medium">{m.name}</div>
+                          <div className="text-[9px] text-muted-foreground">{m.desc}</div>
+                        </div>
+                        {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Chat messages */}
+          <div className="flex-1 overflow-auto p-6 space-y-4">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
+                <Bot className="w-10 h-10 text-muted-foreground" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">
+                    Code blocks with file paths can be validated and applied instantly
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/40 mt-3">
+                    Model: {selectedModel.name} — {selectedModel.desc}
+                  </p>
+                </div>
+              </div>
+            )}
+            {messages.map((msg, i) => renderMessage(msg, i))}
+            {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+              <div className="flex gap-3">
+                <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                  <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
+                </div>
+                <div className="text-xs text-muted-foreground">Thinking...</div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Applied changes bar */}
+          {appliedChanges.length > 0 && (
+            <div className="border-t border-border/30 bg-card/30 px-6 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
+              <span className="text-[9px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
+              {appliedChanges.map((change, i) => (
+                <button
+                  key={i}
+                  onClick={() => rollback(change)}
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group"
+                >
+                  <FileCode className="w-2.5 h-2.5" />
+                  {change.filePath.split('/').pop()}
+                  <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="border-t border-border/50 bg-card/50 p-4 shrink-0">
+            <div className="flex gap-3 items-end">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask Grok to modify code..."
+                rows={1}
+                className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
+                style={{ height: 'auto', overflow: 'hidden' }}
+                onInput={e => {
+                  const t = e.currentTarget;
+                  t.style.height = 'auto';
+                  t.style.height = Math.min(t.scrollHeight, 128) + 'px';
                 }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[10px] font-medium transition-colors"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim() || isLoading}
+                className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0"
               >
-                <Globe className="w-3 h-3" />
-                {isTauri ? 'Open Grok Browser' : 'Open grok.com'}
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+        </div>
 
-            {/* Model picker */}
-            <div className="relative">
-              <button
-                onClick={() => setShowModelPicker(!showModelPicker)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
-              >
-                {selectedModel.name}
-                <ChevronDown className="w-3 h-3" />
-              </button>
-              {showModelPicker && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
-                  {MODELS.map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setModel(m.id); setShowModelPicker(false); }}
-                      className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
-                        m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-medium">{m.name}</div>
-                        <div className="text-[9px] text-muted-foreground">{m.desc}</div>
-                      </div>
-                      {m.id === model && <Check className="w-3 h-3 text-primary" />}
-                    </button>
-                  ))}
-                </div>
+        {/* ═══ Embedded Browser Panel ═══ */}
+        {showBrowser && (
+          <div className="w-1/2 border-l border-border/30 flex flex-col bg-card/20">
+            {/* Browser toolbar */}
+            <div className="border-b border-border/30 bg-card/50 px-3 py-2 flex items-center gap-2 shrink-0">
+              {/* Site quick-select buttons */}
+              <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+                {BROWSER_SITES.map(site => (
+                  <button
+                    key={site.id}
+                    onClick={() => setBrowserUrl(site.url)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] whitespace-nowrap transition-colors ${
+                      browserUrl === site.url
+                        ? 'bg-primary/15 text-primary border border-primary/30'
+                        : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
+                    }`}
+                  >
+                    <span>{site.icon}</span>
+                    <span>{site.name}</span>
+                  </button>
+                ))}
+              </div>
+              {/* Custom URL input */}
+              <div className="flex items-center gap-1 shrink-0">
+                <input
+                  value={customUrl}
+                  onChange={e => setCustomUrl(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && customUrl.trim()) {
+                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+                      setBrowserUrl(url);
+                      setCustomUrl('');
+                    }
+                  }}
+                  placeholder="URL..."
+                  className="w-32 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+                />
+                <button
+                  onClick={() => {
+                    if (customUrl.trim()) {
+                      const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+                      setBrowserUrl(url);
+                      setCustomUrl('');
+                    }
+                  }}
+                  className="p-1 rounded bg-secondary/50 hover:bg-secondary/80 transition-colors"
+                >
+                  <Globe className="w-3 h-3 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+
+            {/* Browser address bar */}
+            <div className="border-b border-border/20 bg-card/30 px-3 py-1.5 flex items-center gap-2">
+              <Globe className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+              <span className="text-[10px] text-muted-foreground/70 truncate flex-1">{browserUrl}</span>
+              {currentSite && (
+                <span className="text-[9px] text-primary/60 shrink-0">{currentSite.name}</span>
               )}
             </div>
 
-            {statusMessage && (
-              <span className="text-[10px] text-[hsl(var(--terminal-amber))] animate-fade-in hidden sm:inline">{statusMessage}</span>
-            )}
-          </div>
-        </div>
-
-        {/* Chat messages */}
-        <div className="flex-1 overflow-auto p-6 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-              <Bot className="w-10 h-10 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-1">
-                  Code blocks with file paths can be validated and applied instantly
-                </p>
-                <p className="text-[9px] text-muted-foreground/40 mt-3">
-                  Model: {selectedModel.name} — {selectedModel.desc}
-                </p>
-              </div>
+            {/* Iframe */}
+            <div className="flex-1 relative">
+              {isTauri ? (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-3 p-6">
+                  <Globe className="w-8 h-8 text-muted-foreground/30" />
+                  <p className="text-xs text-muted-foreground/60">Desktop mode — opening in native window</p>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        await invoke('open_url_window', { url: browserUrl, title: currentSite?.name || 'Browser' });
+                      } catch (e) {
+                        window.open(browserUrl, '_blank');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-medium transition-colors"
+                  >
+                    Open {currentSite?.name || 'URL'} in Window
+                  </button>
+                </div>
+              ) : (
+                <iframe
+                  key={browserUrl}
+                  src={browserUrl}
+                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  allow="clipboard-write"
+                  title="Embedded Browser"
+                />
+              )}
             </div>
-          )}
-          {messages.map((msg, i) => renderMessage(msg, i))}
-          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-            <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
-                <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
-              </div>
-              <div className="text-xs text-muted-foreground">Thinking...</div>
-            </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
-
-        {/* Applied changes bar */}
-        {appliedChanges.length > 0 && (
-          <div className="border-t border-border/30 bg-card/30 px-6 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
-            <span className="text-[9px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
-            {appliedChanges.map((change, i) => (
-              <button
-                key={i}
-                onClick={() => rollback(change)}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group"
-              >
-                <FileCode className="w-2.5 h-2.5" />
-                {change.filePath.split('/').pop()}
-                <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            ))}
           </div>
         )}
-
-        {/* Input */}
-        <div className="border-t border-border/50 bg-card/50 p-4 shrink-0">
-          <div className="flex gap-3 items-end max-w-4xl mx-auto">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask Grok to modify code..."
-              rows={1}
-              className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
-              style={{ height: 'auto', overflow: 'hidden' }}
-              onInput={e => {
-                const t = e.currentTarget;
-                t.style.height = 'auto';
-                t.style.height = Math.min(t.scrollHeight, 128) + 'px';
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() || isLoading}
-              className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
