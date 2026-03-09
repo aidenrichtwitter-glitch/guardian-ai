@@ -395,68 +395,92 @@ const GrokBridge: React.FC = () => {
       <div className={`flex flex-col min-w-0 ${showBrowser ? 'w-[360px] shrink-0' : 'flex-1'} border-r border-border/30`}>
         {/* Header */}
           <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowSidebar(!showSidebar)}
-                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
-                >
-                  <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
-                </button>
-                <h1 className="text-sm font-bold text-foreground">AI Bridge</h1>
+            <div className="px-3 py-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[hsl(var(--terminal-amber))]" />
+                <h1 className="text-xs font-bold text-foreground">AI Chat</h1>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowBrowser(!showBrowser)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[10px] font-medium transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-[hsl(var(--terminal-amber))]/10 text-[hsl(var(--terminal-amber))] hover:bg-[hsl(var(--terminal-amber))]/20 text-[9px] font-medium transition-colors"
                 >
                   {showBrowser ? <PanelRightClose className="w-3 h-3" /> : <PanelRight className="w-3 h-3" />}
-                  {showBrowser ? 'Hide Browser' : 'Show Browser'}
+                  {showBrowser ? 'Hide' : 'Browser'}
                 </button>
-              </div>
-
-              {/* Model picker */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowModelPicker(!showModelPicker)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors"
-                >
-                  {selectedModel.name}
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-                {showModelPicker && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
-                    {MODELS.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => { setModel(m.id); setShowModelPicker(false); }}
-                        className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
-                          m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-[9px] text-muted-foreground">{m.desc}</div>
-                        </div>
-                        {m.id === model && <Check className="w-3 h-3 text-primary" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Model picker */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowModelPicker(!showModelPicker)}
+                    className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[9px] text-muted-foreground transition-colors"
+                  >
+                    {selectedModel.name}
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
+                  {showModelPicker && (
+                    <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                      {MODELS.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setModel(m.id); setShowModelPicker(false); }}
+                          className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${
+                            m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-medium">{m.name}</div>
+                            <div className="text-[9px] text-muted-foreground">{m.desc}</div>
+                          </div>
+                          {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* Conversation list + new chat button */}
+          <div className="border-b border-border/30 bg-card/30 px-2 py-2 shrink-0 space-y-1">
+            <button
+              onClick={newConversation}
+              className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors"
+            >
+              + New Chat
+            </button>
+            {conversations.length > 0 && (
+              <div className="max-h-24 overflow-auto space-y-0.5">
+                {conversations.map(c => (
+                  <div
+                    key={c.id}
+                    className={`group flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors text-[9px] ${
+                      c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                    onClick={() => switchConversation(c.id)}
+                  >
+                    <span className="flex-1 truncate">{c.title}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Chat messages */}
-          <div className="flex-1 overflow-auto p-6 space-y-4">
+          <div className="flex-1 overflow-auto p-4 space-y-3">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-                <Bot className="w-10 h-10 text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-50">
+                <Bot className="w-8 h-8 text-muted-foreground" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Chat with Grok directly</p>
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
-                    Code blocks with file paths can be validated and applied instantly
-                  </p>
-                  <p className="text-[9px] text-muted-foreground/40 mt-3">
-                    Model: {selectedModel.name} — {selectedModel.desc}
+                  <p className="text-xs text-muted-foreground">Chat with Grok</p>
+                  <p className="text-[9px] text-muted-foreground/40 mt-1">
+                    {selectedModel.name} — {selectedModel.desc}
                   </p>
                 </div>
               </div>
