@@ -370,6 +370,49 @@ function projectManagementPlugin(): Plugin {
         }
       });
 
+      server.middlewares.use("/api/projects/install-deps", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
+        try {
+          const { name, dependencies, devDependencies } = JSON.parse(await readBody(req));
+          if (!name || /[\/\\]|\.\./.test(name)) { res.statusCode = 400; res.end(JSON.stringify({ error: "Invalid project name" })); return; }
+
+          const fs = await import("fs");
+          const projectDir = path.resolve(process.cwd(), "projects", name);
+          if (!fs.existsSync(projectDir)) { res.statusCode = 404; res.end(JSON.stringify({ error: "Project not found" })); return; }
+
+          const results: string[] = [];
+          const { execFileSync } = await import("child_process");
+          const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+          const validPkg = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
+          const safeDeps = (dependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
+          const safeDevDeps = (devDependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
+
+          if (safeDeps.length > 0) {
+            try {
+              execFileSync(npmCmd, ["install", ...safeDeps], { cwd: projectDir, timeout: 60000, stdio: "pipe" });
+              results.push(`Installed: ${safeDeps.join(", ")}`);
+            } catch (err: any) {
+              results.push(`Failed to install deps: ${err.message}`);
+            }
+          }
+
+          if (safeDevDeps.length > 0) {
+            try {
+              execFileSync(npmCmd, ["install", "--save-dev", ...safeDevDeps], { cwd: projectDir, timeout: 60000, stdio: "pipe" });
+              results.push(`Installed dev: ${safeDevDeps.join(", ")}`);
+            } catch (err: any) {
+              results.push(`Failed to install dev deps: ${err.message}`);
+            }
+          }
+
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ success: true, results }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+
       server.middlewares.use("/api/projects/stop-preview", async (req, res) => {
         if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
         try {

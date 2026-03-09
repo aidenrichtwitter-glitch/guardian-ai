@@ -89,7 +89,7 @@ supabase/
 ## Project Management
 - Users can create, select, and delete sub-projects from the AI Bridge page
 - Projects are stored under `projects/<name>/` relative to project root
-- API endpoints in `vite.config.ts`: `/api/projects/list`, `/api/projects/create`, `/api/projects/delete`, `/api/projects/files`, `/api/projects/read-file`, `/api/projects/write-file`, `/api/projects/preview`, `/api/projects/stop-preview`
+- API endpoints in `vite.config.ts`: `/api/projects/list`, `/api/projects/create`, `/api/projects/delete`, `/api/projects/files`, `/api/projects/read-file`, `/api/projects/write-file`, `/api/projects/preview`, `/api/projects/stop-preview`, `/api/projects/install-deps`
 - Client-side store: `src/lib/project-manager.ts` — `listProjects`, `createProject`, `deleteProject`, `getProjectFiles`, `readProjectFile`, `writeProjectFile`, `getActiveProject`, `setActiveProject`
 - UI component: `src/components/ProjectExplorer.tsx` — file tree browser for active project
 - When a project is active in GrokBridge:
@@ -107,7 +107,14 @@ supabase/
   - `src/test/pipeline.test.ts` — code parser unit tests + live Grok API test (creates `src/lib/greeter.ts` function)
   - `src/test/pipeline-e2e.test.ts` — end-to-end theme change test (sends `index.css` to Grok, asks "green to blue", verifies response)
   - `src/test/fixtures/` — saved JSON fixtures from live API test runs (for reference/debugging)
-- Shared module: `src/lib/code-parser.ts` — `parseCodeBlocks()` + `ParsedBlock` interface (used by GrokBridge + tests)
+- Shared module: `src/lib/code-parser.ts` — `parseCodeBlocks()` + `ParsedBlock` interface + `parseDependencies()` for auto-detecting npm packages (used by GrokBridge + tests)
+
+## Dependency Auto-Install
+- When Grok's response includes a `=== DEPENDENCIES ===` block or `npm install` commands in bash code blocks, the app auto-detects packages
+- `parseDependencies()` in `code-parser.ts` extracts package names with sanitization (validates against npm naming regex, blocks shell metacharacters)
+- On "Apply All" for an active project, detected deps are installed via `/api/projects/install-deps` (Vite) or `install-project-deps` IPC (Electron)
+- Both endpoints use `execFileSync` with arg arrays (no shell interpolation) for security
+- Context instructions and evolution instructions tell Grok to use the structured format
 
 ## Development
 - Dev server: `npx vite` (port 5000) — web-only mode

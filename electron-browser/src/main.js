@@ -925,6 +925,47 @@ function setupIpcHandlers() {
     });
   });
 
+  ipcMain.handle('install-project-deps', async (_event, { projectName, dependencies, devDependencies }) => {
+    if (!projectName || typeof projectName !== 'string' || /[\/\\]|\.\./.test(projectName)) {
+      return { success: false, error: 'Invalid project name' };
+    }
+    const projectRoot = getProjectRoot();
+    const projectDir = path.join(projectRoot, 'projects', projectName);
+    const resolvedDir = path.resolve(projectDir);
+    const projectsRoot = path.resolve(path.join(projectRoot, 'projects'));
+    if (!resolvedDir.startsWith(projectsRoot)) return { success: false, error: 'Invalid project path' };
+    if (!fs.existsSync(projectDir)) return { success: false, error: 'Project not found' };
+
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const validPkg = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
+    const sanitize = (arr) => (arr || []).filter(d => typeof d === 'string' && validPkg.test(d) && !/[;&|`$(){}]/.test(d));
+    const safeDeps = sanitize(dependencies);
+    const safeDevDeps = sanitize(devDependencies);
+    const results = [];
+
+    if (safeDeps.length > 0) {
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync(npmCmd, ['install', ...safeDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe' });
+        results.push(`Installed: ${safeDeps.join(', ')}`);
+      } catch (err) {
+        results.push(`Failed to install deps: ${err.message}`);
+      }
+    }
+
+    if (safeDevDeps.length > 0) {
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync(npmCmd, ['install', '--save-dev', ...safeDevDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe' });
+        results.push(`Installed dev: ${safeDevDeps.join(', ')}`);
+      } catch (err) {
+        results.push(`Failed to install dev deps: ${err.message}`);
+      }
+    }
+
+    return { success: true, results };
+  });
+
   // ─── Guardian AI: Read multiple files for context ──────────────────────────
 
   ipcMain.handle('read-files-for-context', async (_event, { filePaths, maxSizePerFile }) => {

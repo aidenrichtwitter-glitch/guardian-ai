@@ -4,6 +4,75 @@ export interface ParsedBlock {
   language: string;
 }
 
+export interface ParsedDependencies {
+  dependencies: string[];
+  devDependencies: string[];
+}
+
+const VALID_PKG_NAME = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
+
+function sanitizePackageName(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed || !VALID_PKG_NAME.test(trimmed)) return null;
+  if (/[;&|`$(){}]/.test(trimmed)) return null;
+  return trimmed;
+}
+
+export function parseDependencies(text: string): ParsedDependencies {
+  const deps: string[] = [];
+  const devDeps: string[] = [];
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  const blockMatch = normalized.match(/===\s*DEPENDENCIES\s*===\s*\n([\s\S]*?)(?:===\s*END_DEPENDENCIES\s*===|(?=\n===\s)|\n\n\n)/);
+  if (blockMatch) {
+    const block = blockMatch[1];
+    for (const line of block.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+      const devMatch = trimmed.match(/^(?:dev:\s*|--save-dev\s+)(.+)/i);
+      if (devMatch) {
+        for (const p of devMatch[1].split(/\s+/)) {
+          const safe = sanitizePackageName(p);
+          if (safe) devDeps.push(safe);
+        }
+      } else {
+        for (const p of trimmed.split(/\s+/)) {
+          const safe = sanitizePackageName(p);
+          if (safe) deps.push(safe);
+        }
+      }
+    }
+  }
+
+  const installRegex = /```(?:bash|sh|shell|terminal)?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = installRegex.exec(normalized)) !== null) {
+    const cmdBlock = m[1];
+    for (const line of cmdBlock.split('\n')) {
+      const trimmed = line.trim();
+      const npmMatch = trimmed.match(/^npm\s+(?:install|i)\s+(.*)/i);
+      if (npmMatch) {
+        const args = npmMatch[1].split(/\s*[;&|]+/)[0];
+        const isDev = /--save-dev|-D/.test(args);
+        const tokens = args.replace(/--save-dev|-D|--save/g, '').trim().split(/\s+/);
+        for (const t of tokens) {
+          if (t.startsWith('-')) continue;
+          const safe = sanitizePackageName(t);
+          if (safe) {
+            if (isDev) devDeps.push(safe);
+            else deps.push(safe);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    dependencies: [...new Set(deps)],
+    devDependencies: [...new Set(devDeps)],
+  };
+}
+
 const FILE_EXT_PATTERN = '\\S+\\.(?:tsx?|jsx?|css|html|json|md|py|sh|sql|yaml|yml|toml|env|cfg|conf|xml|svg|vue|svelte|go|rs|rb|java|kt|swift|c|cpp|h|hpp)';
 
 function extractFilePathFromCode(code: string): { filePath: string; cleanedCode: string } {

@@ -8,7 +8,7 @@ import {
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
-import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables } from '@/lib/code-parser';
+import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies } from '@/lib/code-parser';
 import {
   fetchEvolutionState,
   buildEvolutionContext,
@@ -148,6 +148,7 @@ function extractContextSections(fullText: string): string[] {
 
 function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured }: { onApply: (filePath: string, code: string) => void; onApplyAll?: (blocks: { filePath: string; code: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void }) {
   const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
+  const [detectedDeps, setDetectedDeps] = useState<{ dependencies: string[]; devDependencies: string[] }>({ dependencies: [], devDependencies: [] });
   const [responseContext, setResponseContext] = useState<string>('');
   const [contextSections, setContextSections] = useState<string[]>([]);
   const [showContext, setShowContext] = useState(false);
@@ -172,6 +173,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured }: { onApp
       applied: false,
     }));
     setBlocks(newBlocks);
+    setDetectedDeps(parseDependencies(text));
     setCollapsed(false);
     setShowPasteBox(false);
     setFlash(true);
@@ -255,6 +257,12 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured }: { onApp
         )}
         {blocks.length > 0 && (
           <span className="text-[9px] text-primary/70 ml-1">{blocks.length} block{blocks.length > 1 ? 's' : ''} detected</span>
+        )}
+        {(detectedDeps.dependencies.length > 0 || detectedDeps.devDependencies.length > 0) && (
+          <span className="text-[9px] text-[hsl(150_60%_55%)] ml-1 flex items-center gap-1" data-testid="text-detected-deps">
+            <Zap className="w-2.5 h-2.5" />
+            {detectedDeps.dependencies.length + detectedDeps.devDependencies.length} dep{detectedDeps.dependencies.length + detectedDeps.devDependencies.length > 1 ? 's' : ''} to install
+          </span>
         )}
         {isElectron && onApplyAll && blocks.filter(b => b.filePath && !b.applied).length > 1 && (
           <button
@@ -1117,9 +1125,41 @@ const GrokBridge: React.FC = () => {
       setBatchMessage(`Writing ${blocks.length} file${blocks.length > 1 ? 's' : ''} to ${activeProject}...`);
       setBatchError('');
       try {
+        const responseText = lastFullResponseRef.current;
+        const detectedDeps = responseText ? parseDependencies(responseText) : { dependencies: [], devDependencies: [] };
+        const hasDeps = detectedDeps.dependencies.length > 0 || detectedDeps.devDependencies.length > 0;
+
         for (const block of blocks) {
           await writeProjectFile(activeProject, block.filePath, block.code);
         }
+
+        if (hasDeps) {
+          setBatchMessage(`Installing dependencies for ${activeProject}...`);
+          try {
+            if (isElectron) {
+              const { ipcRenderer } = (window as any).require('electron');
+              await ipcRenderer.invoke('install-project-deps', {
+                projectName: activeProject,
+                dependencies: detectedDeps.dependencies,
+                devDependencies: detectedDeps.devDependencies,
+              });
+            } else {
+              await fetch('/api/projects/install-deps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: activeProject,
+                  dependencies: detectedDeps.dependencies,
+                  devDependencies: detectedDeps.devDependencies,
+                }),
+              });
+            }
+            setStatusMessage(`Installed: ${[...detectedDeps.dependencies, ...detectedDeps.devDependencies].join(', ')}`);
+          } catch (depErr: any) {
+            console.error('Dependency install failed:', depErr);
+          }
+        }
+
         setAppliedChanges(prev => [...prev, ...blocks.map(b => ({
           filePath: `${activeProject}/${b.filePath}`,
           previousContent: '',
@@ -1128,7 +1168,7 @@ const GrokBridge: React.FC = () => {
         }))]);
         await buildProjectContext();
         setBatchStage('done');
-        setBatchMessage(`${blocks.length} files written to ${activeProject}`);
+        setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}`);
         setTimeout(() => { setBatchStage('idle'); setBatchMessage(''); }, 4000);
       } catch (e: any) {
         setBatchStage('error');
@@ -1357,7 +1397,16 @@ const GrokBridge: React.FC = () => {
       context += `// file: path/to/file.tsx\n`;
       context += `\`\`\`tsx\n// full file content here\n\`\`\`\n`;
       context += `Include the complete file content, not partial patches.\n`;
-      context += `The code extractor will automatically detect and apply these blocks.\n`;
+      context += `The code extractor will automatically detect and apply these blocks.\n\n`;
+      context += `If your changes require new npm packages, include a dependencies block BEFORE the code blocks:\n\n`;
+      context += `=== DEPENDENCIES ===\n`;
+      context += `package-name\n`;
+      context += `another-package\n`;
+      context += `dev: @types/package-name\n`;
+      context += `dev: some-dev-tool\n`;
+      context += `=== END_DEPENDENCIES ===\n\n`;
+      context += `List one package per line. Prefix dev dependencies with "dev: ".\n`;
+      context += `The app will automatically install these before applying code changes.\n`;
 
       setProjectContext(context);
       setContextLoading(false);

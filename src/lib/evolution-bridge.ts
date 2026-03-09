@@ -132,6 +132,19 @@ FOR IMPLEMENTATION:
 - Multiple files are fine — create what's needed
 - Build on existing capabilities
 
+IF NEW NPM PACKAGES ARE NEEDED:
+Include a dependencies block BEFORE code blocks:
+
+=== DEPENDENCIES ===
+package-name
+another-package
+dev: @types/package-name
+dev: some-dev-tool
+=== END_DEPENDENCIES ===
+
+List one package per line. Prefix dev dependencies with "dev: ".
+The app will automatically install these before applying code changes.
+
 FOR NEXT EVOLUTION PLAN:
 After your code blocks, include a plan section in this exact format:
 
