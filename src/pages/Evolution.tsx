@@ -1194,6 +1194,28 @@ const Evolution: React.FC = () => {
                         <div className="text-[10px] text-muted-foreground mt-1">
                           Type: {task.type} • Success: {task.success ? '✓' : '✗'}
                         </div>
+                        
+                        {/* Display structured outputs */}
+                        {task.outputs && (
+                          <div className="mt-2 p-2 bg-muted/30 rounded border border-border">
+                            <div className="text-[10px] font-bold text-primary mb-1">📤 Output</div>
+                            {task.outputs.type === 'search-results' && (
+                              <div className="space-y-1">
+                                <div className="text-[10px] text-muted-foreground">Queries: {task.outputs.data.queries.join(', ')}</div>
+                                <div className="text-[10px] text-foreground font-semibold">Top concepts: {task.outputs.data.topConcepts.join(', ')}</div>
+                                {task.outputs.data.sources.slice(0, 2).map((s: any, si: number) => (
+                                  <div key={si} className="text-[9px] text-muted-foreground italic">• {s.snippet.slice(0, 100)}...</div>
+                                ))}
+                              </div>
+                            )}
+                            {task.outputs.type === 'opinion' && (
+                              <div className="space-y-1">
+                                <div className="text-[10px] text-foreground italic border-l-2 border-primary/50 pl-2 py-1">"{task.outputs.data.opinion}"</div>
+                                <div className="text-[9px] text-muted-foreground">Sentiment: {task.outputs.data.sentiment} · Sources: {task.outputs.data.sourceCount}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
