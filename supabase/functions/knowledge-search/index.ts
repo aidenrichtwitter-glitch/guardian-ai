@@ -10,6 +10,7 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const xaiKey = Deno.env.get('XAI_API')!;
   const lovableKey = Deno.env.get('LOVABLE_API_KEY')!;
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
 
     const capContext = capabilities?.map(c => `- ${c.name}: ${c.description}`).join('\n') || '';
 
-    const searchMode = mode || 'knowledge'; // 'knowledge', 'technical', 'strategy'
+    const searchMode = mode || 'knowledge';
 
     const systemPrompts: Record<string, string> = {
       knowledge: `You are the knowledge engine of λ Recursive, a self-evolving AI system at evolution level ${state?.evolution_level || 0}.
@@ -66,21 +67,49 @@ Analyze the query from an evolutionary strategy perspective:
 4. Recommended implementation priority`,
     };
 
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompts[searchMode] || systemPrompts.knowledge },
-          ...(context ? [{ role: 'user', content: `Context: ${context}` }] : []),
-          { role: 'user', content: query },
-        ],
-      }),
-    });
+    const systemPrompt = systemPrompts[searchMode] || systemPrompts.knowledge;
+
+    // Try XAI first, fallback to Lovable
+    let aiResponse;
+    let provider = 'xai';
+
+    if (xaiKey) {
+      aiResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${xaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'grok-beta',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...(context ? [{ role: 'user', content: `Context: ${context}` }] : []),
+            { role: 'user', content: query },
+          ],
+        }),
+      });
+    }
+
+    // Fallback to Lovable if XAI fails
+    if (!aiResponse || !aiResponse.ok) {
+      provider = 'lovable';
+      aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...(context ? [{ role: 'user', content: `Context: ${context}` }] : []),
+            { role: 'user', content: query },
+          ],
+        }),
+      });
+    }
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
@@ -97,8 +126,8 @@ Analyze the query from an evolutionary strategy perspective:
     await supabase.from('evolution_journal').insert([{
       event_type: 'search',
       title: `🔍 Knowledge Search: ${query.slice(0, 60)}`,
-      description: `Mode: ${searchMode}. Result length: ${content.length} chars.`,
-      metadata: { query, mode: searchMode, result_length: content.length },
+      description: `Mode: ${searchMode}. Result length: ${content.length} chars. Provider: ${provider}`,
+      metadata: { query, mode: searchMode, result_length: content.length, provider },
     }]);
 
     return new Response(JSON.stringify({
@@ -107,6 +136,7 @@ Analyze the query from an evolutionary strategy perspective:
       mode: searchMode,
       result: content,
       evolution_level: state?.evolution_level || 0,
+      provider,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
