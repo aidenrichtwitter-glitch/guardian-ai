@@ -330,9 +330,10 @@ async function persistTestReport(report: SelfTestReport): Promise<void> {
         failed_tests: failedTests.map(t => ({ suite: t.suite, name: t.name, error: t.error })),
       },
     }]);
-  } catch {}
+  } catch (err) {
+    console.error('[self-test-runner] Failed to persist test report:', err);
+  }
 }
-
 /**
  * Get the total number of registered self-tests
  */

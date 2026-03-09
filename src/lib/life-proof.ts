@@ -176,61 +176,64 @@ async function testSelfAwareness(): Promise<LifeTestResult> {
 // ── STAGE 4: CAPABILITY — Can it actually do things? ──
 async function testCapability(): Promise<LifeTestResult> {
   const start = performance.now();
-  const tests: { name: string; pass: boolean }[] = [];
+  const tests: { name: string; pass: boolean; error?: string }[] = [];
 
-  // Test: Can it validate code?
+  // Test: Can it validate code? Must return checks with NO errors for clean code
   try {
     const checks = validateChange('export function test() { return 42; }', 'test.ts');
-    tests.push({ name: 'code-validation', pass: Array.isArray(checks) });
-  } catch { tests.push({ name: 'code-validation', pass: false }); }
+    const hasErrors = checks.some(c => c.severity === 'error');
+    tests.push({ name: 'code-validation', pass: Array.isArray(checks) && !hasErrors, error: hasErrors ? 'Clean code flagged as error' : undefined });
+  } catch (err) { tests.push({ name: 'code-validation', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Test: Can it verify a capability?
+  // Test: Can it verify a capability? Must return 'verified' with passing checks
   try {
     const result = verifyCapability('test', 'src/lib/rule-engine.ts', 'export function x() {}');
-    tests.push({ name: 'capability-verification', pass: result.status === 'verified' });
-  } catch { tests.push({ name: 'capability-verification', pass: false }); }
+    const passedChecks = result.checks.filter(c => c.passed).length;
+    tests.push({ name: 'capability-verification', pass: result.status === 'verified' && passedChecks >= 3, error: passedChecks < 3 ? `Only ${passedChecks} checks passed` : undefined });
+  } catch (err) { tests.push({ name: 'capability-verification', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Test: Can it run rules?
+  // Test: Can it run rules? Must evaluate >0 rules AND produce actions
   try {
     const report = ruleEngine.evaluate({
       capabilities: ['test'], evolutionLevel: 1, cycleCount: 1,
       lastTestVerdict: null, failedTests: [], capabilityCount: 1,
       timeSinceLastEvolution: 0, codeFiles: [],
     });
-    tests.push({ name: 'rule-evaluation', pass: report.rulesEvaluated > 0 });
-  } catch { tests.push({ name: 'rule-evaluation', pass: false }); }
+    tests.push({ name: 'rule-evaluation', pass: typeof report.rulesEvaluated === 'number' && report.rulesEvaluated > 0 });
+  } catch (err) { tests.push({ name: 'rule-evaluation', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Test: Can it detect anomalies?
+  // Test: Can it detect anomalies? Must return an array (even if empty for clean data)
   try {
     const anomalies = detectAnomalies(
       [{ name: 'a', cycle: 1, level: 1, builtOn: [], verified: true }], 1, 1
     );
     tests.push({ name: 'anomaly-detection', pass: Array.isArray(anomalies) });
-  } catch { tests.push({ name: 'anomaly-detection', pass: false }); }
+  } catch (err) { tests.push({ name: 'anomaly-detection', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Test: Can it detect patterns?
+  // Test: Can it detect patterns? Must return array
   try {
     const patterns = detectPatterns(
       [{ name: 'a', cycle: 1, level: 1 }, { name: 'b', cycle: 2, level: 1 }, { name: 'c', cycle: 3, level: 2 }], 3
     );
     tests.push({ name: 'pattern-detection', pass: Array.isArray(patterns) });
-  } catch { tests.push({ name: 'pattern-detection', pass: false }); }
+  } catch (err) { tests.push({ name: 'pattern-detection', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Test: Can it forecast?
+  // Test: Can it forecast? Must return non-empty predictions
   try {
     const preds = predictNextEvolutions(['rule-engine'], 1, 1);
-    tests.push({ name: 'forecasting', pass: preds.length > 0 });
-  } catch { tests.push({ name: 'forecasting', pass: false }); }
+    tests.push({ name: 'forecasting', pass: Array.isArray(preds) && preds.length > 0 });
+  } catch (err) { tests.push({ name: 'forecasting', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
   const passed = tests.filter(t => t.pass).length;
   const score = Math.round((passed / tests.length) * 100);
+  const failedTests = tests.filter(t => !t.pass);
 
   emitTestLightning('capability', 'rule-engine', 'anomaly-detection', score >= 50,
     `${passed}/${tests.length} capabilities functional`);
 
   return {
     stage: 'capability', name: '⚡ Capability', passed: score >= 70, score,
-    detail: `${passed}/${tests.length} subsystems functional: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}`).join(', ')}`,
+    detail: `${passed}/${tests.length} subsystems functional: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}${t.error ? `(${t.error})` : ''}`).join(', ')}`,
     duration: performance.now() - start,
   };
 }
@@ -313,29 +316,37 @@ async function testGrowth(): Promise<LifeTestResult> {
 // ── STAGE 7: AUTONOMY — Can it think for itself? ──
 async function testAutonomy(): Promise<LifeTestResult> {
   const start = performance.now();
-  const tests: { name: string; pass: boolean }[] = [];
+  const tests: { name: string; pass: boolean; error?: string }[] = [];
 
   // Has deterministic rules?
   const rules = ruleEngine.getRules();
   tests.push({ name: 'has-rules', pass: rules.length >= 5 });
 
-  // Can evaluate rules without AI?
-  const report = ruleEngine.evaluate({
-    capabilities: ['rule-engine'], evolutionLevel: 36, cycleCount: 60,
-    lastTestVerdict: 'HEALTHY', failedTests: [], capabilityCount: 36,
-    timeSinceLastEvolution: 1000, codeFiles: [],
-  });
-  tests.push({ name: 'rules-execute', pass: report.rulesEvaluated > 0 });
+  // Can evaluate rules without AI? Must return valid report with numeric fields
+  try {
+    const report = ruleEngine.evaluate({
+      capabilities: ['rule-engine'], evolutionLevel: 36, cycleCount: 60,
+      lastTestVerdict: 'HEALTHY', failedTests: [], capabilityCount: 36,
+      timeSinceLastEvolution: 1000, codeFiles: [],
+    });
+    const valid = typeof report.rulesEvaluated === 'number' && report.rulesEvaluated > 0 && typeof report.autonomyScore === 'number';
+    tests.push({ name: 'rules-execute', pass: valid, error: valid ? undefined : 'Report missing expected numeric fields' });
+  } catch (err) { tests.push({ name: 'rules-execute', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
   // Can forecast without AI?
-  const preds = predictNextEvolutions(['rule-engine', 'safety-engine'], 36, 60);
-  tests.push({ name: 'forecasts-without-ai', pass: preds.length > 0 });
+  try {
+    const preds = predictNextEvolutions(['rule-engine', 'safety-engine'], 36, 60);
+    tests.push({ name: 'forecasts-without-ai', pass: Array.isArray(preds) && preds.length > 0 });
+  } catch (err) { tests.push({ name: 'forecasts-without-ai', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
-  // Can detect anomalies without AI?
-  const anomalies = detectAnomalies(
-    [{ name: 'x', cycle: 1, level: 1, builtOn: ['nonexistent'], verified: true }], 1, 1
-  );
-  tests.push({ name: 'detects-anomalies-alone', pass: anomalies.length > 0 });
+  // Can detect anomalies without AI? Must actually find the orphan dependency
+  try {
+    const anomalies = detectAnomalies(
+      [{ name: 'x', cycle: 1, level: 1, builtOn: ['nonexistent'], verified: true }], 1, 1
+    );
+    const foundOrphan = anomalies.some(a => a.type === 'orphan');
+    tests.push({ name: 'detects-anomalies-alone', pass: foundOrphan, error: foundOrphan ? undefined : `Got ${anomalies.length} anomalies but none of type 'orphan'` });
+  } catch (err) { tests.push({ name: 'detects-anomalies-alone', pass: false, error: err instanceof Error ? err.message : 'threw' }); }
 
   // Has self-documentation?
   tests.push({ name: 'self-documents', pass: SELF_SOURCE.length > 3 });
@@ -348,7 +359,7 @@ async function testAutonomy(): Promise<LifeTestResult> {
 
   return {
     stage: 'autonomy', name: '🤖 Autonomy', passed: score >= 60, score,
-    detail: `${passed}/${tests.length} autonomous: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}`).join(', ')}`,
+    detail: `${passed}/${tests.length} autonomous: ${tests.map(t => `${t.name}:${t.pass ? '✓' : '✗'}${t.error ? `(${t.error})` : ''}`).join(', ')}`,
     duration: performance.now() - start,
   };
 }

@@ -20,6 +20,7 @@ import { deterministicSearch } from './autonomy-engine';
 import { ruleEngine } from './rule-engine';
 import { emitStormProcess } from '@/components/TerminalStorm';
 import { decomposeTask } from './task-decomposition';
+import { validateChange } from './safety-engine';
 
 export type MaturityDimension =
   | 'conversational'
@@ -170,9 +171,13 @@ async function testConversational(): Promise<DimensionResult> {
   const hasDepth = depth >= 10;
   checks.push({ name: 'conversation-depth', pass: hasDepth, detail: `${depth} messages (need 10+)` });
 
-  // Check: AI chat edge function exists (knowledge-search)
-  const hasAIChat = true; // We know the knowledge-search function exists
-  checks.push({ name: 'ai-backend', pass: hasAIChat, detail: 'Knowledge search function deployed' });
+  // Check: AI chat edge function is callable
+  try {
+    const { error } = await supabase.functions.invoke('knowledge-search', { body: { query: 'test', history: [] } });
+    checks.push({ name: 'ai-backend', pass: !error, detail: error ? `Edge function error: ${error.message}` : 'Knowledge search function responding' });
+  } catch (err) {
+    checks.push({ name: 'ai-backend', pass: false, detail: `Edge function unreachable: ${err instanceof Error ? err.message : 'unknown'}` });
+  }
 
   const passed = checks.filter(c => c.pass).length;
   const score = Math.round((passed / checks.length) * 100);
@@ -261,8 +266,9 @@ async function testWorldAware(): Promise<DimensionResult> {
     checks.push({ name: 'meaningful-content', pass: false, detail: 'No content available' });
   }
 
-  // Check: Has knowledge search (AI-powered synthesis)?
-  checks.push({ name: 'knowledge-synthesis', pass: true, detail: 'Knowledge search edge function deployed' });
+  // Check: Has knowledge search that actually works (tested above via web-reach)
+  const searchWorked = checks.find(c => c.name === 'web-reach')?.pass || false;
+  checks.push({ name: 'knowledge-synthesis', pass: searchWorked, detail: searchWorked ? 'Knowledge search pipeline working' : 'Knowledge search not returning results' });
 
   // Check: Has search history (evidence of past searches)?
   const { data: searchJournal } = await supabase
@@ -352,8 +358,9 @@ async function testHelpful(): Promise<DimensionResult> {
     checks.push({ name: 'structured-output', pass: false, detail: 'Cannot produce reports' });
   }
 
-  // Check: Has a dashboard (visual output for user)
-  checks.push({ name: 'visual-dashboard', pass: true, detail: 'Evolution dashboard with live visualization' });
+  // Check: Has a dashboard — verify the component actually exists in source
+  const hasDashboard = typeof document !== 'undefined' && !!document.querySelector('[data-testid="dashboard"], .evolution-dashboard, main');
+  checks.push({ name: 'visual-dashboard', pass: hasDashboard, detail: hasDashboard ? 'Dashboard rendered in DOM' : 'Dashboard not detected in DOM' });
 
   // Check: Has goal system (can track what user wants)
   const { data: activeGoals } = await supabase.from('goals').select('id').in('status', ['active', 'in-progress']);
@@ -422,8 +429,14 @@ async function testReliable(): Promise<DimensionResult> {
     .single();
   checks.push({ name: 'self-repair', pass: !!repairCap, detail: repairCap ? 'Self-repair capability active' : 'No self-repair' });
 
-  // Check: Safety engine operational
-  checks.push({ name: 'safety-active', pass: true, detail: 'Safety engine validates all changes' });
+  // Check: Safety engine operational — actually test it
+  try {
+    const safetyResult = validateChange('export function safe() { return true; }', 'test.ts');
+    const safetyWorks = Array.isArray(safetyResult) && !safetyResult.some(c => c.severity === 'error');
+    checks.push({ name: 'safety-active', pass: safetyWorks, detail: safetyWorks ? 'Safety engine validates changes correctly' : 'Safety engine flagged clean code as error' });
+  } catch {
+    checks.push({ name: 'safety-active', pass: false, detail: 'Safety engine threw an exception' });
+  }
 
   const passed = checks.filter(c => c.pass).length;
   const score = Math.round((passed / checks.length) * 100);
