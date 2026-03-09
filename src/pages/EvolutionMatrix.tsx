@@ -27,11 +27,22 @@ interface GraphNode {
   status: 'acquired' | 'planned' | 'in-progress';
 }
 
-interface LevelBand {
-  level: number;
-  label: string;
-  yStart: number;
-  yEnd: number;
+// Journey zones — nested squares from smallest (bottom-left) to largest
+const JOURNEY_ZONES = [
+  { key: 'think', label: 'Can Think', maxLevel: 3, color: 'hsl(var(--primary) / 0.12)', border: 'hsl(var(--primary) / 0.3)' },
+  { key: 'remember', label: 'Can Remember', maxLevel: 6, color: 'hsl(142 71% 45% / 0.08)', border: 'hsl(142 71% 45% / 0.25)' },
+  { key: 'learn', label: 'Can Learn', maxLevel: 10, color: 'hsl(48 96% 53% / 0.07)', border: 'hsl(48 96% 53% / 0.2)' },
+  { key: 'create', label: 'Can Create', maxLevel: 16, color: 'hsl(280 87% 65% / 0.06)', border: 'hsl(280 87% 65% / 0.18)' },
+  { key: 'evolve', label: 'Can Evolve', maxLevel: 23, color: 'hsl(350 89% 60% / 0.05)', border: 'hsl(350 89% 60% / 0.15)' },
+  { key: 'transcend', label: 'Can Transcend', maxLevel: Infinity, color: 'hsl(220 15% 50% / 0.03)', border: 'hsl(220 15% 50% / 0.1)' },
+];
+
+function getZoneForLevel(level: number) {
+  return JOURNEY_ZONES.find(z => level <= z.maxLevel) || JOURNEY_ZONES[JOURNEY_ZONES.length - 1];
+}
+
+function getZoneIndex(level: number) {
+  return JOURNEY_ZONES.findIndex(z => level <= z.maxLevel);
 }
 
 const TIER_COLORS: Record<number, string> = {
@@ -40,73 +51,180 @@ const TIER_COLORS: Record<number, string> = {
   2: 'hsl(48, 96%, 53%)',
   3: 'hsl(280, 87%, 65%)',
   4: 'hsl(350, 89%, 60%)',
+  5: 'hsl(220, 60%, 70%)',
 };
 
-
 function getTierColor(level: number): string {
-  if (level >= 30) return TIER_COLORS[4];
-  if (level >= 20) return TIER_COLORS[3];
-  if (level >= 10) return TIER_COLORS[2];
-  if (level >= 1) return TIER_COLORS[1];
-  return TIER_COLORS[0];
+  const zi = getZoneIndex(level);
+  return TIER_COLORS[Math.min(zi, 5)] || TIER_COLORS[0];
 }
 
-function layoutSquareGraph(
+/**
+ * Layout nodes into nested squares anchored at bottom-left.
+ * Each zone is a square region; zones nest inside each other.
+ */
+function layoutNestedSquares(
   nodes: GraphNode[],
   size: number
-): { nodes: GraphNode[]; size: number; levelBands: LevelBand[] } {
-  if (nodes.length === 0) return { nodes: [], size, levelBands: [] };
+): { nodes: GraphNode[]; size: number; zones: { key: string; label: string; x: number; y: number; w: number; h: number; color: string; border: string; nodeCount: number }[] } {
+  if (nodes.length === 0) return { nodes: [], size, zones: [] };
 
-  const levels = new Map<number, GraphNode[]>();
+  // Group nodes by zone
+  const zoneNodes = new Map<number, GraphNode[]>();
   nodes.forEach(n => {
-    if (!levels.has(n.level)) levels.set(n.level, []);
-    levels.get(n.level)!.push(n);
+    const zi = getZoneIndex(n.level);
+    if (!zoneNodes.has(zi)) zoneNodes.set(zi, []);
+    zoneNodes.get(zi)!.push(n);
   });
 
-  const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b);
-  const numLevels = sortedLevels.length;
-  if (numLevels === 0) return { nodes: [], size, levelBands: [] };
+  // Find max zone that has nodes (or planned)
+  const activeZones = JOURNEY_ZONES.map((z, i) => ({
+    ...z,
+    index: i,
+    nodes: zoneNodes.get(i) || [],
+  })).filter((_, i) => {
+    // Include zone if it or any smaller zone has nodes
+    for (let j = 0; j <= i; j++) {
+      if (zoneNodes.has(j) && zoneNodes.get(j)!.length > 0) return true;
+    }
+    return false;
+  });
 
-  const padding = 40;
-  const usable = size - padding * 2;
-  const bandHeight = usable / numLevels;
+  // Always show at least up to the zone that contains nodes
+  const maxActiveIndex = Math.max(...Array.from(zoneNodes.keys()), 0);
+  const zonesToShow = JOURNEY_ZONES.slice(0, Math.max(maxActiveIndex + 1, 1));
 
+  const padding = 30;
+  const totalSize = size - padding * 2;
+  const numZones = zonesToShow.length;
+
+  // Each zone square: zone 0 is smallest (bottom-left), zone N is largest
+  // Zone i occupies fraction (i+1)/numZones of total space
+  const zoneRects: { key: string; label: string; x: number; y: number; w: number; h: number; color: string; border: string; nodeCount: number }[] = [];
+  
+  zonesToShow.forEach((zone, i) => {
+    const frac = (i + 1) / numZones;
+    const w = totalSize * frac;
+    const h = totalSize * frac;
+    // Anchored bottom-left
+    const x = padding;
+    const y = padding + totalSize - h;
+    const nc = zoneNodes.get(i)?.length || 0;
+    zoneRects.push({ key: zone.key, label: zone.label, x, y, w, h, color: zone.color, border: zone.border, nodeCount: nc });
+  });
+
+  // Place nodes within their zone's exclusive area
   const result: GraphNode[] = [];
-  const levelBands: LevelBand[] = [];
+  
+  zonesToShow.forEach((zone, zi) => {
+    const nodesInZone = zoneNodes.get(zi) || [];
+    if (nodesInZone.length === 0) return;
 
-  sortedLevels.forEach((lvl, li) => {
-    const band = levels.get(lvl)!;
-    const ri = numLevels - 1 - li;
-    const yCenter = padding + ri * bandHeight + bandHeight / 2;
-    const yStart = padding + ri * bandHeight;
-    const yEnd = yStart + bandHeight;
+    const rect = zoneRects[zi];
+    // The exclusive area for this zone is the ring between this square and the inner square
+    const innerRect = zi > 0 ? zoneRects[zi - 1] : null;
+    
+    // Place nodes in the exclusive ring area
+    // For the innermost zone, use the full square
+    let minX: number, maxX: number, minY: number, maxY: number;
+    
+    if (!innerRect) {
+      // Innermost zone — use full square with padding
+      minX = rect.x + 15;
+      maxX = rect.x + rect.w - 15;
+      minY = rect.y + 18;
+      maxY = rect.y + rect.h - 15;
+    } else {
+      // Ring zone — place in the L-shaped area around the inner square
+      // Use the right and top strips of the ring
+      minX = rect.x + 15;
+      maxX = rect.x + rect.w - 15;
+      minY = rect.y + 18;
+      maxY = rect.y + rect.h - 15;
+    }
 
-    levelBands.push({
-      level: lvl,
-      label: getEvolutionTitle(lvl),
-      yStart,
-      yEnd,
-    });
-
-    const count = band.length;
-    const spacing = Math.min(usable / (count + 1), 80);
-    const totalWidth = spacing * (count - 1);
-    const startX = padding + (usable - totalWidth) / 2;
-
-    band.forEach((node, ni) => {
-      result.push({
-        ...node,
-        x: count === 1 ? size / 2 : startX + ni * spacing,
-        y: yCenter,
+    // Distribute nodes. For ring zones, avoid the inner square area
+    const count = nodesInZone.length;
+    
+    if (!innerRect) {
+      // Grid layout in full square
+      const cols = Math.ceil(Math.sqrt(count));
+      const rows = Math.ceil(count / cols);
+      const xStep = (maxX - minX) / Math.max(cols, 1);
+      const yStep = (maxY - minY) / Math.max(rows, 1);
+      
+      nodesInZone.forEach((node, ni) => {
+        const col = ni % cols;
+        const row = Math.floor(ni / cols);
+        result.push({
+          ...node,
+          x: minX + xStep * 0.5 + col * xStep,
+          y: minY + yStep * 0.5 + row * yStep,
+        });
       });
-    });
+    } else {
+      // Place in ring: collect valid positions along top strip and right strip
+      const positions: { x: number; y: number }[] = [];
+      const innerRight = innerRect.x + innerRect.w;
+      const innerTop = innerRect.y;
+      
+      // Top strip (above inner square)
+      const topStripH = innerTop - rect.y;
+      if (topStripH > 20) {
+        const cols = Math.max(1, Math.floor((maxX - minX) / 40));
+        const rows = Math.max(1, Math.floor(topStripH / 40));
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            positions.push({
+              x: minX + ((maxX - minX) / (cols + 1)) * (c + 1),
+              y: minY + (topStripH / (rows + 1)) * (r + 1),
+            });
+          }
+        }
+      }
+      
+      // Right strip (right of inner square, below top strip)
+      const rightStripW = rect.x + rect.w - innerRight;
+      if (rightStripW > 20) {
+        const rsMinY = Math.max(innerTop, minY);
+        const rsMaxY = maxY;
+        const cols = Math.max(1, Math.floor(rightStripW / 40));
+        const rows = Math.max(1, Math.floor((rsMaxY - rsMinY) / 40));
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            positions.push({
+              x: innerRight + (rightStripW / (cols + 1)) * (c + 1),
+              y: rsMinY + ((rsMaxY - rsMinY) / (rows + 1)) * (r + 1),
+            });
+          }
+        }
+      }
+
+      // If we don't have enough positions, add more evenly
+      while (positions.length < count) {
+        const angle = (positions.length / count) * Math.PI * 2;
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const rx = (maxX - minX) * 0.35;
+        const ry = (maxY - minY) * 0.35;
+        positions.push({
+          x: cx + Math.cos(angle) * rx,
+          y: cy + Math.sin(angle) * ry,
+        });
+      }
+
+      nodesInZone.forEach((node, ni) => {
+        const pos = positions[ni % positions.length];
+        result.push({ ...node, x: pos.x, y: pos.y });
+      });
+    }
   });
 
-  return { nodes: result, size, levelBands };
+  return { nodes: result, size, zones: zoneRects };
 }
 
 const EvolutionMatrix: React.FC = () => {
-  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; size: number; levelBands: LevelBand[] }>({ nodes: [], size: 800, levelBands: [] });
+  const [graphData, setGraphData] = useState<ReturnType<typeof layoutNestedSquares>>({ nodes: [], size: 800, zones: [] });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,7 +233,6 @@ const EvolutionMatrix: React.FC = () => {
   const [totalCaps, setTotalCaps] = useState(0);
   const mainRef = React.useRef<HTMLDivElement>(null);
 
-  // Measure container
   useEffect(() => {
     const measure = () => {
       if (mainRef.current) {
@@ -138,7 +255,6 @@ const EvolutionMatrix: React.FC = () => {
     const caps = capRes.data || [];
     const acquiredNames = new Set(caps.map(c => c.name));
 
-    // Acquired nodes
     const acquiredNodes: GraphNode[] = caps.map(cap => ({
       id: cap.id,
       name: cap.name,
@@ -149,7 +265,6 @@ const EvolutionMatrix: React.FC = () => {
       status: 'acquired' as const,
     }));
 
-    // Planned/in-progress from goals
     const goalNodes: GraphNode[] = (goalsRes.data || [])
       .filter(g => g.unlocks_capability && !acquiredNames.has(g.unlocks_capability) && g.status !== 'completed')
       .map(g => {
@@ -166,31 +281,20 @@ const EvolutionMatrix: React.FC = () => {
       });
 
     const allNodes = [...acquiredNodes, ...goalNodes];
-    setGraphData(layoutSquareGraph(allNodes, containerSize));
+    setGraphData(layoutNestedSquares(allNodes, containerSize));
     setTotalCaps(caps.length);
     if (stateRes.data) setCurrentLevel(stateRes.data.evolution_level);
     setLoading(false);
   }, [containerSize]);
 
-  // Fetch + poll every 5s
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const { nodes, size, levelBands } = graphData;
+  const { nodes, size, zones } = graphData;
   const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
-
-  const tierStats = useMemo(() => {
-    const stats = new Map<string, number>();
-    nodes.filter(n => n.status === 'acquired').forEach(n => {
-      const color = getTierColor(n.level);
-      const label = n.level >= 30 ? 'ARCHITECT' : n.level >= 20 ? 'OPTIMIZER' : n.level >= 10 ? 'SAGE' : 'FOUNDATION';
-      stats.set(label, (stats.get(label) || 0) + 1);
-    });
-    return stats;
-  }, [nodes]);
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -208,16 +312,13 @@ const EvolutionMatrix: React.FC = () => {
               L{currentLevel} {getEvolutionTitle(currentLevel)} · {totalCaps} caps
             </span>
           </div>
+          {/* Zone legend */}
           <div className="flex items-center gap-3">
-            {Array.from(tierStats.entries()).map(([label, count]) => (
-              <div key={label} className="flex items-center gap-1 text-[9px]">
-                <div className="w-2 h-2 rounded-full" style={{
-                  backgroundColor: getTierColor(
-                    label === 'ARCHITECT' ? 30 : label === 'OPTIMIZER' ? 20 : label === 'SAGE' ? 10 : 1
-                  )
-                }} />
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-mono text-foreground">{count}</span>
+            {zones.map((zone) => (
+              <div key={zone.key} className="flex items-center gap-1 text-[9px]">
+                <div className="w-2.5 h-2.5 rounded-sm border" style={{ backgroundColor: zone.color, borderColor: zone.border }} />
+                <span className="text-muted-foreground">{zone.label}</span>
+                <span className="font-mono text-foreground">{zone.nodeCount}</span>
               </div>
             ))}
           </div>
@@ -225,7 +326,6 @@ const EvolutionMatrix: React.FC = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Graph - square, auto-fit */}
         <main ref={mainRef} className="flex-1 relative overflow-hidden flex items-center justify-center">
           {loading ? (
             <Activity className="w-6 h-6 text-primary animate-pulse" />
@@ -244,40 +344,47 @@ const EvolutionMatrix: React.FC = () => {
               </defs>
               <rect width="100%" height="100%" fill="url(#chrono-grid)" />
 
-              {/* Level bands */}
-              {levelBands.map((band, i) => {
-                const isCurrent = band.level === currentLevel;
-                return (
-                  <g key={`band-${band.level}`}>
-                    <rect
-                      x={0} y={band.yStart}
-                      width={size} height={band.yEnd - band.yStart}
-                      fill={isCurrent ? 'hsl(280 87% 65% / 0.04)' : i % 2 === 0 ? 'hsl(220 15% 8% / 0.3)' : 'transparent'}
-                      stroke={isCurrent ? 'hsl(280 87% 65% / 0.15)' : 'none'}
-                      strokeWidth={isCurrent ? 1 : 0}
-                    />
+              {/* Nested zone squares — render largest first (back) to smallest (front) */}
+              {[...zones].reverse().map((zone, ri) => (
+                <g key={zone.key}>
+                  <rect
+                    x={zone.x}
+                    y={zone.y}
+                    width={zone.w}
+                    height={zone.h}
+                    fill={zone.color}
+                    stroke={zone.border}
+                    strokeWidth={1}
+                    rx={4}
+                  />
+                  {/* Zone label — bottom-right corner of each zone */}
+                  <text
+                    x={zone.x + zone.w - 8}
+                    y={zone.y + 14}
+                    textAnchor="end"
+                    fill={zone.border}
+                    fontSize="9"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                    opacity={0.7}
+                  >
+                    {zone.label}
+                  </text>
+                  {zone.nodeCount > 0 && (
                     <text
-                      x={12} y={(band.yStart + band.yEnd) / 2 + 3}
-                      fill={isCurrent ? 'hsl(280 87% 75%)' : 'hsl(220 10% 25%)'}
+                      x={zone.x + zone.w - 8}
+                      y={zone.y + 24}
+                      textAnchor="end"
+                      fill={zone.border}
                       fontSize="7"
                       fontFamily="monospace"
-                      fontWeight={isCurrent ? 'bold' : 'normal'}
+                      opacity={0.4}
                     >
-                      L{band.level} {band.label}
+                      {zone.nodeCount} node{zone.nodeCount !== 1 ? 's' : ''}
                     </text>
-                    {isCurrent && (
-                      <text
-                        x={12} y={(band.yStart + band.yEnd) / 2 + 12}
-                        fill="hsl(280 87% 65% / 0.5)"
-                        fontSize="5"
-                        fontFamily="monospace"
-                      >
-                        ▸ CURRENT
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
+                  )}
+                </g>
+              ))}
 
               {/* Edges */}
               {nodes.map(node =>
@@ -301,7 +408,7 @@ const EvolutionMatrix: React.FC = () => {
               )}
 
               {/* Nodes */}
-              {nodes.map((node, i) => {
+              {nodes.map((node) => {
                 const isHovered = hoveredNode === node.id;
                 const isSelected = selectedNode?.id === node.id;
                 const color = getTierColor(node.level);
@@ -329,7 +436,6 @@ const EvolutionMatrix: React.FC = () => {
                       opacity={isGhost ? 0.4 : 1}
                       style={{ transition: 'r 0.15s ease' }}
                     />
-                    {/* Label on hover/select */}
                     {(isHovered || isSelected) && (
                       <text
                         x={node.x} y={node.y + r + 12}
@@ -371,7 +477,7 @@ const EvolutionMatrix: React.FC = () => {
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getTierColor(selectedNode.level) }} />
                   <span className="text-[9px] text-muted-foreground font-mono">
-                    L{selectedNode.level} · {getEvolutionTitle(selectedNode.level)}
+                    L{selectedNode.level} · {getEvolutionTitle(selectedNode.level)} · {getZoneForLevel(selectedNode.level).label}
                     {selectedNode.status !== 'acquired' && ' · PLANNED'}
                   </span>
                 </div>
