@@ -165,12 +165,11 @@ async function runAnomalyScan(): Promise<AutonomyTask> {
     }
   }
   
-  // Auto-quarantine time-anomalies (capabilities from impossible future cycles)
-  for (const a of anomalies.filter(a => a.type === 'time-anomaly' && a.severity === 'error')) {
-    if (a.affectedEntity) {
-      await supabase.from('capabilities').update({ verified: false, verification_method: 'time-anomaly-detected' } as any).eq('name', a.affectedEntity);
-      quarantined++;
-    }
+  // Auto-quarantine future-dated capabilities (cycle > current cycle)
+  const futureCaps = caps.filter(c => c.cycle_number > state.cycle_count);
+  for (const future of futureCaps) {
+    await supabase.from('capabilities').update({ verified: false, verification_method: 'future-cycle-detected' } as any).eq('name', future.name);
+    quarantined++;
   }
   
   // Detect circular dependencies
