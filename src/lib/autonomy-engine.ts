@@ -411,6 +411,14 @@ async function gatherKnowledge(): Promise<AutonomyTask> {
     detail: `Searched ${queries.length} adaptive queries. Found ${totalResults} results (${results.filter(r => r.cached).length} cached). Top concepts: ${topConcepts.join(', ')}.`,
     duration: performance.now() - start,
     usedAI: false,
+    outputs: {
+      type: 'search-results',
+      data: {
+        queries,
+        topConcepts,
+        sources: results.flatMap(r => r.results.slice(0, 2).map(res => ({ title: res.title, snippet: res.snippet }))),
+      },
+    },
   };
 }
 
