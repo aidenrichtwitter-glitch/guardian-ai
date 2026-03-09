@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Capability for the main window","local":true,"windows":["main","grok","external-*"],"permissions":["core:default","shell:allow-open",{"identifier":"core:window:allow-create","allow":[{"label":"grok"},{"label":"external-*"}]},"core:window:default","core:webview:default"]}}

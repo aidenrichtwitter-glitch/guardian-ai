@@ -8,20 +8,6 @@ import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & {
-        src?: string;
-        partition?: string;
-        allowpopups?: string;
-        allow?: string;
-        'data-tab-id'?: string;
-      }, HTMLElement>;
-    }
-  }
-}
-
 type Mode = 'api' | 'browser';
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -294,28 +280,16 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
   );
 }
 
-// ─── Grok Desktop Browser (Electron webview-based) ───────────────────────────
+// ─── Grok Desktop Browser (Tauri native webview windows) ─────────────────────
 
-interface BrowserTab {
-  id: string;
-  title: string;
-  url: string;
-  loading: boolean;
-}
+const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
-const isElectron = typeof window !== 'undefined' && !!(window as any).require;
-
-const ALLOWED_URL_PATTERNS = [
-  /^https?:\/\/grok\.com(?:\/|$)/,
-  /^https?:\/\/x\.ai(?:\/|$)/,
-  /^https?:\/\/x\.com(?:\/|$)/,
-  /^https?:\/\/accounts\.x\.ai(?:\/|$)/,
-  /^https?:\/\/accounts\.google\.com(?:\/|$)/,
-  /^https?:\/\/appleid\.apple\.com(?:\/|$)/,
-];
-
-function isInternalUrl(url: string) {
-  return ALLOWED_URL_PATTERNS.some(p => p.test(url));
+async function tauriInvoke(cmd: string, args?: Record<string, unknown>) {
+  if (!isTauri) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke(cmd, args);
+  } catch {}
 }
 
 interface GrokDesktopBrowserProps {
@@ -326,257 +300,108 @@ interface GrokDesktopBrowserProps {
   onApply: (filePath: string, code: string) => void;
 }
 
-function GrokDesktopBrowser({ customUrl, setCustomUrl, onApply }: GrokDesktopBrowserProps) {
-  const [tabs, setTabs] = useState<BrowserTab[]>([{ id: 'tab-0', title: 'Grok', url: 'https://grok.com', loading: false }]);
-  const [activeTabId, setActiveTabId] = useState('tab-0');
-  const [usageVisible, setUsageVisible] = useState(false);
-  const [usageData, setUsageData] = useState<any>(null);
-  const [reloading, setReloading] = useState(false);
-  const viewsRef = useRef<HTMLDivElement>(null);
-  const tabCounter = useRef(1);
+function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl, onApply }: GrokDesktopBrowserProps) {
+  const [grokOpen, setGrokOpen] = useState(false);
 
-  const activeTab = tabs.find(t => t.id === activeTabId);
+  const openGrok = useCallback(async () => {
+    if (isTauri) {
+      await tauriInvoke('open_grok_window');
+      setGrokOpen(true);
+      setBrowserUrl('https://grok.com');
+    } else {
+      window.open('https://grok.com', '_blank');
+    }
+  }, [setBrowserUrl]);
 
-  const createTab = useCallback((url = 'https://grok.com') => {
-    const id = `tab-${tabCounter.current++}`;
-    const newTab: BrowserTab = { id, title: 'New Tab', url, loading: true };
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(id);
+  const openSite = useCallback(async (url: string, name: string) => {
+    if (isTauri) {
+      await tauriInvoke('open_url_window', { url, title: name });
+      setBrowserUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  }, [setBrowserUrl]);
+
+  const openCustomUrl = useCallback(async () => {
+    if (!customUrl.trim()) return;
+    const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
+    const title = new URL(url).hostname;
+    if (isTauri) {
+      await tauriInvoke('open_url_window', { url, title });
+      setBrowserUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+    setCustomUrl('');
+  }, [customUrl, setCustomUrl, setBrowserUrl]);
+
+  useEffect(() => {
+    if (isTauri && !grokOpen) {
+      openGrok();
+    }
   }, []);
 
-  const closeTab = useCallback((tabId: string) => {
-    setTabs(prev => {
-      const idx = prev.findIndex(t => t.id === tabId);
-      const next = prev.filter(t => t.id !== tabId);
-      if (next.length === 0) {
-        const freshId = `tab-${tabCounter.current++}`;
-        const fresh: BrowserTab = { id: freshId, title: 'Grok', url: 'https://grok.com', loading: true };
-        setActiveTabId(freshId);
-        return [fresh];
-      }
-      if (tabId === activeTabId) {
-        const newIdx = Math.max(0, idx - 1);
-        setActiveTabId(next[newIdx].id);
-      }
-      return next;
-    });
-  }, [activeTabId]);
-
-  const reloadActiveTab = useCallback(() => {
-    if (!activeTab) return;
-    const el = viewsRef.current?.querySelector(`[data-tab-id="${activeTab.id}"]`) as any;
-    if (el) {
-      setReloading(true);
-      if (el.reload) {
-        el.reload();
-      } else if (el.src) {
-        el.src = el.src;
-        setTimeout(() => setReloading(false), 1000);
-      }
-    }
-  }, [activeTab]);
-
-  const tabIds = tabs.map(t => t.id).join(',');
-  useEffect(() => {
-    if (!viewsRef.current) return;
-    const cleanups: (() => void)[] = [];
-    const webviews = viewsRef.current.querySelectorAll('webview');
-    webviews.forEach((wv: any) => {
-      const tabId = wv.getAttribute('data-tab-id');
-      if (!tabId) return;
-
-      const onTitleUpdate = (e: any) => {
-        setTabs(prev => prev.map(t => t.id === tabId ? { ...t, title: e.title || t.title } : t));
-      };
-      const onStartLoading = () => {
-        setTabs(prev => prev.map(t => t.id === tabId ? { ...t, loading: true } : t));
-      };
-      const onStopLoading = () => {
-        setTabs(prev => prev.map(t => t.id === tabId ? { ...t, loading: false } : t));
-        setReloading(false);
-      };
-      const onNewWindow = (e: any) => {
-        e.preventDefault?.();
-        const url = e.url;
-        if (isInternalUrl(url)) {
-          if (wv.loadURL) wv.loadURL(url);
-          else wv.src = url;
-        } else if (isElectron) {
-          try {
-            const { ipcRenderer } = (window as any).require('electron');
-            ipcRenderer.invoke('open-external-url', url);
-          } catch { /* fallback ignored */ }
-        }
-      };
-
-      wv.addEventListener('page-title-updated', onTitleUpdate);
-      wv.addEventListener('did-start-loading', onStartLoading);
-      wv.addEventListener('did-stop-loading', onStopLoading);
-      wv.addEventListener('new-window', onNewWindow);
-
-      cleanups.push(() => {
-        wv.removeEventListener('page-title-updated', onTitleUpdate);
-        wv.removeEventListener('did-start-loading', onStartLoading);
-        wv.removeEventListener('did-stop-loading', onStopLoading);
-        wv.removeEventListener('new-window', onNewWindow);
-      });
-    });
-    return () => cleanups.forEach(fn => fn());
-  }, [tabIds]);
-
-  useEffect(() => {
-    if (!usageVisible) return;
-    const fetchUsage = async () => {
-      try {
-        if (isElectron) {
-          const { ipcRenderer } = (window as any).require('electron');
-          const data = await ipcRenderer.invoke('fetch-grok-rate-limits');
-          setUsageData(data);
-        }
-      } catch {}
-    };
-    fetchUsage();
-    const interval = setInterval(fetchUsage, 5000);
-    return () => clearInterval(interval);
-  }, [usageVisible]);
-
-  const formatUsage = (remaining: number | undefined, total: number | undefined | null, cost?: number | null) => {
-    if (remaining === undefined) return '--';
-    if (total && cost) {
-      const max = Math.floor(total / cost);
-      return `${remaining} / ${max}`;
-    }
-    if (total) return `${remaining} / ${total}`;
-    return `${remaining}`;
-  };
-
-  const getUsageClass = (remaining: number | undefined, total: number | undefined | null) => {
-    if (remaining === undefined || !total || total === 0) return '';
-    const ratio = remaining / total;
-    if (ratio <= 0.1) return 'text-red-400';
-    if (ratio <= 0.25) return 'text-yellow-400';
-    return '';
-  };
+  const currentSite = BROWSER_SITES.find(s => s.url === browserUrl);
 
   return (
     <div className="flex-1 flex flex-col relative min-h-0">
-      <div className="shrink-0 border-b border-border/30 bg-card/40 flex items-center overflow-hidden" style={{ height: 40 }}>
-        <div className="flex items-center flex-1 min-w-0 overflow-x-auto">
-          {tabs.map(tab => (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              data-testid={`tab-${tab.id}`}
-              className={`flex items-center gap-1 px-3 h-10 min-w-[140px] max-w-[200px] cursor-pointer border-r border-border/30 text-[11px] relative select-none ${
-                tab.id === activeTabId ? 'bg-card/80' : 'bg-card/30 hover:bg-card/50'
+      <div className="shrink-0 border-b border-border/30 bg-card/40 px-3 py-2 flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+          {BROWSER_SITES.map(site => (
+            <button
+              key={site.id}
+              data-testid={`button-open-${site.id}`}
+              onClick={() => site.id === 'grok' ? openGrok() : openSite(site.url, site.name)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] whitespace-nowrap transition-colors ${
+                browserUrl === site.url
+                  ? 'bg-primary/15 text-primary border border-primary/30'
+                  : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 border border-transparent'
               }`}
             >
-              <span className="truncate flex-1">{tab.loading ? '⟳' : ''} {tab.title}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-destructive/20 text-muted-foreground hover:text-foreground text-[10px]"
-                data-testid={`button-close-tab-${tab.id}`}
-              >
-                ×
-              </button>
-            </div>
+              <span>{site.icon}</span>
+              <span>{site.name}</span>
+            </button>
           ))}
-          <button
-            onClick={() => createTab()}
-            className="w-8 h-10 flex items-center justify-center text-muted-foreground hover:bg-card/50 text-lg shrink-0"
-            data-testid="button-new-tab"
-          >
-            +
-          </button>
         </div>
-        <div className="flex items-center gap-1 px-2 shrink-0">
-          <button
-            onClick={reloadActiveTab}
-            className={`w-6 h-6 flex items-center justify-center rounded border border-border/50 text-[13px] hover:bg-secondary/40 ${reloading ? 'animate-spin opacity-70' : ''}`}
-            data-testid="button-reload-tab"
-            title="Reload"
-          >
-            ↻
-          </button>
-          <button
-            onClick={() => setUsageVisible(v => !v)}
-            className={`px-2 h-6 flex items-center justify-center rounded border text-[10px] font-medium ${usageVisible ? 'bg-primary/20 border-primary/40 text-primary' : 'border-border/50 hover:bg-secondary/40 text-muted-foreground'}`}
-            data-testid="button-toggle-usage"
-            title="Toggle Usage Stats"
-          >
-            s
-          </button>
-          <div className="flex items-center gap-1 ml-1">
-            <Globe className="w-3 h-3 text-muted-foreground/50" />
-            <input
-              value={customUrl}
-              onChange={e => setCustomUrl(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && customUrl.trim()) {
-                  const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`;
-                  createTab(url);
-                  setCustomUrl('');
-                }
-              }}
-              placeholder="URL..."
-              data-testid="input-custom-url"
-              className="w-28 bg-background border border-border/50 rounded px-2 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
-            />
-          </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Globe className="w-3 h-3 text-muted-foreground/50" />
+          <input
+            value={customUrl}
+            onChange={e => setCustomUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') openCustomUrl(); }}
+            placeholder="Custom URL..."
+            data-testid="input-custom-url"
+            className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+          />
         </div>
       </div>
 
-      <div ref={viewsRef} className="flex-1 relative">
-        {tabs.map(tab => (
-          <div
-            key={tab.id}
-            className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
-          >
-            {isElectron ? (
-              <webview
-                data-tab-id={tab.id}
-                src={tab.url}
-                partition="persist:grok"
-                allowpopups=""
-                allow="microphone; camera; autoplay; clipboard-read; clipboard-write; display-capture"
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
-            ) : (
-              <iframe
-                data-tab-id={tab.id}
-                src={tab.url}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                allow="clipboard-write"
-                title={tab.title}
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
-            )}
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+        <div className="text-center space-y-3 max-w-lg">
+          <div className="flex items-center justify-center gap-3">
+            <Globe className="w-10 h-10 text-primary/60" />
+            {currentSite && <span className="text-2xl">{currentSite.icon}</span>}
           </div>
-        ))}
-      </div>
-
-      {usageVisible && (
-        <div className="shrink-0 border-t border-border/30 bg-card/40 px-3 py-1.5 flex items-center gap-6 text-[11px]">
-          <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground/70">Low Effort:</span>
-            <span className={`font-semibold ${getUsageClass(usageData?.DEFAULT?.lowEffortRateLimits?.remainingQueries, usageData?.DEFAULT?.totalTokens)}`}>
-              {formatUsage(usageData?.DEFAULT?.lowEffortRateLimits?.remainingQueries, usageData?.DEFAULT?.totalTokens)}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground/70">High Effort:</span>
-            <span className={`font-semibold ${getUsageClass(usageData?.DEFAULT?.highEffortRateLimits?.remainingQueries, usageData?.DEFAULT?.totalTokens)}`}>
-              {formatUsage(usageData?.DEFAULT?.highEffortRateLimits?.remainingQueries, usageData?.DEFAULT?.totalTokens, usageData?.DEFAULT?.highEffortRateLimits?.cost)}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground/70">Grok 4:</span>
-            <span className={`font-semibold ${getUsageClass(usageData?.GROK4HEAVY?.remainingQueries, usageData?.GROK4HEAVY?.totalQueries)}`}>
-              {formatUsage(usageData?.GROK4HEAVY?.remainingQueries, usageData?.GROK4HEAVY?.totalQueries)}
-            </span>
-          </div>
+          <h2 className="text-base font-bold text-foreground" data-testid="text-browser-status">
+            {grokOpen ? `${currentSite?.name || 'Browser'} — Open in native window` : 'Grok Desktop Browser'}
+          </h2>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            {isTauri
+              ? 'Sites open in native Tauri webview windows — no iframe restrictions. Use the tabs above to launch AI sites, then copy code responses. The clipboard extractor below will auto-detect code blocks.'
+              : 'Running in web mode. Sites will open in new browser tabs. For the full embedded browser experience, run the desktop app with npm run tauri dev.'
+            }
+          </p>
         </div>
-      )}
+
+        <button
+          onClick={openGrok}
+          data-testid="button-launch-grok"
+          className="flex items-center gap-3 px-8 py-4 rounded-xl bg-primary/15 border-2 border-primary/40 hover:bg-primary/25 hover:border-primary/60 transition-all hover:scale-105 shadow-lg shadow-primary/10"
+        >
+          <Sparkles className="w-5 h-5 text-primary" />
+          <span className="text-sm font-bold text-primary">{grokOpen ? 'Focus Grok Window' : 'Open Grok'}</span>
+        </button>
+      </div>
 
       <ClipboardExtractor onApply={onApply} />
     </div>
