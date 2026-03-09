@@ -107,7 +107,11 @@ supabase/
   - `src/test/pipeline.test.ts` — code parser unit tests + live Grok API test (creates `src/lib/greeter.ts` function)
   - `src/test/pipeline-e2e.test.ts` — end-to-end theme change test (sends `index.css` to Grok, asks "green to blue", verifies response)
   - `src/test/fixtures/` — saved JSON fixtures from live API test runs (for reference/debugging)
-- Shared module: `src/lib/code-parser.ts` — `parseCodeBlocks()` + `ParsedBlock` interface + `parseDependencies()` for auto-detecting npm packages (used by GrokBridge + tests)
+- Shared module: `src/lib/code-parser.ts` — `parseCodeBlocks()` + `ParsedBlock` + `parseDependencies()` + `parseActionItems()` for comprehensive Grok response parsing (used by GrokBridge + tests)
+  - Code blocks: detects filenames from inline comments, preceding prose (backtick/bold/heading-wrapped), and "create/save as" patterns
+  - Dependencies: detects npm/yarn/pnpm/bun install commands in code blocks AND prose text
+  - Action items: extracts shell commands, env vars, directory creation, renames, deletions, API key requirements, restart instructions
+  - Shell-only code blocks (bash with only install/mkdir/cd commands) are excluded from code blocks since they're already captured as deps/actions
 
 ## Dependency Auto-Install
 - When Grok's response includes a `=== DEPENDENCIES ===` block or `npm install` commands in bash code blocks, the app auto-detects packages

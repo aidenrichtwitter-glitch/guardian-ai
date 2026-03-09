@@ -3,12 +3,12 @@ import {
   Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
   User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
   Clipboard, ClipboardCheck, Zap, X, ChevronUp, ChevronDown as ChevronDownIcon,
-  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download
+  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download, Terminal, AlertCircle, Key, ArrowRightLeft, FolderPlus
 } from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
-import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies } from '@/lib/code-parser';
+import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies, parseActionItems, ActionItem } from '@/lib/code-parser';
 import {
   fetchEvolutionState,
   buildEvolutionContext,
@@ -152,6 +152,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
   const [depsInstalling, setDepsInstalling] = useState(false);
   const [depsInstalled, setDepsInstalled] = useState(false);
   const [depsError, setDepsError] = useState<string | null>(null);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [responseContext, setResponseContext] = useState<string>('');
   const [contextSections, setContextSections] = useState<string[]>([]);
   const [showContext, setShowContext] = useState(false);
@@ -177,6 +178,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
     }));
     setBlocks(newBlocks);
     setDetectedDeps(parseDependencies(text));
+    setActionItems(parseActionItems(text));
     setCollapsed(false);
     setShowPasteBox(false);
     setFlash(true);
@@ -326,6 +328,12 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
             </span>
           )
         )}
+        {actionItems.length > 0 && (
+          <span className="text-[9px] text-amber-400/80 ml-1 flex items-center gap-1" data-testid="text-action-items">
+            <AlertCircle className="w-2.5 h-2.5" />
+            {actionItems.length} action{actionItems.length > 1 ? 's' : ''} needed
+          </span>
+        )}
         {isElectron && onApplyAll && blocks.filter(b => b.filePath && !b.applied).length > 1 && (
           <button
             onClick={() => {
@@ -340,7 +348,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
         )}
         <div className="ml-auto flex items-center gap-2">
           {blocks.length > 0 && (
-            <button onClick={() => setBlocks([])} className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors">
+            <button onClick={() => { setBlocks([]); setActionItems([]); setDetectedDeps({ dependencies: [], devDependencies: [] }); setDepsInstalled(false); setDepsError(null); }} className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors">
               <X className="w-3 h-3" />
             </button>
           )}
@@ -405,6 +413,45 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {actionItems.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+              <div className="px-3 py-1.5 flex items-center gap-2 border-b border-amber-500/20">
+                <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                <span className="text-[10px] font-bold text-amber-300">Action Required</span>
+                <span className="text-[8px] text-amber-400/60">{actionItems.length} step{actionItems.length > 1 ? 's' : ''}</span>
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {actionItems.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[9px]" data-testid={`action-item-${i}`}>
+                    <span className="shrink-0 mt-0.5">
+                      {item.type === 'command' && <Terminal className="w-3 h-3 text-amber-400" />}
+                      {item.type === 'install' && <Download className="w-3 h-3 text-green-400" />}
+                      {item.type === 'env' && <Key className="w-3 h-3 text-blue-400" />}
+                      {item.type === 'create-dir' && <FolderPlus className="w-3 h-3 text-cyan-400" />}
+                      {item.type === 'rename' && <ArrowRightLeft className="w-3 h-3 text-purple-400" />}
+                      {item.type === 'delete' && <Trash2 className="w-3 h-3 text-red-400" />}
+                      {item.type === 'manual' && <AlertCircle className="w-3 h-3 text-amber-400" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-foreground/80">{item.description}</span>
+                      {item.command && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(item.command!);
+                          }}
+                          className="ml-2 text-[8px] text-primary/60 hover:text-primary underline cursor-pointer"
+                          data-testid={`button-copy-action-${i}`}
+                        >
+                          copy
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
