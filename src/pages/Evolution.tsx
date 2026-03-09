@@ -198,7 +198,7 @@ function layoutGraph(
 }
 
 const Evolution: React.FC = () => {
-  const [capabilities, setCapabilities] = useState<{ nodes: CapabilityNode[]; size: number; levelBands: { level: number; label: string; yStart: number; yEnd: number }[] }>({ nodes: [], size: 800, levelBands: [] });
+  const [capabilities, setCapabilities] = useState<ReturnType<typeof layoutGraph>>({ nodes: [], size: 800, zones: [], levelBands: [] });
   const [stats, setStats] = useState<EvolutionStats | null>(null);
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
