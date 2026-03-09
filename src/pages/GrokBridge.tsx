@@ -364,10 +364,15 @@ function GrokDesktopBrowser({ customUrl, setCustomUrl, onApply }: GrokDesktopBro
 
   const reloadActiveTab = useCallback(() => {
     if (!activeTab) return;
-    const wv = viewsRef.current?.querySelector(`webview[data-tab-id="${activeTab.id}"]`) as any;
-    if (wv?.reload) {
+    const el = viewsRef.current?.querySelector(`[data-tab-id="${activeTab.id}"]`) as any;
+    if (el) {
       setReloading(true);
-      wv.reload();
+      if (el.reload) {
+        el.reload();
+      } else if (el.src) {
+        el.src = el.src;
+        setTimeout(() => setReloading(false), 1000);
+      }
     }
   }, [activeTab]);
 
@@ -453,48 +458,6 @@ function GrokDesktopBrowser({ customUrl, setCustomUrl, onApply }: GrokDesktopBro
     return '';
   };
 
-  if (!isElectron) {
-    return (
-      <div className="flex-1 flex flex-col relative min-h-0">
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-          <Globe className="w-12 h-12 text-primary/50" />
-          <div className="text-center space-y-3 max-w-md">
-            <h2 className="text-base font-bold text-foreground" data-testid="text-desktop-required">Grok Desktop Browser</h2>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              The embedded browser uses Electron's webview to load Grok directly inside the app,
-              bypassing iframe restrictions. This feature requires running as a desktop application.
-            </p>
-          </div>
-          <div className="bg-card/60 border border-border/40 rounded-lg p-4 space-y-2 w-full max-w-sm">
-            <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50">To use the embedded browser</p>
-            <pre className="text-[9px] font-mono text-muted-foreground/70 bg-background/50 rounded px-3 py-2 overflow-x-auto">
-{`cd electron-browser
-npm install
-npm start`}
-            </pre>
-            <p className="text-[9px] text-muted-foreground/50 mt-2">
-              Or use the API Chat tab for direct Grok integration without the desktop app.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
-            {BROWSER_SITES.map(site => (
-              <button
-                key={site.id}
-                data-testid={`link-browser-site-${site.id}`}
-                onClick={() => window.open(site.url, '_blank')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card/60 border-border/40 hover:bg-secondary/40 transition-colors"
-              >
-                <span>{site.icon}</span>
-                <span className="text-[10px] font-medium text-foreground">{site.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <ClipboardExtractor onApply={onApply} />
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 flex flex-col relative min-h-0">
       <div className="shrink-0 border-b border-border/30 bg-card/40 flex items-center overflow-hidden" style={{ height: 40 }}>
@@ -569,14 +532,25 @@ npm start`}
             key={tab.id}
             className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
           >
-            <webview
-              data-tab-id={tab.id}
-              src={tab.url}
-              partition="persist:grok"
-              allowpopups=""
-              allow="microphone; camera; autoplay; clipboard-read; clipboard-write; display-capture"
-              style={{ width: '100%', height: '100%', border: 'none' }}
-            />
+            {isElectron ? (
+              <webview
+                data-tab-id={tab.id}
+                src={tab.url}
+                partition="persist:grok"
+                allowpopups=""
+                allow="microphone; camera; autoplay; clipboard-read; clipboard-write; display-capture"
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
+            ) : (
+              <iframe
+                data-tab-id={tab.id}
+                src={tab.url}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                allow="clipboard-write"
+                title={tab.title}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
+            )}
           </div>
         ))}
       </div>
