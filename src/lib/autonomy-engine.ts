@@ -137,20 +137,22 @@ async function verifyAllCapabilities(): Promise<AutonomyTask> {
   };
 }
 
-// ── DETERMINISTIC ANOMALY SCAN ──
+// ── ADVANCED ANOMALY SCAN & SELF-REPAIR ──
 
 async function runAnomalyScan(): Promise<AutonomyTask> {
   const start = performance.now();
   const { data: caps } = await supabase.from('capabilities').select('name, cycle_number, evolution_level, built_on, verified');
   const { data: state } = await supabase.from('evolution_state').select('*').eq('id', 'singleton').single();
 
-  if (!caps || !state) return { id: 'anomaly', name: 'Anomaly scan', type: 'analyze', success: false, detail: 'No data', duration: performance.now() - start, usedAI: false };
+  if (!caps || !state) return { id: 'anomaly', name: 'Advanced anomaly scan', type: 'analyze', success: false, detail: 'No data', duration: performance.now() - start, usedAI: false };
 
   const records = caps.map(c => ({ name: c.name, cycle: c.cycle_number, level: c.evolution_level, builtOn: (c.built_on || []) as string[], verified: c.verified }));
   const anomalies = detectAnomalies(records, state.evolution_level, state.cycle_count);
 
-  // Auto-fix orphans
   let repaired = 0;
+  let quarantined = 0;
+  
+  // Auto-fix orphans
   for (const a of anomalies.filter(a => a.type === 'orphan')) {
     const match = a.description.match(/depends on "([^"]+)"/);
     if (match && a.affectedEntity) {
@@ -162,13 +164,37 @@ async function runAnomalyScan(): Promise<AutonomyTask> {
       }
     }
   }
+  
+  // Auto-quarantine time-anomalies (capabilities from impossible future cycles)
+  for (const a of anomalies.filter(a => a.type === 'time-anomaly' && a.severity === 'error')) {
+    if (a.affectedEntity) {
+      await supabase.from('capabilities').update({ verified: false, verification_method: 'time-anomaly-detected' } as any).eq('name', a.affectedEntity);
+      quarantined++;
+    }
+  }
+  
+  // Detect circular dependencies
+  const circularDeps = caps.filter(c => {
+    const builtOn = (c.built_on || []) as string[];
+    return builtOn.some(dep => {
+      const depCap = caps.find(dc => dc.name === dep);
+      return depCap && (depCap.built_on || []).includes(c.name);
+    });
+  });
+  
+  if (circularDeps.length > 0) {
+    for (const circ of circularDeps) {
+      await supabase.from('capabilities').update({ verified: false, verification_method: 'circular-dependency' } as any).eq('name', circ.name);
+      quarantined++;
+    }
+  }
 
   return {
     id: 'anomaly-scan',
-    name: 'Anomaly detection & repair',
+    name: 'Advanced anomaly scan & self-repair',
     type: 'repair',
     success: true,
-    detail: `Found ${anomalies.length} anomalies. Auto-repaired ${repaired} orphans.`,
+    detail: `Found ${anomalies.length} anomalies. Repaired ${repaired} orphans. Quarantined ${quarantined} corrupt caps. Detected ${circularDeps.length} circular deps.`,
     duration: performance.now() - start,
     usedAI: false,
   };
