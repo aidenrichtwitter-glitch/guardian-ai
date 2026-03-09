@@ -621,34 +621,14 @@ const GrokBridge: React.FC = () => {
 
             {/* Iframe */}
             <div className="flex-1 relative">
-              {isTauri ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-3 p-6">
-                  <Globe className="w-8 h-8 text-muted-foreground/30" />
-                  <p className="text-xs text-muted-foreground/60">Desktop mode — opening in native window</p>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const { invoke } = await import('@tauri-apps/api/core');
-                        await invoke('open_url_window', { url: browserUrl, title: currentSite?.name || 'Browser' });
-                      } catch (e) {
-                        window.open(browserUrl, '_blank');
-                      }
-                    }}
-                    className="px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-medium transition-colors"
-                  >
-                    Open {currentSite?.name || 'URL'} in Window
-                  </button>
-                </div>
-              ) : (
-                <iframe
-                  key={browserUrl}
-                  src={browserUrl}
-                  className="w-full h-full border-0"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                  allow="clipboard-write"
-                  title="Embedded Browser"
-                />
-              )}
+              <iframe
+                key={browserUrl}
+                src={browserUrl}
+                className="w-full h-full border-0"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                allow="clipboard-write"
+                title="Embedded Browser"
+              />
             </div>
           </div>
         )}
