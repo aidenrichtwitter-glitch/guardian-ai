@@ -3,6 +3,64 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
 
+function fileWritePlugin(): Plugin {
+  return {
+    name: "file-write",
+    configureServer(server) {
+      server.middlewares.use("/api/write-file", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
+        try {
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          const { filePath, content } = JSON.parse(body);
+          if (!filePath || typeof content !== "string") { res.statusCode = 400; res.end("Missing filePath or content"); return; }
+
+          const fs = await import("fs");
+          const projectRoot = process.cwd();
+          const resolved = path.resolve(projectRoot, filePath);
+          if (!resolved.startsWith(projectRoot)) { res.statusCode = 403; res.end("Path outside project"); return; }
+
+          const dir = path.dirname(resolved);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+          let previousContent = "";
+          if (fs.existsSync(resolved)) previousContent = fs.readFileSync(resolved, "utf-8");
+
+          fs.writeFileSync(resolved, content, "utf-8");
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ success: true, filePath, previousContent, bytesWritten: content.length }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+
+      server.middlewares.use("/api/read-file", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
+        try {
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          const { filePath } = JSON.parse(body);
+          if (!filePath) { res.statusCode = 400; res.end("Missing filePath"); return; }
+
+          const fs = await import("fs");
+          const projectRoot = process.cwd();
+          const resolved = path.resolve(projectRoot, filePath);
+          if (!resolved.startsWith(projectRoot)) { res.statusCode = 403; res.end("Path outside project"); return; }
+
+          const exists = fs.existsSync(resolved);
+          const content = exists ? fs.readFileSync(resolved, "utf-8") : "";
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ success: true, exists, content }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+    },
+  };
+}
+
 function sourceDownloadPlugin(): Plugin {
   return {
     name: "source-download",
@@ -68,6 +126,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    fileWritePlugin(),
     sourceDownloadPlugin(),
     VitePWA({
       registerType: "autoUpdate",

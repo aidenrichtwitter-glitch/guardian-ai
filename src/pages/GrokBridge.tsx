@@ -784,49 +784,85 @@ const GrokBridge: React.FC = () => {
         setStatusMessage(`⚠ ${e.message || 'Failed to read file'}`);
       }
     } else {
-      const existing = SELF_SOURCE.find(f => f.path === filePath);
-      const previousContent = existing?.content || '';
-      if (existing) { existing.content = code; existing.isModified = true; existing.lastModified = Date.now(); }
-      else {
-        const name = filePath.split('/').pop() || filePath;
-        const ext = name.split('.').pop() || 'ts';
-        const langMap: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', css: 'css', json: 'json' };
-        SELF_SOURCE.push({ name, path: filePath, content: code, language: langMap[ext] || 'plaintext', isModified: true, lastModified: Date.now() });
+      try {
+        const readRes = await fetch('/api/read-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath }),
+        });
+        const readData = await readRes.json();
+        if (!readRes.ok || !readData.success) {
+          setStatusMessage(`⚠ Could not read ${filePath}: ${readData.error || 'unknown error'}`);
+          return;
+        }
+        const safetyChecks = validateChange(code, filePath);
+        setPendingApply({
+          filePath,
+          newContent: code,
+          oldContent: readData.content || '',
+          exists: readData.exists ?? false,
+          safetyChecks,
+        });
+        setApplyStage('confirm');
+        setApplyStageMessage('');
+        setApplyCompileError('');
+      } catch (e: any) {
+        setStatusMessage(`⚠ ${e.message || 'Failed to read file'}`);
       }
-      setAppliedChanges(prev => [...prev, { filePath, previousContent, newContent: code, timestamp: Date.now() }]);
-      setStatusMessage(`✓ Applied to ${filePath} (in-memory)`);
     }
   }, []);
 
   const confirmApply = useCallback(async () => {
-    if (!pendingApply || !isElectron) return;
+    if (!pendingApply) return;
     const { filePath, newContent, oldContent } = pendingApply;
     try {
-      const { ipcRenderer } = (window as any).require('electron');
+      if (isElectron) {
+        const { ipcRenderer } = (window as any).require('electron');
 
-      setApplyStage('writing');
-      const writeResult = await ipcRenderer.invoke('write-file', { filePath, content: newContent });
-      if (!writeResult.success) {
-        setApplyStage('error');
-        setApplyStageMessage(`Write failed: ${writeResult.error}`);
-        return;
+        setApplyStage('writing');
+        const writeResult = await ipcRenderer.invoke('write-file', { filePath, content: newContent });
+        if (!writeResult.success) {
+          setApplyStage('error');
+          setApplyStageMessage(`Write failed: ${writeResult.error}`);
+          return;
+        }
+        lastBackupPathRef.current = writeResult.backupPath || '';
+
+        setApplyStage('checking');
+        const compileResult = await ipcRenderer.invoke('check-compile', { filePath });
+        if (compileResult.hasErrors) {
+          setApplyStage('error');
+          setApplyStageMessage('Compile errors detected — rollback recommended');
+          setApplyCompileError(compileResult.errorText);
+          return;
+        }
+
+        setApplyStage('committing');
+        const commitResult = await ipcRenderer.invoke('git-commit', {
+          filePath,
+          message: `Guardian AI: apply suggestion to ${filePath}`,
+        });
+
+        setApplyStage('done');
+        const gitNote = commitResult.success ? ' + committed' : ' (git: ' + (commitResult.error || 'skipped') + ')';
+        setApplyStageMessage(`Written to ${filePath}${gitNote}`);
+      } else {
+        setApplyStage('writing');
+        const writeRes = await fetch('/api/write-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath, content: newContent }),
+        });
+        const writeData = await writeRes.json();
+        if (!writeRes.ok || !writeData.success) {
+          setApplyStage('error');
+          setApplyStageMessage(`Write failed: ${writeData.error || 'unknown error'}`);
+          return;
+        }
+
+        setApplyStage('done');
+        setApplyStageMessage(`Written to ${filePath} (${writeData.bytesWritten} bytes)`);
       }
-      lastBackupPathRef.current = writeResult.backupPath || '';
-
-      setApplyStage('checking');
-      const compileResult = await ipcRenderer.invoke('check-compile', { filePath });
-      if (compileResult.hasErrors) {
-        setApplyStage('error');
-        setApplyStageMessage('Compile errors detected — rollback recommended');
-        setApplyCompileError(compileResult.errorText);
-        return;
-      }
-
-      setApplyStage('committing');
-      const commitResult = await ipcRenderer.invoke('git-commit', {
-        filePath,
-        message: `Guardian AI: apply suggestion to ${filePath}`,
-      });
 
       const existing = SELF_SOURCE.find(f => f.path === filePath);
       if (existing) { existing.content = newContent; existing.isModified = true; existing.lastModified = Date.now(); }
@@ -844,18 +880,26 @@ const GrokBridge: React.FC = () => {
         timestamp: Date.now(),
         backupPath: lastBackupPathRef.current,
       }]);
-
-      setApplyStage('done');
-      const gitNote = commitResult.success ? ' + committed' : ' (git: ' + (commitResult.error || 'skipped') + ')';
-      setApplyStageMessage(`Written to ${filePath}${gitNote}`);
     } catch (e: any) {
       setApplyStage('error');
-      setApplyStageMessage(`IPC error: ${e.message || 'Unknown failure'}`);
+      setApplyStageMessage(`Error: ${e.message || 'Unknown failure'}`);
     }
   }, [pendingApply]);
 
   const rollbackPending = useCallback(async () => {
-    if (!pendingApply || !isElectron) { setPendingApply(null); return; }
+    if (!pendingApply) { setPendingApply(null); return; }
+    if (!isElectron) {
+      try {
+        await fetch('/api/write-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath: pendingApply.filePath, content: pendingApply.oldContent }),
+        });
+        setStatusMessage(`↩ Rolled back ${pendingApply.filePath}`);
+      } catch { setStatusMessage(`⚠ Rollback failed for ${pendingApply.filePath}`); }
+      setPendingApply(null);
+      return;
+    }
     if (!lastBackupPathRef.current) {
       try {
         const { ipcRenderer } = (window as any).require('electron');
