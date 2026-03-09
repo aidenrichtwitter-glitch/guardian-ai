@@ -197,7 +197,7 @@ function ClipboardExtractor({ onApply }: { onApply: (filePath: string, code: str
         </div>
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary/10 text-primary text-[9px] border border-primary/20">
           <ClipboardCheck className="w-3 h-3" />
-          <span>Auto-capture on <kbd className="px-1 py-0.5 rounded bg-primary/20 text-[8px] font-bold">Ctrl+C</kbd></span>
+          <span>Auto-detects Grok copy-button responses</span>
         </div>
         <button
           onClick={readClipboard}
