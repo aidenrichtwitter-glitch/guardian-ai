@@ -1225,6 +1225,64 @@ function projectManagementPlugin(): Plugin {
         }
       });
 
+      let activePreviewPort: number | null = null;
+
+      const proxyToPreview = async (req: any, res: any, port: number, targetPath: string) => {
+        const http = await import("http");
+        const proxyReq = http.request(
+          {
+            hostname: "127.0.0.1",
+            port,
+            path: targetPath,
+            method: req.method,
+            headers: { ...req.headers, host: `localhost:${port}` },
+          },
+          (proxyRes) => {
+            res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+            proxyRes.pipe(res, { end: true });
+          }
+        );
+        proxyReq.on("error", () => {
+          if (!res.headersSent) { res.statusCode = 502; res.end("Preview server not responding"); }
+        });
+        req.pipe(proxyReq, { end: true });
+      };
+
+      server.middlewares.use("/__preview", async (req, res) => {
+        const match = req.url?.match(/^\/(\d+)(\/.*)?$/) || req.url?.match(/^\/__preview\/(\d+)(\/.*)?$/);
+        if (!match) { res.statusCode = 400; res.end("Invalid preview URL"); return; }
+        const port = parseInt(match[1], 10);
+        const targetPath = match[2] || "/";
+
+        let isValidPort = false;
+        for (const [, entry] of previewProcesses) {
+          if (entry.port === port) { isValidPort = true; break; }
+        }
+        if (!isValidPort) { res.statusCode = 404; res.end("No preview running on this port"); return; }
+
+        activePreviewPort = port;
+        await proxyToPreview(req, res, port, targetPath);
+      });
+
+      server.middlewares.use("/api/projects/preview-info", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
+        try {
+          const { name } = JSON.parse(await readBody(req));
+          const entry = previewProcesses.get(name);
+          const replitDomain = process.env.REPLIT_DEV_DOMAIN || "";
+          res.setHeader("Content-Type", "application/json");
+          if (entry) {
+            const proxyUrl = `/__preview/${entry.port}/`;
+            res.end(JSON.stringify({ running: true, port: entry.port, proxyUrl, replitDomain }));
+          } else {
+            res.end(JSON.stringify({ running: false }));
+          }
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+
       server.middlewares.use("/api/projects/stop-preview", async (req, res) => {
         if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
         try {
@@ -1239,6 +1297,7 @@ function projectManagementPlugin(): Plugin {
                 entry.process.kill("SIGTERM");
               }
             } catch {}
+            if (activePreviewPort === entry.port) activePreviewPort = null;
             previewProcesses.delete(name);
           }
           res.setHeader("Content-Type", "application/json");
@@ -1315,7 +1374,7 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
     watch: {
-      ignored: ["**/projects/**", "**/.local/**", "**/node_modules/**"],
+      ignored: ["**/projects/**", "**/.local/**", "**/node_modules/**", "**/.cache/**"],
     },
   },
   plugins: [

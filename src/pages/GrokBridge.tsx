@@ -3749,7 +3749,7 @@ const GrokBridge: React.FC = () => {
               <iframe
                 ref={previewIframeRef}
                 key={previewKey}
-                src={`http://localhost:${previewPort}`}
+                src={isElectron ? `http://localhost:${previewPort}` : `/__preview/${previewPort}/`}
                 data-testid="iframe-preview"
                 className="flex-1 w-full border-0 bg-white"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"

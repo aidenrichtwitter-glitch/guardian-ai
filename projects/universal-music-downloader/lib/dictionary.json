@@ -1,0 +1,132 @@
+{
+    "hero": {
+        "title": "Universal Music Downloader",
+        "description": "Download high-quality music from SoundCloud and YouTube. Supports Playlists, ultra-fast speed, completely free."
+    },
+    "tabs": {
+        "soundcloud": "SoundCloud",
+        "youtube": "YouTube"
+    },
+    "features": {
+        "title": "Why Choose Us?",
+        "speed": {
+            "title": "Ultra Fast Speed",
+            "description": "Uses multi-thread downloading technology to optimize your download speed."
+        },
+        "playlist": {
+            "title": "Playlist Support",
+            "description": "Download entire Playlists with just one click."
+        },
+        "safe": {
+            "title": "Safe & Free",
+            "description": "No malicious ads, completely free, and respects privacy."
+        }
+    },
+    "footer": {
+        "text": "Universal Music Downloader. Built for music lovers."
+    },
+    "soundcloud": {
+        "tabs": {
+            "search": "Search",
+            "single": "Single Track",
+            "playlist": "Playlist"
+        }
+    },
+    "youtube": {
+        "tabs": {
+            "search": "Search",
+            "single": "Single Video",
+            "playlist": "Playlist"
+        }
+    },
+    "common": {
+        "download": "Download",
+        "downloading": "Downloading...",
+        "downloaded": "Downloaded",
+        "download_all": "Download All",
+        "downloading_all": "Downloading All...",
+        "preview": "Preview",
+        "playing": "Playing",
+        "stop": "Stop",
+        "copy_link": "Copy Link",
+        "copied": "Copied",
+        "open_on": "Open on",
+        "error": "Error",
+        "retry": "Retry",
+        "no_results": "No results found",
+        "no_results_for": "No results found for",
+        "loading_more": "Loading more...",
+        "load_more": "Load more results",
+        "search_placeholder": "Enter song or artist name...",
+        "search_btn": "Search",
+        "searching": "Searching...",
+        "success_download": "Downloaded successfully",
+        "error_download": "Error downloading",
+        "success_copy": "Link copied",
+        "results_found": "Found results",
+        "results": "Results",
+        "enter_keyword": "Please enter a keyword",
+        "client_id_missing": "Client ID is missing",
+        "preview_error": "Cannot play preview",
+        "preview_play_error": "Error playing music",
+        "no_tracks_download": "No tracks to download",
+        "all_downloaded": "All tracks downloaded",
+        "start_download_count": "Starting download of {count} tracks",
+        "processing_ffmpeg": "Processing with FFmpeg",
+        "select_format": "Select Format",
+        "select_quality": "Quality",
+        "edit_metadata": "Edit Metadata",
+        "title": "Title",
+        "artist": "Artist",
+        "album": "Album",
+        "placeholder_unified": "Paste SoundCloud or YouTube URL...",
+        "processing": "Processing...",
+        "go": "Go",
+        "unified_helper_text": "Auto-detects tracks, playlists, and albums from SoundCloud and YouTube.",
+        "sc_single_label": "SoundCloud Track URL:",
+        "sc_single_placeholder": "https://soundcloud.com/user/track-name",
+        "sc_playlist_label": "SoundCloud Playlist URL:",
+        "sc_playlist_placeholder": "https://soundcloud.com/user/sets/playlist-name",
+        "get_track": "Get Track",
+        "get_playlist": "Get Playlist",
+        "yt_single_label": "YouTube Video URL:",
+        "yt_single_placeholder": "https://www.youtube.com/watch?v=...",
+        "yt_playlist_label": "YouTube Playlist URL:",
+        "yt_playlist_placeholder": "https://www.youtube.com/playlist?list=...",
+        "yt_search_label": "Search YouTube:",
+        "sc_search_label": "Search SoundCloud:",
+        "download_zip": "Download ZIP",
+        "metadata_updated": "Metadata updated locally.",
+        "cover_updated": "Cover art selected.",
+        "cover": "Cover",
+        "unknown_artist": "Unknown Artist",
+        "save": "Save",
+        "cancel": "Cancel",
+        "add_to_queue": "Add to Queue",
+        "remove_from_queue": "Remove from Queue"
+    },
+    "settings": {
+        "title": "Settings",
+        "description": "Customize your experience.",
+        "general": "General",
+        "downloads": "Downloads",
+        "history": "History",
+        "about": "About",
+        "theme": "Theme",
+        "theme_description": "Toggle light/dark mode.",
+        "audio_format": "Audio Format",
+        "audio_format_description": "Choose the output format for your downloads.",
+        "filename_format": "File Name Format",
+        "filename_format_description": "Select how your downloaded files are named.",
+        "history_empty": "Your download history will appear here.",
+        "educational_disclaimer": "Only for educational purposes. We do not support piracy."
+    },
+    "about": {
+        "title": "About Universal Music Downloader",
+        "description": "A powerful tool to download music from your favorite platforms.",
+        "supported_platforms": "Supported Platforms:",
+        "soundcloud": "SoundCloud (Tracks & Playlists)",
+        "youtube": "YouTube (Videos & Playlists)",
+        "version": "Version"
+    }
+}
