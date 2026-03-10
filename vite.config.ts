@@ -523,8 +523,10 @@ function projectManagementPlugin(): Plugin {
         if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
         try {
           const { name, command } = JSON.parse(await readBody(req));
-          if (!name || /[\/\\]|\.\./.test(name)) { res.statusCode = 400; res.end(JSON.stringify({ error: "Invalid project name" })); return; }
           if (!command || typeof command !== "string") { res.statusCode = 400; res.end(JSON.stringify({ error: "No command specified" })); return; }
+
+          const check = validateProjectPath(name || "");
+          if (!check.valid) { res.statusCode = 403; res.end(JSON.stringify({ success: false, error: check.error })); return; }
 
           const allowedPrefixes = ["npm install", "npm run", "npm update", "npm ci", "npx ", "yarn ", "pnpm ", "node ", "tsc", "mkdir ", "cp ", "mv "];
           const trimmed = command.trim();
@@ -535,8 +537,10 @@ function projectManagementPlugin(): Plugin {
           }
 
           const fs = await import("fs");
-          const projectDir = path.resolve(process.cwd(), "projects", name);
-          if (!fs.existsSync(projectDir)) { res.statusCode = 404; res.end(JSON.stringify({ error: "Project not found" })); return; }
+          const projectDir = check.resolved;
+          if (!fs.existsSync(projectDir)) {
+            fs.mkdirSync(projectDir, { recursive: true });
+          }
 
           const { execSync } = await import("child_process");
           const actualCmd = trimmed === "npm install" ? "npm install --legacy-peer-deps" : trimmed;

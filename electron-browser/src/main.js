@@ -945,7 +945,9 @@ function setupIpcHandlers() {
     const resolvedDir = path.resolve(projectDir);
     const projectsRoot = path.resolve(path.join(projectRoot, 'projects'));
     if (!resolvedDir.startsWith(projectsRoot)) return { success: false, error: 'Invalid project path' };
-    if (!fs.existsSync(projectDir)) return { success: false, error: 'Project not found' };
+    if (!fs.existsSync(projectDir)) {
+      try { fs.mkdirSync(projectDir, { recursive: true }); } catch {}
+    }
 
     const actualCmd = trimmed === 'npm install' ? 'npm install --legacy-peer-deps' : trimmed;
     return new Promise((resolve) => {
