@@ -965,25 +965,70 @@ function setupIpcHandlers() {
     const isWin = process.platform === 'win32';
     let actualCmd = trimmed === 'npm install' ? 'npm install --legacy-peer-deps' : trimmed;
 
-    if (isWin) {
-      const UNIX_CMDS = /^(?:rm|mkdir|mv|cp|touch|cat|ls|ln|chmod|chown|head|tail|grep|find|wc|sort|uniq|diff|sed|awk|xargs|which|whoami|env|printenv|curl|wget)\b/i;
-      if (UNIX_CMDS.test(actualCmd)) {
-        let psCmd = actualCmd;
-        if (/^rm\s+(-rf?\s+)?/i.test(psCmd)) {
-          const targets = psCmd.replace(/^rm\s+(-rf?\s+)?/i, '').trim().split(/\s+/);
-          psCmd = targets.map(t => `Remove-Item -Path '${t}' -Recurse -Force -ErrorAction SilentlyContinue`).join('; ');
-        } else if (/^mkdir\s+(-p\s+)?/i.test(psCmd)) {
-          const dir = psCmd.replace(/^mkdir\s+(-p\s+)?/i, '').trim();
-          psCmd = `New-Item -ItemType Directory -Force -Path '${dir}'`;
-        } else if (/^touch\s/i.test(psCmd)) {
-          const file = psCmd.replace(/^touch\s+/i, '').trim();
-          psCmd = `New-Item -ItemType File -Force -Path '${file}'`;
+    const nodeHandled = (() => {
+      if (/^rm\s+(-rf?\s+)?/i.test(actualCmd)) {
+        const targets = actualCmd.replace(/^rm\s+(-rf?\s+)?/i, '').trim().split(/\s+/);
+        const results = [];
+        for (const t of targets) {
+          const targetPath = path.resolve(projectDir, t);
+          if (!targetPath.startsWith(projectDir)) { results.push(`Skipped (outside project): ${t}`); continue; }
+          try { fs.rmSync(targetPath, { recursive: true, force: true }); results.push(`Removed: ${t}`); }
+          catch (e) { results.push(`Failed to remove ${t}: ${e.message}`); }
         }
-        const encodedCmd = Buffer.from(psCmd, 'utf16le').toString('base64');
-        actualCmd = `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`;
-      } else if (/^corepack\s/i.test(actualCmd)) {
-        actualCmd = `npx ${actualCmd}`;
+        return { success: true, output: results.join('\n') };
       }
+      if (/^mkdir\s+(-p\s+)?/i.test(actualCmd)) {
+        const dir = actualCmd.replace(/^mkdir\s+(-p\s+)?/i, '').trim();
+        const dirPath = path.resolve(projectDir, dir);
+        if (!dirPath.startsWith(projectDir)) return { success: false, error: 'Path outside project' };
+        try { fs.mkdirSync(dirPath, { recursive: true }); return { success: true, output: `Created: ${dir}` }; }
+        catch (e) { return { success: false, error: e.message }; }
+      }
+      if (/^touch\s/i.test(actualCmd)) {
+        const file = actualCmd.replace(/^touch\s+/i, '').trim();
+        const filePath = path.resolve(projectDir, file);
+        if (!filePath.startsWith(projectDir)) return { success: false, error: 'Path outside project' };
+        try {
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(filePath, '', { flag: 'a' });
+          return { success: true, output: `Touched: ${file}` };
+        } catch (e) { return { success: false, error: e.message }; }
+      }
+      if (/^cat\s/i.test(actualCmd)) {
+        const file = actualCmd.replace(/^cat\s+/i, '').trim();
+        const filePath = path.resolve(projectDir, file);
+        if (!filePath.startsWith(projectDir)) return { success: false, error: 'Path outside project' };
+        try { return { success: true, output: fs.readFileSync(filePath, 'utf-8').slice(0, 4000) }; }
+        catch (e) { return { success: false, error: e.message }; }
+      }
+      if (/^cp\s/i.test(actualCmd)) {
+        const args = actualCmd.replace(/^cp\s+(-r\s+)?/i, '').trim().split(/\s+/);
+        if (args.length >= 2) {
+          const src = path.resolve(projectDir, args[0]);
+          const dest = path.resolve(projectDir, args[1]);
+          if (!src.startsWith(projectDir) || !dest.startsWith(projectDir)) return { success: false, error: 'Path outside project' };
+          try { fs.cpSync(src, dest, { recursive: true, force: true }); return { success: true, output: `Copied: ${args[0]} → ${args[1]}` }; }
+          catch (e) { return { success: false, error: e.message }; }
+        }
+      }
+      if (/^mv\s/i.test(actualCmd)) {
+        const args = actualCmd.replace(/^mv\s+/i, '').trim().split(/\s+/);
+        if (args.length >= 2) {
+          const src = path.resolve(projectDir, args[0]);
+          const dest = path.resolve(projectDir, args[1]);
+          if (!src.startsWith(projectDir) || !dest.startsWith(projectDir)) return { success: false, error: 'Path outside project' };
+          try { fs.renameSync(src, dest); return { success: true, output: `Moved: ${args[0]} → ${args[1]}` }; }
+          catch (e) { return { success: false, error: e.message }; }
+        }
+      }
+      return null;
+    })();
+
+    if (nodeHandled) return nodeHandled;
+
+    if (isWin && /^corepack\s/i.test(actualCmd)) {
+      actualCmd = `npx ${actualCmd}`;
     }
 
     return new Promise((resolve) => {

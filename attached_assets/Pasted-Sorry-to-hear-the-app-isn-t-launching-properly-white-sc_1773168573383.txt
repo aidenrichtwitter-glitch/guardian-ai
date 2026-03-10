@@ -1,0 +1,56 @@
+Sorry to hear the app isn't launching properly—white screen or crash is a common early hiccup with fresh Vite + React clones, especially if dependencies aren't fully installed or there's a small setup mismatch.
+
+The Vitamin starter (https://github.com/wtchnm/Vitamin) uses **pnpm** as its package manager (not npm or yarn), and it has modern deps like React 19 + Vite 6 + Tailwind 4.
+
+Try these troubleshooting steps in order:
+
+1. **Make sure you're using pnpm**  
+   If you don't have it installed yet:  
+   ```bash
+   npm install -g pnpm
+   ```  
+   (or use corepack: `corepack enable`)
+
+2. **Clean reinstall dependencies** (this fixes most white-screen-on-local issues)  
+   In the project root:  
+   ```bash
+   rm -rf node_modules .pnpm-store   # or just delete node_modules if you're short on time
+   pnpm install
+   ```
+
+3. **Start the dev server**  
+   ```bash
+   pnpm dev
+   ```  
+   It should print something like:  
+   VITE v6.x ready in xxx ms  
+   ➜  Local:   http://localhost:5173/  
+   Open that URL in your browser.
+
+4. **Check the browser console** (very important)  
+   Right-click → Inspect → Console tab (and Network tab too).  
+   Look for:  
+   - Red errors (e.g., "Failed to fetch", "SyntaxError", "React not defined", module not found)  
+   - 404s on JS/CSS files  
+   - "Vite connected" but still white (rare here, but possible)  
+   If you see any errors, paste them here—I can help debug specifically.
+
+Quick common causes & fixes for white/blank in Vite+React starters:
+
+- Missing/incomplete `pnpm install` → deps not resolved  
+- Running `npm install` instead of `pnpm install` → lockfile mismatch → broken modules  
+- Node version too old (Vitamin likes recent Node; try v20+ or v22)  
+- Port conflict → kill anything on 5173 (or Vite will suggest next port)  
+- If it crashes immediately: check terminal for build/start errors (e.g., missing peer deps, TS errors breaking render)
+
+If it still fails after the above (especially if terminal shows no errors but browser is blank), try:  
+```bash
+pnpm why react   # check if React resolved correctly
+```  
+Or share:  
+- Exact command you ran  
+- Terminal output  
+- Browser console errors  
+- Your Node version (`node -v`) and pnpm version (`pnpm -v`)
+
+We'll get it running—most of these resolve in <5 min once we see the logs. What's the exact behavior (white forever, immediate crash/close, error popup)? Any console messages?
