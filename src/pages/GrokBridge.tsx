@@ -1113,8 +1113,17 @@ const GrokBridge: React.FC = () => {
           setApplyStageMessage(`Write failed: ${e.message}`);
           return;
         }
+        if (previewPort) {
+          try {
+            await fetch('/api/projects/restart-preview', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: activeProject }),
+            });
+          } catch {}
+        }
         setApplyStage('done');
-        setApplyStageMessage(`Written to ${activeProject}/${filePath}`);
+        setApplyStageMessage(`Written to ${activeProject}/${filePath}${previewPort ? ' — preview refreshing' : ''}`);
       } else if (isElectron) {
         const { ipcRenderer } = (window as any).require('electron');
 
@@ -1190,7 +1199,7 @@ const GrokBridge: React.FC = () => {
       setApplyStage('error');
       setApplyStageMessage(`Error: ${e.message || 'Unknown failure'}`);
     }
-  }, [pendingApply, isEvolutionResponse, handleEvolutionApply, activeProject]);
+  }, [pendingApply, isEvolutionResponse, handleEvolutionApply, activeProject, previewPort]);
 
   const rollbackPending = useCallback(async () => {
     if (!pendingApply) { setPendingApply(null); return; }
@@ -1323,8 +1332,20 @@ const GrokBridge: React.FC = () => {
           timestamp: Date.now(),
         }))]);
         await buildProjectContext();
+
+        if (previewPort) {
+          setBatchMessage('Restarting preview...');
+          try {
+            await fetch('/api/projects/restart-preview', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: activeProject }),
+            });
+          } catch {}
+        }
+
         setBatchStage('done');
-        setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}`);
+        setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}${previewPort ? ' — preview refreshing' : ''}`);
         setTimeout(() => { setBatchStage('idle'); setBatchMessage(''); }, 4000);
       } catch (e: any) {
         setBatchStage('error');
@@ -1436,7 +1457,7 @@ const GrokBridge: React.FC = () => {
       setBatchStage('error');
       setBatchMessage(`Error: ${e.message || 'Unknown'}`);
     }
-  }, [activeProject]);
+  }, [activeProject, previewPort]);
 
   const batchRollback = useCallback(async () => {
     if (!isElectron || batchBackups.length === 0) { setBatchStage('idle'); return; }

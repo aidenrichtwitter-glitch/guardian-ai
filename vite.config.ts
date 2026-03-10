@@ -370,6 +370,64 @@ function projectManagementPlugin(): Plugin {
         }
       });
 
+      server.middlewares.use("/api/projects/restart-preview", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
+        try {
+          const { name } = JSON.parse(await readBody(req));
+          if (!name || /[\/\\]|\.\./.test(name)) { res.statusCode = 400; res.end(JSON.stringify({ error: "Invalid project name" })); return; }
+
+          const entry = previewProcesses.get(name);
+          if (!entry) {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ restarted: false, reason: "No active preview" }));
+            return;
+          }
+
+          const oldPort = entry.port;
+          try {
+            if (process.platform === "win32") {
+              const { execSync } = await import("child_process");
+              try { execSync(`taskkill /pid ${entry.process.pid} /T /F`, { stdio: "pipe" }); } catch {}
+            } else {
+              entry.process.kill("SIGTERM");
+            }
+          } catch {}
+          previewProcesses.delete(name);
+
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const fs = await import("fs");
+          const projectDir = path.resolve(process.cwd(), "projects", name);
+          const { spawn } = await import("child_process");
+
+          const child = spawn("npx", ["vite", "--host", "0.0.0.0", "--port", String(oldPort)], {
+            cwd: projectDir,
+            stdio: "pipe",
+            shell: true,
+            detached: false,
+            env: { ...process.env, BROWSER: "none" },
+          });
+
+          previewProcesses.set(name, { process: child, port: oldPort });
+
+          child.on("error", (err: any) => {
+            console.error(`Preview process error for ${name}:`, err.message);
+          });
+          child.on("exit", (code: number | null) => {
+            if (code !== null && code !== 0) {
+              console.error(`Preview process for ${name} exited with code ${code}`);
+            }
+            previewProcesses.delete(name);
+          });
+
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ restarted: true, port: oldPort }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+
       server.middlewares.use("/api/projects/install-deps", async (req, res) => {
         if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
         try {
