@@ -97,6 +97,7 @@ supabase/
 - Projects are stored under `projects/<name>/` relative to project root
 - API endpoints in `vite.config.ts`: `/api/projects/list`, `/api/projects/create`, `/api/projects/delete`, `/api/projects/files`, `/api/projects/read-file`, `/api/projects/write-file`, `/api/projects/preview`, `/api/projects/stop-preview`, `/api/projects/install-deps`, `/api/projects/run-command`
   - `/api/projects/run-command`: Runs whitelisted commands (`npm install`, `npm run`, `npx`, `yarn`, etc.) in a sub-project directory. Auto-appends `--legacy-peer-deps` for `npm install`. Shell metacharacters blocked. 120s timeout.
+  - `/api/projects/install-deps`: Detects project's package manager (bun/pnpm/yarn/npm) from lockfiles and uses it for installs. Falls back to npm on failure. 120s timeout per command.
 - Client-side store: `src/lib/project-manager.ts` — `listProjects`, `createProject`, `deleteProject`, `getProjectFiles`, `readProjectFile`, `writeProjectFile`, `getActiveProject`, `setActiveProject`
 - UI component: `src/components/ProjectExplorer.tsx` — file tree browser for active project
 - When a project is active in GrokBridge:

@@ -687,22 +687,53 @@ function projectManagementPlugin(): Plugin {
           const safeDeps = filterPkgs(dependencies || []);
           const safeDevDeps = filterPkgs(devDependencies || []);
 
+          let pm = "npm";
+          if (fs.existsSync(path.join(projectDir, "bun.lockb")) || fs.existsSync(path.join(projectDir, "bun.lock"))) pm = "bun";
+          else if (fs.existsSync(path.join(projectDir, "pnpm-lock.yaml")) || fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml"))) pm = "pnpm";
+          else if (fs.existsSync(path.join(projectDir, "yarn.lock"))) pm = "yarn";
+
+          const buildInstallCmd = (pkgs: string[], isDev: boolean): string => {
+            const pkgStr = pkgs.join(" ");
+            switch (pm) {
+              case "bun": return `npx bun add${isDev ? " -d" : ""} ${pkgStr}`;
+              case "pnpm": return `npx pnpm add${isDev ? " -D" : ""} ${pkgStr}`;
+              case "yarn": return `npx yarn add${isDev ? " -D" : ""} ${pkgStr}`;
+              default: return `npm install --legacy-peer-deps${isDev ? " --save-dev" : ""} ${pkgStr}`;
+            }
+          };
+
           const errors: string[] = [];
-          const runInstall = (cmd: string): Promise<void> => new Promise((resolve) => {
-            execAsync(cmd, { cwd: projectDir, timeout: 60000, shell: true, maxBuffer: 1024 * 1024 }, (err, _stdout, _stderr) => {
-              if (err) errors.push(`Failed: ${err.message?.slice(0, 300)}`);
-              resolve();
+          const runInstall = (pkgs: string[], isDev: boolean): Promise<void> => new Promise((resolve) => {
+            const cmd = buildInstallCmd(pkgs, isDev);
+            console.log(`[Deps] Running: ${cmd} in ${name}`);
+            execAsync(cmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err, _stdout, stderr) => {
+              if (err) {
+                console.error(`[Deps] Failed: ${cmd}`, stderr?.slice(0, 300) || err.message?.slice(0, 300));
+                if (pm !== "npm") {
+                  const npmFallback = `npm install --legacy-peer-deps${isDev ? " --save-dev" : ""} ${pkgs.join(" ")}`;
+                  console.log(`[Deps] Retrying with npm: ${npmFallback}`);
+                  execAsync(npmFallback, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err2) => {
+                    if (err2) errors.push(`Failed: Command failed: ${cmd}`);
+                    resolve();
+                  });
+                } else {
+                  errors.push(`Failed: Command failed: ${cmd}`);
+                  resolve();
+                }
+              } else {
+                resolve();
+              }
             });
           });
 
           if (safeDeps.length > 0) {
-            await runInstall(`npm install --legacy-peer-deps ${safeDeps.join(" ")}`);
+            await runInstall(safeDeps, false);
             if (errors.length === 0) results.push(`Installed: ${safeDeps.join(", ")}`);
           }
 
           if (safeDevDeps.length > 0) {
             const prevErrors = errors.length;
-            await runInstall(`npm install --legacy-peer-deps --save-dev ${safeDevDeps.join(" ")}`);
+            await runInstall(safeDevDeps, true);
             if (errors.length === prevErrors) results.push(`Installed dev: ${safeDevDeps.join(", ")}`);
           }
 
