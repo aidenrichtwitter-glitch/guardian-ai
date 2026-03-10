@@ -386,9 +386,20 @@ function projectManagementPlugin(): Plugin {
               if (scriptBody.includes("react-scripts")) return { cmd: "npx", args: ["react-scripts", "start"] };
               if (scriptBody.includes("nuxt")) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
               if (scriptBody.includes("astro")) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
-              if (scriptBody.includes("webpack")) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("ng ") || scriptBody.includes("ng serve")) return { cmd: "npx", args: ["ng", "serve", "--host", "0.0.0.0", "--port", portStr, "--disable-host-check"] };
+              if (scriptBody.includes("remix")) return { cmd: "npx", args: ["remix", "vite:dev", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("gatsby")) return { cmd: "npx", args: ["gatsby", "develop", "-H", "0.0.0.0", "-p", portStr] };
+              if (scriptBody.includes("webpack")) {
+                const wpArgs = ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr];
+                const cfgM = scriptBody.match(/(?:--config[=\s]|-c\s)(\S+)/);
+                if (cfgM) wpArgs.splice(2, 0, "--config", cfgM[1]);
+                return { cmd: "npx", args: wpArgs };
+              }
               if (scriptBody.includes("rspack")) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
               if (scriptBody.includes("svelte") || scriptBody.includes("sveltekit")) return null;
+              if (scriptBody.includes("vue-cli-service")) return { cmd: "npx", args: ["vue-cli-service", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("parcel")) return { cmd: "npx", args: ["parcel", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("ember")) return { cmd: "npx", args: ["ember", "serve", "--host", "0.0.0.0", "--port", portStr] };
               if (scriptBody.includes("vite")) return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
               return null;
             };
@@ -436,8 +447,12 @@ function projectManagementPlugin(): Plugin {
             if (deps["react-scripts"]) return { cmd: "npx", args: ["react-scripts", "start"] };
             if (deps["nuxt"]) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
             if (deps["astro"]) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+            if (deps["@angular/cli"]) return { cmd: "npx", args: ["ng", "serve", "--host", "0.0.0.0", "--port", portStr, "--disable-host-check"] };
+            if (deps["@remix-run/dev"]) return { cmd: "npx", args: ["remix", "vite:dev", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["gatsby"]) return { cmd: "npx", args: ["gatsby", "develop", "-H", "0.0.0.0", "-p", portStr] };
             if (deps["webpack-dev-server"]) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
             if (deps["@rspack/cli"] || deps["@rspack/core"]) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["parcel"]) return { cmd: "npx", args: ["parcel", "--host", "0.0.0.0", "--port", portStr] };
             if (isSvelteKit) return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
 
             if (fs.existsSync(path.join(projectDir, "vite.config.ts")) || fs.existsSync(path.join(projectDir, "vite.config.js")) || fs.existsSync(path.join(projectDir, "vite.config.mjs"))) {
@@ -573,7 +588,10 @@ function projectManagementPlugin(): Plugin {
             ...process.env as Record<string, string>,
             BROWSER: "none",
             PORT: String(port),
+            HOST: "0.0.0.0",
+            HOSTNAME: "0.0.0.0",
             NODE_PATH: path.join(projectDir, "node_modules"),
+            CHOKIDAR_USEPOLLING: "true",
           };
 
           const isReactScripts = devCmd.args.includes("react-scripts");
@@ -593,6 +611,11 @@ function projectManagementPlugin(): Plugin {
                 console.log(`[Preview] Removed homepage from ${name}/package.json for correct dev serving`);
               }
             } catch {}
+          }
+
+          const isWebpackDirect = devCmd.args.includes("webpack") || devCmd.args.includes("webpack-dev-server") || devCmd.args.includes("vue-cli-service");
+          if (isWebpackDirect && !isReactScripts) {
+            portEnv.NODE_OPTIONS = (portEnv.NODE_OPTIONS || "") + " --openssl-legacy-provider";
           }
 
           const isNextDev = devCmd.args.includes("next");
@@ -750,9 +773,17 @@ function projectManagementPlugin(): Plugin {
               if (scriptBody.includes("react-scripts")) return { cmd: "npx", args: ["react-scripts", "start"] };
               if (scriptBody.includes("nuxt")) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
               if (scriptBody.includes("astro")) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
-              if (scriptBody.includes("webpack")) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("webpack")) {
+                const wpArgs = ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr];
+                const cfgM = scriptBody.match(/(?:--config[=\s]|-c\s)(\S+)/);
+                if (cfgM) wpArgs.splice(2, 0, "--config", cfgM[1]);
+                return { cmd: "npx", args: wpArgs };
+              }
               if (scriptBody.includes("rspack")) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
               if (scriptBody.includes("svelte") || scriptBody.includes("sveltekit")) return null;
+              if (scriptBody.includes("vue-cli-service")) return { cmd: "npx", args: ["vue-cli-service", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("parcel")) return { cmd: "npx", args: ["parcel", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("ember")) return { cmd: "npx", args: ["ember", "serve", "--host", "0.0.0.0", "--port", portStr] };
               if (scriptBody.includes("vite")) return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
               return null;
             };
@@ -776,8 +807,12 @@ function projectManagementPlugin(): Plugin {
             if (deps["react-scripts"]) return { cmd: "npx", args: ["react-scripts", "start"] };
             if (deps["nuxt"]) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
             if (deps["astro"]) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+            if (deps["@angular/cli"]) return { cmd: "npx", args: ["ng", "serve", "--host", "0.0.0.0", "--port", portStr, "--disable-host-check"] };
+            if (deps["@remix-run/dev"]) return { cmd: "npx", args: ["remix", "vite:dev", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["gatsby"]) return { cmd: "npx", args: ["gatsby", "develop", "-H", "0.0.0.0", "-p", portStr] };
             if (deps["webpack-dev-server"]) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
             if (deps["@rspack/cli"] || deps["@rspack/core"]) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["parcel"]) return { cmd: "npx", args: ["parcel", "--host", "0.0.0.0", "--port", portStr] };
             if (isSvelteKit) return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
             return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
           };
@@ -789,7 +824,15 @@ function projectManagementPlugin(): Plugin {
             stdio: "pipe",
             shell: true,
             detached: true,
-            env: { ...process.env, BROWSER: "none", PORT: String(oldPort), HOST: "0.0.0.0", HOSTNAME: "0.0.0.0" },
+            env: {
+              ...process.env,
+              BROWSER: "none",
+              PORT: String(oldPort),
+              HOST: "0.0.0.0",
+              HOSTNAME: "0.0.0.0",
+              CHOKIDAR_USEPOLLING: "true",
+              ...(restartCmd.args.some((a: string) => ["webpack", "webpack-dev-server", "vue-cli-service", "react-scripts"].includes(a)) ? { NODE_OPTIONS: (process.env.NODE_OPTIONS || "") + " --openssl-legacy-provider" } : {}),
+            },
           });
           child.unref();
 
@@ -1379,6 +1422,13 @@ function projectManagementPlugin(): Plugin {
               execSync(installCmd, { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true });
               npmInstalled = true;
               console.log(`[Import] Deps installed for ${projectName}`);
+              try {
+                const rebuildCmd = detectedPM === "pnpm" ? "npx pnpm rebuild" : detectedPM === "yarn" ? "npx yarn rebuild" : "npm rebuild";
+                execSync(rebuildCmd, { cwd: projectDir, timeout: 120000, stdio: "pipe", shell: true });
+                console.log(`[Import] Native modules rebuilt for ${projectName}`);
+              } catch (rebuildErr: any) {
+                console.log(`[Import] Rebuild skipped/failed for ${projectName} (non-critical)`);
+              }
             } catch (installErr: any) {
               installError = installErr.stderr?.toString().slice(-500) || installErr.message?.slice(0, 500) || "Unknown error";
               console.error(`[Import] Install failed for ${projectName} with ${detectedPM}:`, installError.slice(0, 300));
@@ -1389,6 +1439,7 @@ function projectManagementPlugin(): Plugin {
                   npmInstalled = true;
                   installError = "";
                   console.log(`[Import] Deps installed for ${projectName} (npm fallback)`);
+                  try { execSync("npm rebuild", { cwd: projectDir, timeout: 120000, stdio: "pipe", shell: true }); console.log(`[Import] Native modules rebuilt for ${projectName} (npm fallback)`); } catch { console.log(`[Import] Rebuild skipped for ${projectName} (npm fallback, non-critical)`); }
                 } catch (retryErr: any) {
                   installError = retryErr.stderr?.toString().slice(-300) || retryErr.message?.slice(0, 300) || "Retry failed";
                 }
@@ -1451,7 +1502,7 @@ function projectManagementPlugin(): Plugin {
         await proxyToPreview(req, res, port, targetPath);
       });
 
-      const PREVIEW_ASSET_PREFIXES = ["/_next/", "/__nextjs", "/favicon.ico", "/opengraph-image", "/apple-touch-icon", "/manifest.json", "/sw.js", "/workbox-", "/static/", "/sockjs-node/"];
+      const PREVIEW_ASSET_PREFIXES = ["/_next/", "/__nextjs", "/__vite", "/@vite/", "/@id/", "/@fs/", "/node_modules/", "/src/", "/favicon.ico", "/opengraph-image", "/apple-touch-icon", "/manifest.json", "/sw.js", "/workbox-", "/static/", "/sockjs-node/", "/build/", "/_assets/", "/assets/", "/public/", "/polyfills", "/.vite/", "/hmr", "/__webpack_hmr"];
       server.middlewares.use(async (req, res, next) => {
         if (!activePreviewPort || !req.url) { next(); return; }
         const shouldProxy = PREVIEW_ASSET_PREFIXES.some(p => req.url!.startsWith(p));

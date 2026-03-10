@@ -1,0 +1,216 @@
+.node {
+  width: 50px;
+  height: 50px;
+  outline: 1px solid gray;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0px;
+  background-color: rgb(240, 240, 240);
+  
+  &_current {
+    background-color: yellow;
+    outline: 1px solid yellow;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &_start {
+    outline: 1px solid gray;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    background-color: greenyellow;
+  }
+  
+  &_end {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    background-color: lightcoral;
+  }
+
+  &_island {
+    outline: 1px solid yellowgreen;
+    display: block;
+    justify-content: center;
+    align-items: center;
+    background-color: yellowgreen;
+  }
+
+  &_prev_evaluate {
+    outline: 1px solid lightsalmon;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    background-color: lightsalmon;
+  }
+
+  &_water {
+    outline: 3px solid lightblue;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0px;
+    background-color: blue;
+  }
+
+  &_deep_ocean {
+    outline: 1px solid blue;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    background-color: darkblue;
+  }
+
+
+  &:hover {
+    background-color: lightblue;
+  }
+}
+
+.node_explored {
+  width: 50px;
+  height: 50px;
+  outline: 1px solid gray;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0px;
+  animation-name: exploredAnimation;
+  animation-duration: 0.3s;
+  animation-timing-function: ease-out;
+  animation-delay: 0;
+  animation-direction: alternate;
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  animation-play-state: running;
+}
+
+
+.node_water:after {
+  z-index: 9;
+}
+
+.node_island {
+    width: 50px;
+    height: 50px;
+    outline: 1px solid yellowgreen;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0px;
+    background-color: yellowgreen;
+}
+
+.node_island {
+  z-index: 0;
+}
+
+
+
+
+.bridge {
+  outline: 1px solid brown;
+  background-color: brown
+}
+
+@keyframes exploredAnimation {
+  0% {
+    transform: scale(0.3);
+    background-color: rgba(0, 0, 66, 0.75);
+    border-radius: 100%;
+  }
+  
+  50% {
+    background-color: rgba(17, 104, 217, 0.75);
+  }
+  
+  75% {
+    transform: scale(1.2);
+    background-color: rgba(0, 217, 159, 0.75);
+  }
+  
+  100% {
+    transform: scale(1);
+    background-color: rgba(0, 190, 218, 0.75);
+  }
+}
+
+.node_explored_left {
+    width: 50px;
+    height: 50px;
+    outline: 1px solid gray;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0px;
+    animation-name: floodFromLeft;
+    animation-duration: 0.3s;
+    animation-timing-function: ease-out;
+    animation-delay: 0;
+    animation-direction: alternate;
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+    animation-play-state: running;
+}
+
+@property --flood_water {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%
+}
+
+@keyframes floodFromTop {
+  0% {
+    --flood_water: 0%;
+    background: linear-gradient(180deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_empty));
+  }
+
+
+  100% {
+    --flood_water:100%;
+    background: linear-gradient(180deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_water));
+  }
+}
+
+@keyframes floodFromRight {
+  0% {
+    --flood_water: 0%;
+    background: linear-gradient(270deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_empty));
+  }
+
+
+  100% {
+    --flood_water:100%;
+    background: linear-gradient(270deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_water));
+  }
+}
+
+@keyframes floodFromBelow {
+  0% {
+    --flood_water: 0%;
+    background: linear-gradient(0deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_empty));
+  }
+
+
+  100% {
+    --flood_water:100%;
+    background: linear-gradient(0deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_water));
+  }
+}
+
+@keyframes floodFromLeft {
+  0% {
+    --flood_water: 0%;
+    background: linear-gradient(90deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_empty));
+  }
+
+
+  100% {
+    --flood_water:100%;
+    background: linear-gradient(90deg, rgba(0, 190, 218, 0.75) var(--flood_water), rgba(240,240,240,1) var(--flood_water));
+  }
+}
+

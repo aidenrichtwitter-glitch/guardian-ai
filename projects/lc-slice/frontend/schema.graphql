@@ -1,0 +1,145 @@
+scalar PositiveFloat
+
+scalar EmailAddress
+
+scalar PositiveInt
+
+scalar NonNegativeInt
+
+scalar UUID
+
+type Grid {
+  gridId: ID!
+  label: String
+  fromExample: NonNegativeInt!
+  exampleIndex: NonNegativeInt!
+  problemNumber: PositiveInt!
+  interpretAs: String!
+  gridData: [[Int]]
+  width: PositiveInt!
+  height: PositiveInt!
+}
+
+type ProblemInfo {
+  problemId: UUID!
+  problemNumber: PositiveInt!
+  title: String!
+  description: String!
+  numExamples: NonNegativeInt!
+  grids(example: NonNegativeInt): [Grid],
+  arrays(example: NonNegativeInt): [ArrayType],
+  linkedLists(example: NonNegativeInt): [LinkedListType]
+}
+
+type ArrayType {
+  arrayId: ID!
+  label: String
+  fromExample: NonNegativeInt!
+  exampleIndex: NonNegativeInt!
+  problemNumber: PositiveInt!
+  arrayData: [Int]
+  interpretAs: String!
+}
+
+enum LinkStatusEnum {
+  FORWARD_LINKED,
+  BACK_LINKED,
+  DOUBLY_LINKED,
+  UNLINKED
+}
+
+type LinkedListType {
+  listId: ID!
+  label: String
+  fromExample: NonNegativeInt!
+  exampleIndex: NonNegativeInt!
+  problemNumber: PositiveInt!
+  listData: [Int]
+  linkStatus: LinkStatusEnum
+  length: PositiveInt!
+}
+
+type Example {
+  grids: [Grid]
+}
+
+type Query {
+  grids: [Grid]
+  arrays: [ArrayType]
+  linkedLists: [LinkedListType]
+  problem(number: Int): ProblemInfo
+  gridProblems(take: Int, skip: Int): [ProblemInfo]
+  graphProblems: [ProblemInfo]
+  arrayProblems: [ProblemInfo]
+  linkedListProblems: [ProblemInfo]
+}
+
+
+enum ValidTypes {
+  GRAPH 
+  GRID 
+  ARRAY
+}
+
+enum GridInterpreter {
+  NUMBER 
+  BOOLEAN 
+  NORMALIZED
+  ALPHABET
+}
+
+enum ArrayInterpreter {
+  NUMBER
+  BOOLEAN
+  NORMALIZED
+  ALPHABET
+}
+
+input AddProblemInput {
+  problemNumber: PositiveInt!
+  title: String!
+  description: String
+}
+
+input UpdateDescriptionInput {
+  problemNumber: PositiveInt!
+  newDescription: String!
+}
+
+input UpdateTitleInput {
+  problemNumber: PositiveInt!
+  newTitle: String!
+}
+
+input AddGridInput {
+  problemNumber: PositiveInt!
+  data: [[Int]]!
+  example: NonNegativeInt
+  label: String
+  interpretAs: GridInterpreter
+}
+
+input AddArrayTypeInput {
+  problemNumber: PositiveInt!
+  data: [Int]!
+  example: NonNegativeInt
+  label: String
+  interpretAs: ArrayInterpreter
+}
+
+input AddLinkedListTypeInput {
+  problemNumber: PositiveInt!
+  data: [Int]!
+  example: NonNegativeInt
+  label: String
+  linkStatus: LinkStatusEnum
+}
+
+type Mutation {
+  addProblem(input: AddProblemInput!): ProblemInfo
+  updateDescription(input: UpdateDescriptionInput!): String
+  updateTitle(input: UpdateTitleInput!): String
+  addGrid(input: AddGridInput!): Grid
+  addArray(input: AddArrayTypeInput!): ArrayType
+  addLinkedList(input: AddLinkedListTypeInput!): LinkedListType
+}

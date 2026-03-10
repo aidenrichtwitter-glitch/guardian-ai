@@ -1,0 +1,97 @@
+{
+  "homepage": "http://cmhhelgeson.github.io/lc_slice",
+  "name": "lc_slice",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "@apollo/client": "^3.7.2",
+    "@emotion/react": "^11.10.5",
+    "@emotion/styled": "^11.10.5",
+    "@mui/icons-material": "^5.11.0",
+    "@mui/material": "^5.11.1",
+    "@mui/x-data-grid": "^5.17.22",
+    "@reduxjs/toolkit": "^1.9.0",
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^14.4.3",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^17.0.45",
+    "@types/object-hash": "^2.2.1",
+    "@types/react": "^18.0.21",
+    "@types/react-dom": "^18.0.6",
+    "@types/selenium-webdriver": "^4.1.9",
+    "@types/styled-components": "^5.1.26",
+    "@vitejs/plugin-react": "^3.1.0",
+    "d3": "^7.8.2",
+    "date-fns": "^2.29.3",
+    "formik": "^2.2.9",
+    "framer-motion": "^7.6.7",
+    "gh-pages": "^4.0.0",
+    "gojs": "^2.3.2",
+    "graphql": "^16.6.0",
+    "gsap": "^3.11.4",
+    "immer": "^9.0.16",
+    "object-hash": "^3.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-pro-sidebar": "^0.7.1",
+    "react-redux": "^8.0.4",
+    "react-router-dom": "^6.8.1",
+    "react-scroll-box": "^0.3.5",
+    "react-transition-group": "^4.4.5",
+    "sass": "^1.58.0",
+    "selenium-webdriver": "^4.6.1",
+    "typescript": "^4.8.4",
+    "use-immer": "^0.8.1",
+    "vite": "^4.1.1",
+    "vite-plugin-svgr": "^2.4.0",
+    "vite-tsconfig-paths": "^4.0.5",
+    "web-vitals": "^2.1.4",
+    "yup": "^0.32.11"
+  },
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "serve": "vite serve",
+    "predeploy": "yarn run build",
+    "deploy": "gh-pages -d dist",
+    "generate": "graphql-codegen --config codegen.yml --target=typescript --tagName=gql --verbose --overwrite"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@babel/register": "^7.18.9",
+    "@cucumber/cucumber": "^8.9.1",
+    "@graphql-codegen/cli": "^2.16.1",
+    "@graphql-codegen/typescript": "2.7.3",
+    "@graphql-codegen/typescript-operations": "^2.5.10",
+    "@graphql-codegen/typescript-react-apollo": "^3.3.7",
+    "@graphql-codegen/typescript-resolvers": "2.7.3",
+    "@types/d3": "^7.4.0",
+    "chromedriver": "^107.0.3",
+    "postinstall-postinstall": "^2.1.0",
+    "puppeteer": "^19.4.1",
+    "ts-jest": "^29.0.3"
+  },
+  "packageManager": "yarn@3.2.4",
+  "resolutions": {
+    "react-simple-resizer@^2.1.0": "patch:react-simple-resizer@npm%3A2.1.0#./.yarn/patches/react-simple-resizer-npm-2.1.0-db31752ad2.patch"
+  }
+}

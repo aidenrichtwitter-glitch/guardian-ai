@@ -1,0 +1,30 @@
+.controller {
+    margin-top: 10px;
+}
+
+.controller_contents_container {
+    width: 100%;
+    margin-left: 10px;
+    display: flex; 
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.controller_buttons_container {
+    display: flex;
+    max-width: 600px;
+    flex-direction: row;
+    justify-content: flex-start;
+    margin-left: 0px;
+    margin-top: 10px;
+}
+
+.controller_button {
+    margin-right: 10px;
+}
+
+.controller_buttons_container:first-child {
+    margin-left: 0px;
+}
+

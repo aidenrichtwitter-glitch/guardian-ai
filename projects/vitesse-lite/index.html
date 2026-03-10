@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+<script data-guardian-console-bridge>
+(function() {
+  if (window.__guardianConsoleBridge) return;
+  window.__guardianConsoleBridge = true;
+  var origLog = console.log, origWarn = console.warn, origError = console.error, origInfo = console.info;
+  function send(level, args, stack) {
+    try {
+      var serialized = [];
+      for (var i = 0; i < args.length; i++) {
+        try { serialized.push(typeof args[i] === 'object' ? JSON.parse(JSON.stringify(args[i])) : args[i]); }
+        catch(e) { serialized.push(String(args[i])); }
+      }
+      window.parent.postMessage({ type: 'guardian-console-bridge', level: level, args: serialized, stack: stack || null }, '*');
+    } catch(e) {}
+  }
+  console.log = function() { send('log', Array.prototype.slice.call(arguments)); origLog.apply(console, arguments); };
+  console.warn = function() { send('warn', Array.prototype.slice.call(arguments)); origWarn.apply(console, arguments); };
+  console.error = function() { send('error', Array.prototype.slice.call(arguments)); origError.apply(console, arguments); };
+  console.info = function() { send('info', Array.prototype.slice.call(arguments)); origInfo.apply(console, arguments); };
+  window.onerror = function(msg, source, line, column, error) {
+    send('error', [String(msg)], error && error.stack ? error.stack : null);
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function(event) {
+    var reason = event.reason;
+    var msg = reason instanceof Error ? reason.message : String(reason);
+    var stack = reason instanceof Error ? reason.stack : null;
+    send('error', ['Unhandled Promise Rejection: ' + msg], stack);
+  });
+})();
+</script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Vitesse Lite</title>
+    <meta name="description" content="Opinionated Vite Starter Template" />
+  </head>
+  <body class="font-sans dark:text-white dark:bg-hex-121212">
+    <div id="app"></div>
+    <noscript>
+      <div>Please enable JavaScript to use this application.</div>
+    </noscript>
+    <script>
+      ;(function () {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        const setting = localStorage.getItem('color-schema') || 'auto'
+        if (setting === 'dark' || (prefersDark && setting !== 'light'))
+          document.documentElement.classList.toggle('dark', true)
+      })()
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

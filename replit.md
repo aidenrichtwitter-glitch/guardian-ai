@@ -108,7 +108,9 @@ supabase/
   - **HMR-first updates**: Normal file writes rely on Vite's Hot Module Replacement (no server kill). Full preview restart only triggered for config file changes (`vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `package.json`, `postcss.config.*`) or after dependency installs.
   - **Windows polling**: Sub-project `vite.config.ts` is scaffolded with `usePolling: true` for reliable file watching on Windows. Existing projects without polling are auto-patched when preview starts.
   - **Auto config patching**: Preview startup auto-cleans stale `base: "/__preview/..."` from vite configs, patches rspack configs with correct port/host, and adds usePolling to vite configs.
-  - **Framework detection**: Supports next, vite, react-scripts, webpack, rspack, nuxt, astro, SvelteKit (`vite dev` not `vite`), pnpm monorepos (auto-finds `--filter` dev scripts + pre-builds workspace packages).
+  - **Framework detection**: Supports next, vite, react-scripts, webpack (preserves `--config` flags), rspack, nuxt, astro, SvelteKit (`vite dev` not `vite`), Angular, Remix, Gatsby, Parcel, Ember, pnpm monorepos (auto-finds `--filter` dev scripts + pre-builds workspace packages).
+  - **OpenSSL legacy provider**: Auto-added for webpack/webpack-dev-server/vue-cli-service/react-scripts projects to fix `ERR_OSSL_EVP_UNSUPPORTED` with older webpack versions.
+  - **CHOKIDAR_USEPOLLING**: Enabled for all preview spawns to prevent ENOSPC file watcher exhaustion in large monorepos.
   - **Process group kill**: Preview processes spawn with `detached: true`; stop/restart use `process.kill(-pid, SIGKILL)` for full process tree cleanup. Stale port detection uses `/proc/net/tcp` inode matching (since lsof/fuser/ss are unavailable).
   - Preview restart waits for port to be free (up to 3s) before spawning new server, preventing port conflicts.
   - Refresh button in toolbar and preview panel header force-reloads the iframe. Auto-refresh after applying code (500ms for normal files, 2.5s for config changes).
@@ -123,7 +125,7 @@ supabase/
   - Auto-cleans extracted repo: removes node_modules, .git, .next, .turbo, dist, .cache, .vercel, .output
   - Smart PM detection: lockfile sniffing (bun.lockb/pnpm-lock.yaml/yarn.lock) → correct install command; monorepo detection via workspaces/pnpm-workspace.yaml/lerna.json
   - Framework detection: next/nuxt/angular/svelte/astro/vue/react from dependencies
-  - Install uses `--ignore-scripts` for security on untrusted repos; 180s timeout with npm fallback
+  - Install uses `--ignore-scripts` for security on untrusted repos; 180s timeout with npm fallback; post-install `rebuild` step compiles native modules (e.g., better-sqlite3)
   - Vite server watch config excludes `projects/` and `.local/` to prevent ENOSPC file watcher exhaustion from pnpm stores
   - Grok is the single decision-maker for repo selection — Ollama never suggests repos
 - **Empty project creation**: New projects start with only a `package.json` (name, version, description, framework metadata). No scaffold files — the idea is Grok suggests a repo to clone or generates the initial files

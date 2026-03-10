@@ -1,0 +1,60 @@
+#navBarDiv {
+  display: flex;
+  position: relative;
+  flex-direction: row;
+  justify-content: flex-start;
+  width: 100%;
+  height: auto;
+}
+
+#main_navbar {
+  position: relative;
+  background: linear-gradient(-90deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+  animation-name: changeNavbarGradient 4s ease infinite;
+  background-size: 400% 400%;
+  display: flex;
+  flex-direction: row;
+  width: 102%;
+}
+
+.navbar_form_control {
+  display: flex;
+  width: max(175px, 10%);
+  padding: 0px 0px 0px 0px !important;
+  & .navbar_menu_item-grid {
+    color: red;
+  }
+}
+
+.navbar_input_label {
+  &-grid {
+    & ~ div {
+      background: hsla(306, 58%, 86%, 1);
+      background: linear-gradient(45deg, hsla(306, 58%, 86%, 0.5) 34%, hsla(282, 59%, 74%, 0.5) 40%);
+      background: -moz-linear-gradient(45deg, hsla(306, 58%, 86%, 0.5) 34%, hsla(282, 59%, 74%, 0.5) 100%);
+      background: -webkit-linear-gradient(45deg, hsla(306, 58%, 86%, 0.6) 34%, hsla(282, 59%, 74%, 0.6) 100%);
+    }
+  }
+  &-graph {
+    & ~ div {
+      background: hsla(306, 58%, 86%, 1);
+      background: linear-gradient(45deg, hsla(306, 58%, 86%, 0.5) 34%, hsla(282, 59%, 74%, 0.5) 40%);
+      background: -moz-linear-gradient(45deg, hsla(306, 58%, 86%, 0.5) 34%, hsla(282, 59%, 74%, 0.5) 100%);
+      background: -webkit-linear-gradient(45deg, hsla(306, 58%, 86%, 0.6) 34%, hsla(282, 59%, 74%, 0.6) 100%);
+    }
+  }
+}
+
+
+
+@keyframes changeNavbarGradient {
+	0% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0% 50%;
+	}
+}

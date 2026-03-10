@@ -1,0 +1,51 @@
+.line_chart {
+  position: relative;
+  padding-left: 40px;
+  padding-bottom: 40px;
+}
+
+.line_chart_svg {
+  fill: none;
+  stroke: red;
+  display: block;
+  background-color: gray;
+  stroke-width: 2px;
+  border-left: 1px solid black;
+  border-bottom: 2px solid black;
+}
+
+.x_axis {
+  position: absolute;
+  height: 40px;
+  flex-direction: row;
+  display: flex;
+  width: inherit;
+  justify-content: space-between;
+
+  & > div::after {
+    margin-top: 4px;
+    display: inline-block;
+    content: attr(data-value);
+    color: black;
+  }
+}
+
+.y_axis {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  bottom: 1px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+
+
+  & > div::after {
+    margin-top: 4px;
+    display: inline-block;
+    content: attr(data-value);
+    color: black;
+  }
+}

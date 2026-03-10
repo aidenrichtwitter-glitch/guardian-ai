@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ChevronRight, ChevronDown, FileCode, Folder, FolderOpen,
-  Plus, Trash2, FolderOpen as FolderOpenIcon, RefreshCw, Loader2, X, GitBranch, Pencil
+  Plus, Trash2, FolderOpen as FolderOpenIcon, RefreshCw, Loader2, X, GitBranch, Pencil, Copy, Check
 } from 'lucide-react';
 import {
   listProjects, createProject, deleteProject, getProjectFiles,
@@ -25,6 +25,7 @@ const FileNode: React.FC<{
   onEdit?: (path: string, content: string) => void;
 }> = ({ node, depth, projectName, selectedFile, onSelect, onEdit }) => {
   const [expanded, setExpanded] = useState(depth < 2);
+  const [copied, setCopied] = useState(false);
   const isDir = node.type === 'directory';
   const isSelected = node.path === selectedFile;
 
@@ -45,12 +46,10 @@ const FileNode: React.FC<{
     <div
       className="group/filerow"
       onMouseEnter={(e) => {
-        const editBtn = e.currentTarget.querySelector('[data-edit-btn]') as HTMLElement;
-        if (editBtn) editBtn.style.visibility = 'visible';
+        e.currentTarget.querySelectorAll<HTMLElement>('[data-file-action]').forEach(el => el.style.visibility = 'visible');
       }}
       onMouseLeave={(e) => {
-        const editBtn = e.currentTarget.querySelector('[data-edit-btn]') as HTMLElement;
-        if (editBtn) editBtn.style.visibility = 'hidden';
+        e.currentTarget.querySelectorAll<HTMLElement>('[data-file-action]').forEach(el => el.style.visibility = 'hidden');
       }}
     >
       <button
@@ -73,9 +72,31 @@ const FileNode: React.FC<{
           </>
         )}
         <span className="truncate flex-1">{node.name}</span>
+        {!isDir && (
+          <span
+            data-file-action
+            data-testid={`button-copy-file-${node.path}`}
+            role="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                const content = await readProjectFile(projectName, node.path);
+                const formatted = `// file: ${node.path}\n${content}`;
+                await navigator.clipboard.writeText(formatted);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              } catch {}
+            }}
+            className="p-0.5 hover:text-primary transition-all shrink-0"
+            style={{ visibility: copied ? 'visible' : 'hidden' }}
+            title="Copy file contents"
+          >
+            {copied ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
+          </span>
+        )}
         {!isDir && onEdit && (
           <span
-            data-edit-btn
+            data-file-action
             data-testid={`button-edit-file-${node.path}`}
             role="button"
             onClick={async (e) => {
