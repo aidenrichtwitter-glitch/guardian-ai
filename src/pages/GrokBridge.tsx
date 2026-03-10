@@ -181,10 +181,43 @@ function extractContextSections(fullText: string): string[] {
 }
 
 function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activeProject, onGithubImport, toasterConfig, toasterAvailable }: { onApply: (filePath: string, code: string) => void; onApplyAll?: (blocks: { filePath: string; code: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void; activeProject?: string | null; onGithubImport?: (url: string) => void; toasterConfig?: OllamaToasterConfig; toasterAvailable?: boolean }) {
+  type ProjectExtractorState = {
+    blocks: ExtractedBlock[];
+    detectedDeps: { dependencies: string[]; devDependencies: string[] };
+    actionItems: ActionItem[];
+    responseContext: string;
+    contextSections: string[];
+    lastClipboard: string;
+    ollamaCleaned: boolean;
+    ollamaResult: string | null;
+    detectedGithubUrls: { owner: string; repo: string; fullUrl: string }[];
+  };
+  const emptyState: ProjectExtractorState = {
+    blocks: [],
+    detectedDeps: { dependencies: [], devDependencies: [] },
+    actionItems: [],
+    responseContext: '',
+    contextSections: [],
+    lastClipboard: '',
+    ollamaCleaned: false,
+    ollamaResult: null,
+    detectedGithubUrls: [],
+  };
+  const projectStatesRef = useRef<Map<string, ProjectExtractorState>>(new Map());
+  const currentProjectKey = activeProject || '__no_project__';
+
+  const getProjectState = useCallback((): ProjectExtractorState => {
+    return projectStatesRef.current.get(currentProjectKey) || { ...emptyState };
+  }, [currentProjectKey]);
+
+  const saveProjectState = useCallback((patch: Partial<ProjectExtractorState>) => {
+    const current = projectStatesRef.current.get(currentProjectKey) || { ...emptyState };
+    projectStatesRef.current.set(currentProjectKey, { ...current, ...patch });
+  }, [currentProjectKey]);
+
   const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
   const [detectedDeps, setDetectedDeps] = useState<{ dependencies: string[]; devDependencies: string[] }>({ dependencies: [], devDependencies: [] });
   const [depsInstalling, setDepsInstalling] = useState(false);
-  const [depsInstalled, setDepsInstalled] = useState(false);
   const [depsError, setDepsError] = useState<string | null>(null);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [programsInstalling, setProgramsInstalling] = useState(false);
@@ -206,6 +239,37 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
   const [detectedGithubUrls, setDetectedGithubUrls] = useState<{ owner: string; repo: string; fullUrl: string }[]>([]);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const extractorContentRef = useRef<HTMLDivElement>(null);
+  const prevProjectKeyRef = useRef(currentProjectKey);
+
+  useEffect(() => {
+    if (prevProjectKeyRef.current !== currentProjectKey) {
+      const prevKey = prevProjectKeyRef.current;
+      const prevState = projectStatesRef.current.get(prevKey) || { ...emptyState };
+      projectStatesRef.current.set(prevKey, {
+        ...prevState,
+        blocks, detectedDeps, actionItems, responseContext, contextSections,
+        lastClipboard, ollamaCleaned, ollamaResult, detectedGithubUrls,
+      });
+      prevProjectKeyRef.current = currentProjectKey;
+      const restored = getProjectState();
+      setBlocks(restored.blocks);
+      setDetectedDeps(restored.detectedDeps);
+      setActionItems(restored.actionItems);
+      setResponseContext(restored.responseContext);
+      setContextSections(restored.contextSections);
+      setLastClipboard(restored.lastClipboard);
+      setOllamaCleaned(restored.ollamaCleaned);
+      setOllamaResult(restored.ollamaResult);
+      setDetectedGithubUrls(restored.detectedGithubUrls);
+      setDepsInstalling(false);
+      setDepsError(null);
+      setProgramResults(null);
+      setRunningCommands(new Set());
+      setCommandResults(new Map());
+      setOllamaProcessing(false);
+      setOllamaError(null);
+    }
+  }, [currentProjectKey]);
 
   const applyParsedBlocks = useCallback((text: string, parsed: { filePath: string; code: string; language: string }[], wasOllamaCleaned: boolean) => {
     const newBlocks: ExtractedBlock[] = parsed.map(b => ({
@@ -312,9 +376,10 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
 
   const apply = (block: ExtractedBlock) => {
     onApply(block.filePath, block.code);
-    if (!isElectron) {
-      setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
-    }
+    setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
+    setTimeout(() => {
+      setBlocks(prev => prev.filter(b => b.id !== block.id));
+    }, 1500);
   };
 
   const installDeps = async () => {
@@ -323,7 +388,6 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
     if (allDeps.length === 0) return;
     setDepsInstalling(true);
     setDepsError(null);
-    setDepsInstalled(false);
     try {
       const res = await fetch('/api/projects/install-deps', {
         method: 'POST',
@@ -341,8 +405,9 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
       if (data.success === false) {
         throw new Error(data.errors?.join('; ') || 'Some packages failed to install');
       }
-      setDepsInstalled(true);
-      setTimeout(() => setDepsInstalled(false), 5000);
+      setTimeout(() => {
+        setDetectedDeps({ dependencies: [], devDependencies: [] });
+      }, 2000);
     } catch (err: any) {
       setDepsError(err.message || 'Install failed');
       setTimeout(() => setDepsError(null), 6000);
@@ -411,10 +476,11 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
               } else {
                 applyable.forEach(b => onApply(b.filePath, b.code));
               }
-              if (!isElectron) {
-                const ids = new Set(applyable.map(b => b.id));
-                setBlocks(prev => prev.map(b => ids.has(b.id) ? { ...b, applied: true } : b));
-              }
+              const ids = new Set(applyable.map(b => b.id));
+              setBlocks(prev => prev.map(b => ids.has(b.id) ? { ...b, applied: true } : b));
+              setTimeout(() => {
+                setBlocks(prev => prev.filter(b => !ids.has(b.id)));
+              }, 1500);
             }}
             data-testid="button-apply-toolbar"
             className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary/20 text-primary hover:bg-primary/30 text-[10px] font-bold transition-colors border border-primary/30"
@@ -431,12 +497,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
           </span>
         )}
         {(detectedDeps.dependencies.length > 0 || detectedDeps.devDependencies.length > 0) && (
-          depsInstalled ? (
-            <span className="text-[9px] text-[hsl(150_60%_55%)] ml-1 flex items-center gap-1 px-2 py-1 rounded bg-[hsl(150_60%_55%/0.15)] border border-[hsl(150_60%_55%/0.3)]" data-testid="text-deps-installed">
-              <Check className="w-2.5 h-2.5" />
-              Deps installed
-            </span>
-          ) : depsError ? (
+          depsError ? (
             <span className="text-[9px] text-red-400 ml-1 flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 border border-red-500/30" data-testid="text-deps-error">
               <X className="w-2.5 h-2.5" />
               {depsError}
@@ -480,7 +541,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
         ))}
         <div className="ml-auto flex items-center gap-2">
           {blocks.length > 0 && (
-            <button onClick={() => { setBlocks([]); setActionItems([]); setDetectedDeps({ dependencies: [], devDependencies: [] }); setDepsInstalled(false); setDepsError(null); setProgramResults(null); }} className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors">
+            <button onClick={() => { setBlocks([]); setActionItems([]); setDetectedDeps({ dependencies: [], devDependencies: [] }); setDepsError(null); setProgramResults(null); }} className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors">
               <X className="w-3 h-3" />
             </button>
           )}
@@ -572,7 +633,14 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                         if (!res.ok && !data.results) {
                           setProgramResults([{ program: 'all', label: 'All', installed: false, alreadyInstalled: false, error: data.error || `HTTP ${res.status}` }]);
                         } else {
-                          setProgramResults(data.results || []);
+                          const results = data.results || [];
+                        setProgramResults(results);
+                        setTimeout(() => {
+                          const successProgs = new Set(results.filter((r: any) => r.installed || r.alreadyInstalled).map((r: any) => r.program));
+                          if (successProgs.size > 0) {
+                            setActionItems(prev => prev.filter(a => !(a.type === 'install' && a.command && successProgs.has(a.command))));
+                          }
+                        }, 2000);
                         }
                       } catch (err: any) {
                         setProgramResults([{ program: 'all', label: 'All', installed: false, alreadyInstalled: false, error: err.message }]);
@@ -628,6 +696,13 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                                     });
                                     const result = await res.json();
                                     setCommandResults(prev => new Map(prev).set(i, result));
+                                    if (result.success) {
+                                      const itemDesc = item.description;
+                                      const itemCmd = item.command;
+                                      setTimeout(() => {
+                                        setActionItems(prev => prev.filter(a => !(a.description === itemDesc && a.command === itemCmd)));
+                                      }, 2000);
+                                    }
                                   } catch (err: any) {
                                     setCommandResults(prev => new Map(prev).set(i, { success: false, error: err.message }));
                                   } finally {
@@ -666,7 +741,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
           )}
 
           {blocks.map(block => (
-            <div key={block.id} className={`rounded-lg border overflow-hidden transition-colors ${block.applied ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-card/50'}`}>
+            <div key={block.id} className={`rounded-lg border overflow-hidden transition-all duration-500 ${block.applied ? 'border-primary/40 bg-primary/5 opacity-50 scale-[0.98]' : 'border-border/50 bg-card/50'}`}>
               <div className="px-3 py-1.5 flex items-center justify-between gap-2 border-b border-border/20">
                 <div className="flex items-center gap-2 min-w-0">
                   <Code2 className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -690,7 +765,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                   )}
                   {block.applied && (
                     <span className="flex items-center gap-1 text-[9px] text-primary font-medium">
-                      <Check className="w-2.5 h-2.5" /> Applied
+                      <Check className="w-2.5 h-2.5" /> Applied ✓
                     </span>
                   )}
                 </div>
