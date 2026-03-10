@@ -798,13 +798,9 @@ interface GrokDesktopBrowserProps {
   setBrowserUrl: (url: string) => void;
   customUrl: string;
   setCustomUrl: (url: string) => void;
-  onApply: (filePath: string, code: string) => void;
-  onApplyAll?: (blocks: { filePath: string; code: string }[]) => void;
-  onResponseCaptured?: (fullResponse: string) => void;
-  activeProject?: string | null;
 }
 
-function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl, onApply, onApplyAll, onResponseCaptured, activeProject }: GrokDesktopBrowserProps) {
+function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl }: GrokDesktopBrowserProps) {
   const webviewRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const initialUrlRef = useRef(browserUrl);
@@ -913,7 +909,6 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
             </div>
           </div>
         </div>
-        <ClipboardExtractor onApply={onApply} onApplyAll={onApplyAll} onResponseCaptured={onResponseCaptured} activeProject={activeProject} />
       </div>
     );
   }
@@ -972,7 +967,6 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
         )}
       </div>
 
-      <ClipboardExtractor onApply={onApply} onApplyAll={onApplyAll} onResponseCaptured={onResponseCaptured} activeProject={activeProject} />
     </div>
   );
 }
@@ -3110,359 +3104,311 @@ const GrokBridge: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Mode: Browser Chat (Grok Desktop webview) ── */}
-      {mode === 'browser' && (
+      {/* ── Unified Layout — Browser/API toggle only swaps main content area ── */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {showProjectPanel && (
+          <div className="w-52 border-r border-border/30 bg-card/30 shrink-0 overflow-auto">
+            <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} onFileEdit={handleFileEdit} />
+          </div>
+        )}
+        {editorFile && (
+          <div className="border-r border-border/30 flex flex-col" style={{ flex: '1 1 40%', minWidth: 0 }}>
+            <FileEditor
+              filePath={editorFile.path}
+              content={editorFile.content}
+              projectName={activeProject}
+              onSave={handleEditorSave}
+              onClose={handleEditorClose}
+              onSendToGrok={handleEditorSendToGrok}
+            />
+          </div>
+        )}
+
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          {showProjectPanel && (
-            <div className="w-52 border-r border-border/30 bg-card/30 shrink-0 overflow-auto">
-              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} onFileEdit={handleFileEdit} />
-            </div>
-          )}
-          {editorFile && (
-            <div className="border-r border-border/30 flex flex-col" style={{ flex: '1 1 40%', minWidth: 0 }}>
-              <FileEditor
-                filePath={editorFile.path}
-                content={editorFile.content}
-                projectName={activeProject}
-                onSave={handleEditorSave}
-                onClose={handleEditorClose}
-                onSendToGrok={handleEditorSendToGrok}
-              />
-            </div>
-          )}
-          <div className="flex-1 flex min-h-0 overflow-hidden">
-            <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden" style={showPreviewEmbed && previewPort ? { flex: '1 1 50%' } : undefined}>
-              <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
-              {activeProject && quickActions.length > 0 && (
-                <div className="shrink-0 border-t border-border/30 bg-card/30 px-3 py-1.5 flex items-center gap-1.5 flex-wrap" data-testid="quick-actions-browser">
-                  <Wand2 className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                  {quickActions.map(action => {
-                    const iconMap: Record<string, React.ReactNode> = {
-                      AlertTriangle: <AlertTriangle className="w-3 h-3" />,
-                      Moon: <Moon className="w-3 h-3" />,
-                      Lock: <Lock className="w-3 h-3" />,
-                      Palette: <Palette className="w-3 h-3" />,
-                      Smartphone: <Smartphone className="w-3 h-3" />,
-                      TestTube: <TestTube2 className="w-3 h-3" />,
-                      Gauge: <Gauge className="w-3 h-3" />,
-                      Zap: <Zap className="w-3 h-3" />,
-                      Sparkles: <Sparkles className="w-3 h-3" />,
-                    };
-                    const categoryColors: Record<string, string> = {
-                      fix: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20',
-                      enhance: 'bg-[hsl(200_60%_50%/0.1)] text-[hsl(200_60%_60%)] border-[hsl(200_60%_50%/0.2)] hover:bg-[hsl(200_60%_50%/0.2)]',
-                      add: 'bg-[hsl(150_60%_50%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_50%/0.2)] hover:bg-[hsl(150_60%_50%/0.2)]',
-                      optimize: 'bg-[hsl(280_60%_50%/0.1)] text-[hsl(280_60%_65%)] border-[hsl(280_60%_50%/0.2)] hover:bg-[hsl(280_60%_50%/0.2)]',
-                    };
-                    return (
-                      <button
-                        key={action.id}
-                        data-testid={`button-quick-action-browser-${action.id}`}
-                        onClick={async () => {
-                          try {
-                            if (isElectron) {
-                              const { clipboard } = (window as any).require('electron');
-                              clipboard.writeText(action.prompt);
-                            } else {
-                              await navigator.clipboard.writeText(action.prompt);
-                            }
-                            setStatusMessage(`Copied "${action.label}" prompt to clipboard — paste into Grok`);
-                          } catch {
-                            setStatusMessage(`Could not copy prompt to clipboard`);
+          {/* Main content area — switches between Browser and API */}
+          <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden" style={showPreviewEmbed && previewPort ? { flex: '1 1 50%' } : undefined}>
+            {mode === 'browser' && (
+              <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} />
+            )}
+
+            {mode === 'api' && (
+              <div className="flex-1 flex min-h-0 overflow-hidden">
+                {/* Conversations sidebar */}
+                <div className="w-48 border-r border-border/30 bg-card/30 flex flex-col shrink-0">
+                  <div className="p-2 border-b border-border/30">
+                    <button onClick={newConversation} className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors">
+                      + New Chat
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
+                    {conversations.map(c => (
+                      <div
+                        key={c.id}
+                        className={`group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors text-[10px] ${
+                          c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
+                        }`}
+                        onClick={() => switchConversation(c.id)}
+                      >
+                        <span className="flex-1 truncate">{c.title}</span>
+                        <button onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {conversations.length === 0 && (
+                      <p className="text-[9px] text-muted-foreground/40 text-center py-4">No conversations yet</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Chat area */}
+                <div className="flex-1 flex flex-col min-w-0">
+                  {/* Model picker header */}
+                  <div className="shrink-0 border-b border-border/30 bg-card/30 px-4 py-2 flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground/50">Grok API — direct streaming</span>
+                    <div className="relative">
+                      <button onClick={() => setShowModelPicker(!showModelPicker)} className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors">
+                        {selectedModel.name} <ChevronDown className="w-3 h-3" />
+                      </button>
+                      {showModelPicker && (
+                        <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                          {MODELS.map(m => (
+                            <button key={m.id} onClick={() => { setModel(m.id); setShowModelPicker(false); }} className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'}`}>
+                              <div><div className="font-medium">{m.name}</div><div className="text-[9px] text-muted-foreground">{m.desc}</div></div>
+                              {m.id === model && <Check className="w-3 h-3 text-primary" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Messages */}
+                  <div className="flex-1 overflow-auto p-5 space-y-4">
+                    {messages.length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
+                        <Bot className="w-10 h-10 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm text-muted-foreground">Chat with Grok via API</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">Code blocks are auto-validated and one-click applied</p>
+                          <p className="text-[9px] text-muted-foreground/40 mt-2">{selectedModel.name} — {selectedModel.desc}</p>
+                        </div>
+                      </div>
+                    )}
+                    {messages.map((msg, i) => renderMessage(msg, i))}
+                    {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+                      <div className="flex gap-3">
+                        <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                          <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
+                        </div>
+                        <div className="text-xs text-muted-foreground">Thinking...</div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Input */}
+                  <div className="shrink-0 border-t border-border/50 bg-card/50 p-4">
+                    {knowledgeMatches.length > 0 && messages.length === 0 && (
+                      <div className="mb-2 px-3 py-1.5 rounded bg-[hsl(280_60%_50%/0.1)] border border-[hsl(280_60%_50%/0.25)] flex items-center gap-2 flex-wrap" data-testid="indicator-built-before">
+                        <Dna className="w-3.5 h-3.5 text-[hsl(280_60%_65%)] shrink-0" />
+                        <span className="text-[10px] text-[hsl(280_60%_65%)] font-medium" data-testid="text-built-before-count">
+                          Similar apps have been built {knowledgeMatches.reduce((sum, m) => sum + (m.entry.stars || 0), 0) || knowledgeMatches.length} time{knowledgeMatches.length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="text-[9px] text-[hsl(280_60%_65%/0.7)]">
+                          Grok will pick the best starting point
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex gap-3 items-end">
+                      <textarea
+                        ref={inputRef}
+                        value={input}
+                        onChange={e => {
+                          setInput(e.target.value);
+                          if (messages.length === 0 && e.target.value.trim().length > 3) {
+                            const matches = searchKnowledge(e.target.value.trim());
+                            setKnowledgeMatches(matches);
+                          } else if (e.target.value.trim().length <= 3) {
+                            setKnowledgeMatches([]);
                           }
                         }}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border transition-colors ${categoryColors[action.category] || categoryColors.enhance}`}
-                      >
-                        {iconMap[action.icon] || <Sparkles className="w-3 h-3" />}
-                        {action.label}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask Grok to modify code... (Enter to send)"
+                        rows={1}
+                        className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
+                        style={{ height: 'auto', overflow: 'hidden' }}
+                        onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 128) + 'px'; }}
+                      />
+                      <button onClick={sendMessage} disabled={!input.trim() || isLoading} className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0">
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       </button>
-                    );
-                  })}
-                  {quickActionsLoading && <Loader2 className="w-3 h-3 text-muted-foreground/40 animate-spin" />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quick actions — shared across both modes */}
+            {activeProject && quickActions.length > 0 && (
+              <div className="shrink-0 border-t border-border/30 bg-card/30 px-3 py-1.5 flex items-center gap-1.5 flex-wrap" data-testid="quick-actions">
+                <Wand2 className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                {quickActions.map(action => {
+                  const iconMap: Record<string, React.ReactNode> = {
+                    AlertTriangle: <AlertTriangle className="w-3 h-3" />,
+                    Moon: <Moon className="w-3 h-3" />,
+                    Lock: <Lock className="w-3 h-3" />,
+                    Palette: <Palette className="w-3 h-3" />,
+                    Smartphone: <Smartphone className="w-3 h-3" />,
+                    TestTube: <TestTube2 className="w-3 h-3" />,
+                    Gauge: <Gauge className="w-3 h-3" />,
+                    Zap: <Zap className="w-3 h-3" />,
+                    Sparkles: <Sparkles className="w-3 h-3" />,
+                  };
+                  const categoryColors: Record<string, string> = {
+                    fix: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20',
+                    enhance: 'bg-[hsl(200_60%_50%/0.1)] text-[hsl(200_60%_60%)] border-[hsl(200_60%_50%/0.2)] hover:bg-[hsl(200_60%_50%/0.2)]',
+                    add: 'bg-[hsl(150_60%_50%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_50%/0.2)] hover:bg-[hsl(150_60%_50%/0.2)]',
+                    optimize: 'bg-[hsl(280_60%_50%/0.1)] text-[hsl(280_60%_65%)] border-[hsl(280_60%_50%/0.2)] hover:bg-[hsl(280_60%_50%/0.2)]',
+                  };
+                  return (
+                    <button
+                      key={action.id}
+                      data-testid={`button-quick-action-${action.id}`}
+                      onClick={() => {
+                        if (mode === 'api') {
+                          setInput(action.prompt);
+                        } else {
+                          (async () => {
+                            try {
+                              if (isElectron) {
+                                const { clipboard } = (window as any).require('electron');
+                                clipboard.writeText(action.prompt);
+                              } else {
+                                await navigator.clipboard.writeText(action.prompt);
+                              }
+                              setStatusMessage(`Copied "${action.label}" prompt to clipboard — paste into Grok`);
+                            } catch {
+                              setStatusMessage(`Could not copy prompt to clipboard`);
+                            }
+                          })();
+                        }
+                      }}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border transition-colors ${categoryColors[action.category] || categoryColors.enhance}`}
+                    >
+                      {iconMap[action.icon] || <Sparkles className="w-3 h-3" />}
+                      {action.label}
+                    </button>
+                  );
+                })}
+                {quickActionsLoading && <Loader2 className="w-3 h-3 text-muted-foreground/40 animate-spin" />}
+                <button
+                  data-testid="button-refresh-quick-actions"
+                  onClick={refreshQuickActions}
+                  disabled={quickActionsLoading}
+                  className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                  title="Refresh suggestions"
+                >
+                  <RefreshCw className={`w-3 h-3 ${quickActionsLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            )}
+
+            {/* Code extractor — shared across both modes */}
+            <ClipboardExtractor onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+          </div>
+
+          {/* Preview panel — shared across both modes */}
+          {showPreviewEmbed && previewPort && (
+            <div className="border-l border-border/30 flex flex-col" style={{ flex: '1 1 50%' }}>
+              <div className="flex items-center gap-2 px-2 py-1 bg-card/50 border-b border-border/30 shrink-0">
+                <Monitor className="w-3 h-3 text-[hsl(150_60%_55%)]" />
+                <span className="text-[10px] font-medium text-foreground/80">{activeProject} Preview</span>
+                <span className="text-[9px] text-muted-foreground/50">:{previewPort}</span>
+                <div className="ml-auto flex items-center gap-1">
                   <button
-                    data-testid="button-refresh-quick-actions-browser"
-                    onClick={refreshQuickActions}
-                    disabled={quickActionsLoading}
-                    className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                    title="Refresh suggestions"
+                    data-testid="button-refresh-preview-panel"
+                    onClick={() => setPreviewKey(k => k + 1)}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-[hsl(200_60%_40%/0.15)] text-[hsl(200_60%_55%)] hover:bg-[hsl(200_60%_40%/0.25)] transition-colors"
                   >
-                    <RefreshCw className={`w-3 h-3 ${quickActionsLoading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                  <button
+                    data-testid="button-close-preview-panel"
+                    onClick={() => setShowPreviewEmbed(false)}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              {showDiagnoseBanner && (
+                <div className={`shrink-0 px-3 py-2 border-b flex items-center gap-3 flex-wrap ${
+                  diagnoseStuck
+                    ? 'bg-amber-500/10 border-amber-500/30'
+                    : 'bg-destructive/10 border-destructive/30'
+                }`} data-testid="banner-diagnose-fix">
+                  <AlertCircle className={`w-4 h-4 shrink-0 ${diagnoseStuck ? 'text-amber-400' : 'text-destructive'}`} />
+                  {diagnoseStuck ? (
+                    <>
+                      <span className="text-[11px] text-amber-400 font-medium" data-testid="text-diagnose-stuck">
+                        Stuck — {diagnoseFixCycleCount} fix cycles without success. Try describing the issue manually or revert changes.
+                      </span>
+                      <button
+                        data-testid="button-diagnose-reset"
+                        onClick={dismissDiagnoseBanner}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors border border-amber-500/30 font-medium"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Reset Cycles
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-destructive font-medium" data-testid="text-diagnose-errors-detected">
+                        Errors detected after applying changes
+                      </span>
+                      <button
+                        data-testid="button-diagnose-fix"
+                        onClick={handleDiagnoseFix}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors border border-destructive/30 font-bold"
+                      >
+                        <Zap className="w-3 h-3" /> Diagnose & Fix
+                      </button>
+                      {diagnoseFixCycleCount > 0 && (
+                        <span className="text-[9px] text-muted-foreground/60" data-testid="text-diagnose-cycle-count">
+                          Cycle {diagnoseFixCycleCount}/3
+                        </span>
+                      )}
+                    </>
+                  )}
+                  <button
+                    data-testid="button-dismiss-diagnose"
+                    onClick={dismissDiagnoseBanner}
+                    className="ml-auto p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    <X className="w-3 h-3" />
                   </button>
                 </div>
               )}
-            </div>
-            {showPreviewEmbed && previewPort && (
-              <div className="border-l border-border/30 flex flex-col" style={{ flex: '1 1 50%' }}>
-                <div className="flex items-center gap-2 px-2 py-1 bg-card/50 border-b border-border/30 shrink-0">
-                  <Monitor className="w-3 h-3 text-[hsl(150_60%_55%)]" />
-                  <span className="text-[10px] font-medium text-foreground/80">{activeProject} Preview</span>
-                  <span className="text-[9px] text-muted-foreground/50">:{previewPort}</span>
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      data-testid="button-refresh-preview-panel"
-                      onClick={() => setPreviewKey(k => k + 1)}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-[hsl(200_60%_40%/0.15)] text-[hsl(200_60%_55%)] hover:bg-[hsl(200_60%_40%/0.25)] transition-colors"
-                    >
-                      <RefreshCw className="w-3 h-3" /> Refresh
-                    </button>
-                    <button
-                      data-testid="button-close-preview-panel"
-                      onClick={() => setShowPreviewEmbed(false)}
-                      className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-                {showDiagnoseBanner && (
-                  <div className={`shrink-0 px-3 py-2 border-b flex items-center gap-3 flex-wrap ${
-                    diagnoseStuck
-                      ? 'bg-amber-500/10 border-amber-500/30'
-                      : 'bg-destructive/10 border-destructive/30'
-                  }`} data-testid="banner-diagnose-fix">
-                    <AlertCircle className={`w-4 h-4 shrink-0 ${diagnoseStuck ? 'text-amber-400' : 'text-destructive'}`} />
-                    {diagnoseStuck ? (
-                      <>
-                        <span className="text-[11px] text-amber-400 font-medium" data-testid="text-diagnose-stuck">
-                          Stuck — {diagnoseFixCycleCount} fix cycles without success. Try describing the issue manually or revert changes.
-                        </span>
-                        <button
-                          data-testid="button-diagnose-reset"
-                          onClick={dismissDiagnoseBanner}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors border border-amber-500/30 font-medium"
-                        >
-                          <RefreshCw className="w-3 h-3" /> Reset Cycles
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-[11px] text-destructive font-medium" data-testid="text-diagnose-errors-detected">
-                          Errors detected after applying changes
-                        </span>
-                        <button
-                          data-testid="button-diagnose-fix"
-                          onClick={handleDiagnoseFix}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors border border-destructive/30 font-bold"
-                        >
-                          <Zap className="w-3 h-3" /> Diagnose & Fix
-                        </button>
-                        {diagnoseFixCycleCount > 0 && (
-                          <span className="text-[9px] text-muted-foreground/60" data-testid="text-diagnose-cycle-count">
-                            Cycle {diagnoseFixCycleCount}/3
-                          </span>
-                        )}
-                      </>
-                    )}
-                    <button
-                      data-testid="button-dismiss-diagnose"
-                      onClick={dismissDiagnoseBanner}
-                      className="ml-auto p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-                <iframe
-                  ref={previewIframeRef}
-                  key={previewKey}
-                  src={`http://localhost:${previewPort}`}
-                  data-testid="iframe-preview"
-                  className="flex-1 w-full border-0 bg-white"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                  title={`${activeProject} preview`}
-                />
-                <LogsPanel
-                  logs={previewLogs}
-                  onClearLogs={clearPreviewLogs}
-                  onSendLogsToGrok={handleSendLogsToGrok}
-                  activeProject={activeProject}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Mode: API Chat ── */}
-      {mode === 'api' && (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          {showProjectPanel && (
-            <div className="w-52 border-r border-border/30 bg-card/30 shrink-0 overflow-auto">
-              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} onFileEdit={handleFileEdit} />
-            </div>
-          )}
-          {editorFile && (
-            <div className="border-r border-border/30 flex flex-col" style={{ flex: '1 1 40%', minWidth: 0 }}>
-              <FileEditor
-                filePath={editorFile.path}
-                content={editorFile.content}
-                projectName={activeProject}
-                onSave={handleEditorSave}
-                onClose={handleEditorClose}
-                onSendToGrok={handleEditorSendToGrok}
+              <iframe
+                ref={previewIframeRef}
+                key={previewKey}
+                src={`http://localhost:${previewPort}`}
+                data-testid="iframe-preview"
+                className="flex-1 w-full border-0 bg-white"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                title={`${activeProject} preview`}
+              />
+              <LogsPanel
+                logs={previewLogs}
+                onClearLogs={clearPreviewLogs}
+                onSendLogsToGrok={handleSendLogsToGrok}
+                activeProject={activeProject}
               />
             </div>
           )}
-          {/* Conversations sidebar */}
-          <div className="w-52 border-r border-border/30 bg-card/30 flex flex-col shrink-0">
-            <div className="p-2 border-b border-border/30">
-              <button onClick={newConversation} className="w-full px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-medium transition-colors">
-                + New Chat
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-1.5 space-y-0.5">
-              {conversations.map(c => (
-                <div
-                  key={c.id}
-                  className={`group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors text-[10px] ${
-                    c.id === activeConvoId ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary/50'
-                  }`}
-                  onClick={() => switchConversation(c.id)}
-                >
-                  <span className="flex-1 truncate">{c.title}</span>
-                  <button onClick={(e) => { e.stopPropagation(); deleteConversation(c.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
-                    <Trash2 className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
-              {conversations.length === 0 && (
-                <p className="text-[9px] text-muted-foreground/40 text-center py-4">No conversations yet</p>
-              )}
-            </div>
-          </div>
-
-          {/* Chat area */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Model picker header */}
-            <div className="shrink-0 border-b border-border/30 bg-card/30 px-4 py-2 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground/50">Grok API — direct streaming</span>
-              <div className="relative">
-                <button onClick={() => setShowModelPicker(!showModelPicker)} className="flex items-center gap-1 px-2 py-1 rounded bg-secondary/50 hover:bg-secondary/80 text-[10px] text-muted-foreground transition-colors">
-                  {selectedModel.name} <ChevronDown className="w-3 h-3" />
-                </button>
-                {showModelPicker && (
-                  <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border/50 rounded-lg shadow-xl z-50 overflow-hidden">
-                    {MODELS.map(m => (
-                      <button key={m.id} onClick={() => { setModel(m.id); setShowModelPicker(false); }} className={`w-full text-left px-3 py-2 text-[10px] transition-colors flex items-center justify-between ${m.id === model ? 'bg-primary/10 text-primary' : 'text-foreground/70 hover:bg-secondary/50'}`}>
-                        <div><div className="font-medium">{m.name}</div><div className="text-[9px] text-muted-foreground">{m.desc}</div></div>
-                        {m.id === model && <Check className="w-3 h-3 text-primary" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div className="flex-1 overflow-auto p-5 space-y-4">
-              {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-                  <Bot className="w-10 h-10 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Chat with Grok via API</p>
-                    <p className="text-[10px] text-muted-foreground/60 mt-1">Code blocks are auto-validated and one-click applied</p>
-                    <p className="text-[9px] text-muted-foreground/40 mt-2">{selectedModel.name} — {selectedModel.desc}</p>
-                  </div>
-                </div>
-              )}
-              {messages.map((msg, i) => renderMessage(msg, i))}
-              {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
-                    <Loader2 className="w-3.5 h-3.5 text-accent-foreground animate-spin" />
-                  </div>
-                  <div className="text-xs text-muted-foreground">Thinking...</div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input */}
-            <div className="shrink-0 border-t border-border/50 bg-card/50 p-4">
-              {knowledgeMatches.length > 0 && messages.length === 0 && (
-                <div className="mb-2 px-3 py-1.5 rounded bg-[hsl(280_60%_50%/0.1)] border border-[hsl(280_60%_50%/0.25)] flex items-center gap-2 flex-wrap" data-testid="indicator-built-before">
-                  <Dna className="w-3.5 h-3.5 text-[hsl(280_60%_65%)] shrink-0" />
-                  <span className="text-[10px] text-[hsl(280_60%_65%)] font-medium" data-testid="text-built-before-count">
-                    Similar apps have been built {knowledgeMatches.reduce((sum, m) => sum + (m.entry.stars || 0), 0) || knowledgeMatches.length} time{knowledgeMatches.length !== 1 ? 's' : ''}
-                  </span>
-                  <span className="text-[9px] text-[hsl(280_60%_65%/0.7)]">
-                    Grok will pick the best starting point
-                  </span>
-                </div>
-              )}
-              <div className="flex gap-3 items-end">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => {
-                    setInput(e.target.value);
-                    if (messages.length === 0 && e.target.value.trim().length > 3) {
-                      const matches = searchKnowledge(e.target.value.trim());
-                      setKnowledgeMatches(matches);
-                    } else if (e.target.value.trim().length <= 3) {
-                      setKnowledgeMatches([]);
-                    }
-                  }}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask Grok to modify code... (Enter to send)"
-                  rows={1}
-                  className="flex-1 bg-background border border-border/50 rounded-lg px-4 py-3 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30 font-mono min-h-[44px] max-h-32"
-                  style={{ height: 'auto', overflow: 'hidden' }}
-                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 128) + 'px'; }}
-                />
-                <button onClick={sendMessage} disabled={!input.trim() || isLoading} className="px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 shrink-0">
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
-              </div>
-              {activeProject && quickActions.length > 0 && (
-                <div className="mt-2 flex items-center gap-1.5 flex-wrap" data-testid="quick-actions-api">
-                  <Wand2 className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                  {quickActions.map(action => {
-                    const iconMap: Record<string, React.ReactNode> = {
-                      AlertTriangle: <AlertTriangle className="w-3 h-3" />,
-                      Moon: <Moon className="w-3 h-3" />,
-                      Lock: <Lock className="w-3 h-3" />,
-                      Palette: <Palette className="w-3 h-3" />,
-                      Smartphone: <Smartphone className="w-3 h-3" />,
-                      TestTube: <TestTube2 className="w-3 h-3" />,
-                      Gauge: <Gauge className="w-3 h-3" />,
-                      Zap: <Zap className="w-3 h-3" />,
-                      Sparkles: <Sparkles className="w-3 h-3" />,
-                    };
-                    const categoryColors: Record<string, string> = {
-                      fix: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20',
-                      enhance: 'bg-[hsl(200_60%_50%/0.1)] text-[hsl(200_60%_60%)] border-[hsl(200_60%_50%/0.2)] hover:bg-[hsl(200_60%_50%/0.2)]',
-                      add: 'bg-[hsl(150_60%_50%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_50%/0.2)] hover:bg-[hsl(150_60%_50%/0.2)]',
-                      optimize: 'bg-[hsl(280_60%_50%/0.1)] text-[hsl(280_60%_65%)] border-[hsl(280_60%_50%/0.2)] hover:bg-[hsl(280_60%_50%/0.2)]',
-                    };
-                    return (
-                      <button
-                        key={action.id}
-                        data-testid={`button-quick-action-${action.id}`}
-                        onClick={() => setInput(action.prompt)}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border transition-colors ${categoryColors[action.category] || categoryColors.enhance}`}
-                      >
-                        {iconMap[action.icon] || <Sparkles className="w-3 h-3" />}
-                        {action.label}
-                      </button>
-                    );
-                  })}
-                  {quickActionsLoading && <Loader2 className="w-3 h-3 text-muted-foreground/40 animate-spin" />}
-                  <button
-                    data-testid="button-refresh-quick-actions"
-                    onClick={refreshQuickActions}
-                    disabled={quickActionsLoading}
-                    className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                    title="Refresh suggestions"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${quickActionsLoading ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
