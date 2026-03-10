@@ -172,6 +172,18 @@ const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSele
     }
   }, [activeProject, fetchFileTree]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const projectName = (e as CustomEvent)?.detail?.projectName || activeProject;
+      if (projectName) {
+        fetchProjects();
+        fetchFileTree(projectName);
+      }
+    };
+    window.addEventListener('guardian-refresh-files', handler);
+    return () => window.removeEventListener('guardian-refresh-files', handler);
+  }, [activeProject, fetchProjects, fetchFileTree]);
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -196,6 +208,7 @@ const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSele
       }, activeProject || undefined);
       await fetchProjects();
       onSelectProject(result.projectName);
+      fetchFileTree(result.projectName);
       setShowImport(false);
       setImportUrl('');
       setImportProgress(null);

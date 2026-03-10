@@ -196,29 +196,25 @@ function projectManagementPlugin(): Plugin {
 
           const SKIP_DIRS = new Set(["node_modules", ".cache", "dist", ".git", ".next", ".nuxt", ".turbo", ".vercel", ".output", ".svelte-kit", "__pycache__", ".parcel-cache"]);
           function walkDir(dir: string, base: string): any[] {
-            let entries: any[];
+            let names: string[];
             try {
-              entries = fs.readdirSync(dir, { withFileTypes: true });
+              names = fs.readdirSync(dir);
             } catch {
               return [];
             }
             const result: any[] = [];
-            for (const entry of entries) {
-              if (entry.name === ".DS_Store") continue;
-              const relPath = base ? base + "/" + entry.name : entry.name;
+            for (const name of names) {
+              if (name === ".DS_Store") continue;
+              const fullPath = path.join(dir, name);
+              const relPath = base ? base + "/" + name : name;
               try {
-                let isDir = false;
-                try { isDir = entry.isDirectory(); } catch { continue; }
-                if (isDir) {
-                  if (SKIP_DIRS.has(entry.name)) continue;
-                  const children = walkDir(path.join(dir, entry.name), relPath);
-                  result.push({ name: entry.name, path: relPath, type: "directory", children });
-                } else {
-                  let isFile = false;
-                  try { isFile = entry.isFile(); } catch { isFile = false; }
-                  if (isFile) {
-                    result.push({ name: entry.name, path: relPath, type: "file" });
-                  }
+                const stat = fs.lstatSync(fullPath);
+                if (stat.isDirectory()) {
+                  if (SKIP_DIRS.has(name)) continue;
+                  const children = walkDir(fullPath, relPath);
+                  result.push({ name, path: relPath, type: "directory", children });
+                } else if (stat.isFile()) {
+                  result.push({ name, path: relPath, type: "file" });
                 }
               } catch {}
             }

@@ -1561,6 +1561,7 @@ const GrokBridge: React.FC = () => {
         repoName: result.projectName,
       });
       handleSelectProject(result.projectName);
+      window.dispatchEvent(new CustomEvent('guardian-refresh-files', { detail: { projectName: result.projectName } }));
       setTimeout(() => setGithubImportProgress(null), 4000);
     } catch (e: any) {
       setGithubImportProgress({ stage: 'error', message: e.message || 'Import failed' });
