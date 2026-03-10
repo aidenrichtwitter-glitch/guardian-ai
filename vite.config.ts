@@ -479,6 +479,8 @@ function projectManagementPlugin(): Plugin {
           const isNextDev = devCmd.args.includes("next");
           if (isNextDev) {
             portEnv.HOSTNAME = "0.0.0.0";
+            const nextLockPath = path.join(projectDir, ".next", "dev", "lock");
+            try { if (fs.existsSync(nextLockPath)) { fs.unlinkSync(nextLockPath); console.log(`[Preview] Removed stale .next/dev/lock for ${name}`); } } catch {}
           }
 
           const child = spawn(devCmd.cmd, devCmd.args, {
