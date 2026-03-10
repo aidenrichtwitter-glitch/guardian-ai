@@ -231,8 +231,10 @@ export function parseActionItems(text: string): ActionItem[] {
     for (const line of cmdBlock.split('\n')) {
       const trimmed = line.replace(/^\$\s*/, '').trim();
       if (trimmed && !trimmed.startsWith('#')) {
+        const DEV_SERVER_RE = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
         if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(trimmed)) {
-        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:run|start|test|build|dev)\b/i.test(trimmed)) {
+        } else if (DEV_SERVER_RE.test(trimmed)) {
+        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:run|test|build)\b/i.test(trimmed)) {
           addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
         } else if (/^npx\s+/i.test(trimmed)) {
           addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
@@ -280,8 +282,9 @@ export function parseActionItems(text: string): ActionItem[] {
     const runMatch = line.match(/(?:^[-*•]\s*)?(?:run|execute|type|enter)\s+`([^`]+)`/i);
     if (runMatch) {
       const cmd = runMatch[1];
+      const DEV_CMD = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
       if (/^(?:npm|yarn|pnpm|bun|npx|node|python|pip|cargo|go)\s/i.test(cmd)) {
-        if (!/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(cmd)) {
+        if (!/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(cmd) && !DEV_CMD.test(cmd)) {
           addItem({ type: 'command', description: `Run: ${cmd}`, command: cmd }, lineStart);
         }
       }

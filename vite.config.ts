@@ -530,6 +530,8 @@ function projectManagementPlugin(): Plugin {
 
           const allowedPrefixes = ["npm install", "npm run", "npm update", "npm ci", "npx ", "yarn ", "pnpm ", "node ", "tsc", "mkdir ", "cp ", "mv "];
           const trimmed = command.trim();
+          const devServerRe = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
+          if (devServerRe.test(trimmed)) { res.statusCode = 400; res.end(JSON.stringify({ error: "Dev server commands should use the Preview button instead" })); return; }
           const isAllowed = allowedPrefixes.some(p => trimmed.startsWith(p)) || trimmed === "npm install";
           if (!isAllowed) { res.statusCode = 403; res.end(JSON.stringify({ error: `Command not allowed: ${trimmed.slice(0, 50)}` })); return; }
           if (/[;&|`$(){}]/.test(trimmed) && !trimmed.includes("--legacy-peer-deps")) {
@@ -540,11 +542,19 @@ function projectManagementPlugin(): Plugin {
           const projectDir = check.resolved;
           if (!fs.existsSync(projectDir)) { res.statusCode = 404; res.end(JSON.stringify({ success: false, error: `Project directory not found: ${projectDir}` })); return; }
 
-          const { execSync } = await import("child_process");
+          const { exec: execAsync } = await import("child_process");
           const actualCmd = trimmed === "npm install" ? "npm install --legacy-peer-deps" : trimmed;
-          const output = execSync(actualCmd, { cwd: projectDir, timeout: 120000, stdio: "pipe", shell: true, encoding: "utf-8" });
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ success: true, output: (output || "").slice(0, 4000) }));
+          await new Promise<void>((resolve) => {
+            execAsync(actualCmd, { cwd: projectDir, timeout: 60000, shell: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+              res.setHeader("Content-Type", "application/json");
+              if (err) {
+                res.end(JSON.stringify({ success: false, error: err.message?.slice(0, 500), output: (stdout || "").slice(0, 4000), stderr: (stderr || "").slice(0, 2000) }));
+              } else {
+                res.end(JSON.stringify({ success: true, output: (stdout || "").slice(0, 4000) }));
+              }
+              resolve();
+            });
+          });
         } catch (err: any) {
           const stderr = err.stderr ? String(err.stderr).slice(0, 2000) : "";
           const stdout = err.stdout ? String(err.stdout).slice(0, 2000) : "";
