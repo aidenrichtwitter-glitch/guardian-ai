@@ -698,12 +698,12 @@ function setupIpcHandlers() {
     const check = isPathSafe(filePath);
     if (!check.safe) return { success: false, error: check.error };
     return new Promise((resolve) => {
-      execFile('git', ['add', '--', filePath], { cwd: projectRoot, timeout: 10000 }, (addErr, _addOut, addStderr) => {
+      execFile('git', ['add', '--', filePath], { cwd: projectRoot, timeout: 10000, windowsHide: true }, (addErr, _addOut, addStderr) => {
         if (addErr) {
           resolve({ success: false, error: addStderr || addErr.message });
           return;
         }
-        execFile('git', ['commit', '-m', message], { cwd: projectRoot, timeout: 10000 }, (commitErr, commitOut, commitStderr) => {
+        execFile('git', ['commit', '-m', message], { cwd: projectRoot, timeout: 10000, windowsHide: true }, (commitErr, commitOut, commitStderr) => {
           if (commitErr) {
             resolve({ success: false, error: commitStderr || commitErr.message });
           } else {
@@ -723,7 +723,7 @@ function setupIpcHandlers() {
           const check = isPathSafe(filePath);
           if (!check.safe) { resolve({ hasErrors: false, errorText: '' }); return; }
           const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-          execFile(npxCmd, ['tsc', '--noEmit', '--pretty', 'false', check.resolved], { cwd: projectRoot, timeout: 15000 }, (error, stdout, stderr) => {
+          execFile(npxCmd, ['tsc', '--noEmit', '--pretty', 'false', check.resolved], { cwd: projectRoot, timeout: 15000, windowsHide: true }, (error, stdout, stderr) => {
             const output = (stdout || '') + (stderr || '');
             if (error && output.includes('error TS')) {
               resolve({ hasErrors: true, errorText: output.slice(0, 2000) });
@@ -743,7 +743,7 @@ function setupIpcHandlers() {
       setTimeout(() => {
         const projectRoot = getProjectRoot();
         const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-        execFile(npxCmd, ['tsc', '--noEmit', '--pretty', 'false'], { cwd: projectRoot, timeout: 30000 }, (error, stdout, stderr) => {
+        execFile(npxCmd, ['tsc', '--noEmit', '--pretty', 'false'], { cwd: projectRoot, timeout: 30000, windowsHide: true }, (error, stdout, stderr) => {
           const output = (stdout || '') + (stderr || '');
           if (error && output.includes('error TS')) {
             resolve({ hasErrors: true, errorText: output.slice(0, 4000) });
@@ -784,7 +784,7 @@ function setupIpcHandlers() {
     const projectRoot = getProjectRoot();
     const n = Math.min(Math.max(count || 5, 1), 20);
     return new Promise((resolve) => {
-      execFile('git', ['log', `--max-count=${n}`, '--oneline', '--no-decorate'], { cwd: projectRoot, timeout: 5000 }, (err, stdout) => {
+      execFile('git', ['log', `--max-count=${n}`, '--oneline', '--no-decorate'], { cwd: projectRoot, timeout: 5000, windowsHide: true }, (err, stdout) => {
         if (err) resolve({ success: false, error: err.message, log: '' });
         else resolve({ success: true, log: stdout.trim() });
       });
@@ -859,9 +859,9 @@ function setupIpcHandlers() {
     const safePaths = filePaths.filter(fp => isPathSafe(fp).safe);
     if (safePaths.length === 0) return { success: false, error: 'No safe paths to commit' };
     return new Promise((resolve) => {
-      execFile('git', ['add', '--', ...safePaths], { cwd: projectRoot, timeout: 10000 }, (addErr, _out, addStderr) => {
+      execFile('git', ['add', '--', ...safePaths], { cwd: projectRoot, timeout: 10000, windowsHide: true }, (addErr, _out, addStderr) => {
         if (addErr) { resolve({ success: false, error: addStderr || addErr.message }); return; }
-        execFile('git', ['commit', '-m', message], { cwd: projectRoot, timeout: 10000 }, (commitErr, commitOut, commitStderr) => {
+        execFile('git', ['commit', '-m', message], { cwd: projectRoot, timeout: 10000, windowsHide: true }, (commitErr, commitOut, commitStderr) => {
           if (commitErr) resolve({ success: false, error: commitStderr || commitErr.message });
           else resolve({ success: true, output: commitOut });
         });
@@ -886,6 +886,7 @@ function setupIpcHandlers() {
         cwd: projectRoot,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
+        windowsHide: true,
       });
 
       return new Promise((resolve) => {
@@ -918,7 +919,7 @@ function setupIpcHandlers() {
     const projectRoot = getProjectRoot();
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     return new Promise((resolve) => {
-      execFile(npmCmd, ['install'], { cwd: projectRoot, timeout: 60000 }, (err, stdout, stderr) => {
+      execFile(npmCmd, ['install'], { cwd: projectRoot, timeout: 60000, windowsHide: true }, (err, stdout, stderr) => {
         if (err) resolve({ success: false, error: stderr || err.message });
         else resolve({ success: true, output: stdout });
       });
@@ -966,7 +967,7 @@ function setupIpcHandlers() {
           if (winKey) {
             const altCmd = WIN_NPM_ALTERNATIVES[winKey];
             return new Promise((resolve) => {
-              exec(altCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+              exec(altCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
                 if (err) {
                   resolve({ success: false, error: `${err.message?.slice(0, 400)} (ran: ${altCmd})`, output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
                 } else {
@@ -984,7 +985,7 @@ function setupIpcHandlers() {
             const psCmd = `irm ${ps1Url} | iex`;
             const encodedCmd = Buffer.from(psCmd, 'utf16le').toString('base64');
             return new Promise((resolve) => {
-              exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+              exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
                 if (err) {
                   resolve({ success: false, error: err.message?.slice(0, 500), output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
                 } else {
@@ -1001,7 +1002,7 @@ function setupIpcHandlers() {
         const tmpScript = path.join(os.tmpdir(), `install-${Date.now()}.sh`);
         fs.writeFileSync(tmpScript, script, { mode: 0o755 });
         return new Promise((resolve) => {
-          exec(`bash "${tmpScript}"`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, BUN_INSTALL: projectDir, CARGO_HOME: projectDir, RUSTUP_HOME: projectDir } }, (err, stdout, stderr) => {
+          exec(`bash "${tmpScript}"`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true, env: { ...process.env, BUN_INSTALL: projectDir, CARGO_HOME: projectDir, RUSTUP_HOME: projectDir } }, (err, stdout, stderr) => {
             try { fs.unlinkSync(tmpScript); } catch {}
             if (err) {
               resolve({ success: false, error: err.message?.slice(0, 500), output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
@@ -1103,7 +1104,7 @@ function setupIpcHandlers() {
     }
 
     return new Promise((resolve) => {
-      exec(actualCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      exec(actualCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
         if (err) {
           resolve({ success: false, error: err.message?.slice(0, 500), output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
         } else {
@@ -1171,7 +1172,7 @@ function setupIpcHandlers() {
     if (safeDeps.length > 0) {
       try {
         const { execFileSync } = require('child_process');
-        execFileSync(npmCmd, ['install', '--legacy-peer-deps', ...safeDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe' });
+        execFileSync(npmCmd, ['install', '--legacy-peer-deps', ...safeDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe', windowsHide: true });
         results.push(`Installed: ${safeDeps.join(', ')}`);
       } catch (err) {
         errors.push(`Failed to install deps: ${err.message}`);
@@ -1181,7 +1182,7 @@ function setupIpcHandlers() {
     if (safeDevDeps.length > 0) {
       try {
         const { execFileSync } = require('child_process');
-        execFileSync(npmCmd, ['install', '--legacy-peer-deps', '--save-dev', ...safeDevDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe' });
+        execFileSync(npmCmd, ['install', '--legacy-peer-deps', '--save-dev', ...safeDevDeps], { cwd: projectDir, timeout: 60000, stdio: 'pipe', windowsHide: true });
         results.push(`Installed dev: ${safeDevDeps.join(', ')}`);
       } catch (err) {
         errors.push(`Failed to install dev deps: ${err.message}`);

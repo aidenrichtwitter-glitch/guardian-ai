@@ -309,28 +309,36 @@ function projectManagementPlugin(): Plugin {
           if (portInUse) {
             console.log(`[Preview] Port ${port} still in use — killing`);
             try {
-              const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
-              const portHex = port.toString(16).toUpperCase().padStart(4, "0");
-              const lines = netTcp.split("\n").filter(l => l.includes(`:${portHex} `) && l.includes("0A"));
-              for (const line of lines) {
-                const cols = line.trim().split(/\s+/);
-                const inode = cols[9];
-                if (!inode || inode === "0") continue;
-                const procDirs = fs.readdirSync("/proc").filter((d: string) => /^\d+$/.test(d));
-                for (const pid of procDirs) {
-                  try {
-                    const fds = fs.readdirSync(`/proc/${pid}/fd`);
-                    for (const fd of fds) {
-                      try {
-                        const link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
-                        if (link === `socket:[${inode}]`) {
-                          console.log(`[Preview] Killing PID ${pid} on port ${port}`);
-                          try { process.kill(-parseInt(pid), 9); } catch {}
-                          try { process.kill(parseInt(pid), 9); } catch {}
-                        }
-                      } catch {}
-                    }
-                  } catch {}
+              if (process.platform === "win32") {
+                try {
+                  const out = execSync(`netstat -ano | findstr :${port}`, { stdio: "pipe", encoding: "utf-8" });
+                  const pids = new Set(out.split("\n").map((l: string) => l.trim().split(/\s+/).pop()).filter((p: any) => p && /^\d+$/.test(p) && p !== "0"));
+                  for (const pid of pids) { console.log(`[Preview] Killing PID ${pid} on port ${port}`); try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: "pipe" }); } catch {} }
+                } catch {}
+              } else {
+                const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
+                const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+                const lines = netTcp.split("\n").filter(l => l.includes(`:${portHex} `) && l.includes("0A"));
+                for (const line of lines) {
+                  const cols = line.trim().split(/\s+/);
+                  const inode = cols[9];
+                  if (!inode || inode === "0") continue;
+                  const procDirs = fs.readdirSync("/proc").filter((d: string) => /^\d+$/.test(d));
+                  for (const pid of procDirs) {
+                    try {
+                      const fds = fs.readdirSync(`/proc/${pid}/fd`);
+                      for (const fd of fds) {
+                        try {
+                          const link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
+                          if (link === `socket:[${inode}]`) {
+                            console.log(`[Preview] Killing PID ${pid} on port ${port}`);
+                            try { process.kill(-parseInt(pid), 9); } catch {}
+                            try { process.kill(parseInt(pid), 9); } catch {}
+                          }
+                        } catch {}
+                      }
+                    } catch {}
+                  }
                 }
               }
             } catch (e: any) { console.log(`[Preview] Port cleanup error: ${e.message}`); }
@@ -665,14 +673,16 @@ function projectManagementPlugin(): Plugin {
             try { if (fs.existsSync(nextLockPath)) { fs.unlinkSync(nextLockPath); console.log(`[Preview] Removed stale .next/dev/lock for ${name}`); } } catch {}
           }
 
+          const isWin = process.platform === "win32";
           const child = spawn(devCmd.cmd, devCmd.args, {
             cwd: projectDir,
             stdio: "pipe",
             shell: true,
-            detached: true,
+            detached: !isWin,
+            windowsHide: true,
             env: portEnv,
           });
-          child.unref();
+          if (!isWin) child.unref();
 
           let startupOutput = "";
           let serverReady = false;
@@ -859,11 +869,13 @@ function projectManagementPlugin(): Plugin {
           const restartCmd = restartDetect();
           console.log(`[Preview] Restarting ${name} with: ${restartCmd.cmd} ${restartCmd.args.join(" ")}`);
 
+          const isWinR = process.platform === "win32";
           const child = spawn(restartCmd.cmd, restartCmd.args, {
             cwd: projectDir,
             stdio: "pipe",
             shell: true,
-            detached: true,
+            detached: !isWinR,
+            windowsHide: true,
             env: {
               ...process.env,
               BROWSER: "none",
@@ -874,7 +886,7 @@ function projectManagementPlugin(): Plugin {
               ...(restartCmd.args.some((a: string) => ["webpack", "webpack-dev-server", "vue-cli-service", "react-scripts"].includes(a)) ? { NODE_OPTIONS: (process.env.NODE_OPTIONS || "") + " --openssl-legacy-provider" } : {}),
             },
           });
-          child.unref();
+          if (!isWinR) child.unref();
 
           previewProcesses.set(name, { process: child, port: oldPort });
 
@@ -1576,11 +1588,24 @@ function projectManagementPlugin(): Plugin {
           const entry = previewProcesses.get(name);
           if (entry) {
             const pid = entry.process.pid;
-            try { process.kill(-pid, 9); } catch {}
+            if (process.platform === "win32") {
+              try { const { execSync } = await import("child_process"); execSync(`taskkill /pid ${pid} /T /F`, { stdio: "pipe" }); } catch {}
+            } else {
+              try { process.kill(-pid, 9); } catch {}
+            }
             try { entry.process.kill("SIGKILL"); } catch {}
             try {
               const fs = await import("fs");
               const killPort = async (port: number) => {
+                if (process.platform === "win32") {
+                  try {
+                    const { execSync } = await import("child_process");
+                    const out = execSync(`netstat -ano | findstr :${port}`, { stdio: "pipe", encoding: "utf-8" });
+                    const pids = new Set(out.split("\n").map((l: string) => l.trim().split(/\s+/).pop()).filter((p: any) => p && /^\d+$/.test(p)));
+                    for (const p of pids) { try { execSync(`taskkill /pid ${p} /T /F`, { stdio: "pipe" }); } catch {} }
+                  } catch {}
+                  return;
+                }
                 const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
                 const portHex = port.toString(16).toUpperCase().padStart(4, "0");
                 const lines = netTcp.split("\n").filter((l: string) => l.includes(`:${portHex} `));
