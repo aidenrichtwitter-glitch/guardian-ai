@@ -998,7 +998,12 @@ function setupIpcHandlers() {
 
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const validPkg = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
-    const sanitize = (arr) => (arr || []).filter(d => typeof d === 'string' && validPkg.test(d) && !/[;&|`$(){}]/.test(d));
+    const notAPkg = new Set(["npm","npx","yarn","pnpm","bun","node","deno","run","dev","start","build","test","serve","watch","lint","deploy","preview","install","add","remove","uninstall","update","init","create","cd","ls","mkdir","rm","cp","mv","cat","echo","touch","git","curl","wget","then","and","or","the","a","an","to","in","of","for","with","from","your","this","that","it","is","are","was","be","has","have","do","does","if","not","no","yes","on","off","up","so","but","by","at","as","server","app","application","project","file","directory","folder","next","first","following","above","below","after","before","all","any","each","every","both","new","old"]);
+    const sanitize = (arr) => (arr || []).filter(d => {
+      if (typeof d !== 'string' || !validPkg.test(d) || /[;&|`$(){}]/.test(d)) return false;
+      const base = d.replace(/@[^\s]*$/, '').toLowerCase();
+      return !notAPkg.has(base) && (base.length > 1 || d.startsWith('@'));
+    });
     const safeDeps = sanitize(dependencies);
     const safeDevDeps = sanitize(devDependencies);
     const results = [];

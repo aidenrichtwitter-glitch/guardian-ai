@@ -484,35 +484,39 @@ function projectManagementPlugin(): Plugin {
           }
 
           const results: string[] = [];
-          const { execSync } = await import("child_process");
+          const { exec: execAsync } = await import("child_process");
           const validPkg = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
-          const safeDeps = (dependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
-          const safeDevDeps = (devDependencies || []).filter((d: string) => validPkg.test(d) && !/[;&|`$(){}]/.test(d));
+          const notAPkg = new Set(["npm","npx","yarn","pnpm","bun","node","deno","run","dev","start","build","test","serve","watch","lint","deploy","preview","install","add","remove","uninstall","update","init","create","cd","ls","mkdir","rm","cp","mv","cat","echo","touch","git","curl","wget","then","and","or","the","a","an","to","in","of","for","with","from","your","this","that","it","is","are","was","be","has","have","do","does","if","not","no","yes","on","off","up","so","but","by","at","as","server","app","application","project","file","directory","folder","next","first","following","above","below","after","before","all","any","each","every","both","new","old"]);
+          const filterPkgs = (arr: string[]) => (arr || []).filter((d: string) => {
+            if (!validPkg.test(d) || /[;&|`$(){}]/.test(d)) return false;
+            const base = d.replace(/@[^\s]*$/, '').toLowerCase();
+            return !notAPkg.has(base) && (base.length > 1 || d.startsWith('@'));
+          });
+          const safeDeps = filterPkgs(dependencies || []);
+          const safeDevDeps = filterPkgs(devDependencies || []);
 
           const errors: string[] = [];
+          const runInstall = (cmd: string): Promise<void> => new Promise((resolve) => {
+            execAsync(cmd, { cwd: projectDir, timeout: 60000, shell: true, maxBuffer: 1024 * 1024 }, (err, _stdout, _stderr) => {
+              if (err) errors.push(`Failed: ${err.message?.slice(0, 300)}`);
+              resolve();
+            });
+          });
 
           if (safeDeps.length > 0) {
-            try {
-              execSync(`npm install --legacy-peer-deps ${safeDeps.join(" ")}`, { cwd: projectDir, timeout: 60000, stdio: "pipe", shell: true });
-              results.push(`Installed: ${safeDeps.join(", ")}`);
-            } catch (err: any) {
-              errors.push(`Failed to install deps: ${err.message}`);
-            }
+            await runInstall(`npm install --legacy-peer-deps ${safeDeps.join(" ")}`);
+            if (errors.length === 0) results.push(`Installed: ${safeDeps.join(", ")}`);
           }
 
           if (safeDevDeps.length > 0) {
-            try {
-              execSync(`npm install --legacy-peer-deps --save-dev ${safeDevDeps.join(" ")}`, { cwd: projectDir, timeout: 60000, stdio: "pipe", shell: true });
-              results.push(`Installed dev: ${safeDevDeps.join(", ")}`);
-            } catch (err: any) {
-              errors.push(`Failed to install dev deps: ${err.message}`);
-            }
+            const prevErrors = errors.length;
+            await runInstall(`npm install --legacy-peer-deps --save-dev ${safeDevDeps.join(" ")}`);
+            if (errors.length === prevErrors) results.push(`Installed dev: ${safeDevDeps.join(", ")}`);
           }
 
           res.setHeader("Content-Type", "application/json");
           const success = errors.length === 0;
           res.end(JSON.stringify({ success, results, errors }));
-          if (!success) { res.statusCode = 200; }
         } catch (err: any) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: err.message }));

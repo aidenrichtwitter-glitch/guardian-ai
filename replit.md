@@ -130,9 +130,16 @@ supabase/
 
 ## Dependency Auto-Install
 - When Grok's response includes a `=== DEPENDENCIES ===` block or `npm install` commands in bash code blocks, the app auto-detects packages
-- `parseDependencies()` in `code-parser.ts` extracts package names with sanitization (validates against npm naming regex, blocks shell metacharacters)
+- `parseDependencies()` in `code-parser.ts` extracts package names with multi-layer sanitization:
+  - Validates against npm naming regex (must start with letter/number, no trailing dots)
+  - Blocks shell metacharacters
+  - Rejects known non-packages via `NOT_A_PACKAGE` blocklist (CLI tools, common English words, npm subcommands like "run"/"dev"/"start")
+  - Rejects single-character names (unless scoped like `@x/y`)
+  - Prose extraction stops at sentence boundaries (backticks, punctuation, connectives like "then"/"and"/"or")
+- Dev server commands (`npm run dev`, `npm start`, `npx vite`) are filtered out at the parser level and rejected by the backend
 - On "Apply All" for an active project, detected deps are installed via `/api/projects/install-deps` (Vite) or `install-project-deps` IPC (Electron)
-- Both endpoints use `execFileSync` with arg arrays (no shell interpolation) for security
+- Both frontend and backend apply the same `NOT_A_PACKAGE` blocklist independently for defense-in-depth
+- Backend uses async `exec` (non-blocking) instead of `execSync` to avoid freezing the Vite server thread
 - Context instructions and evolution instructions tell Grok to use the structured format
 
 ## Development

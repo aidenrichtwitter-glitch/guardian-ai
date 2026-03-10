@@ -15,12 +15,28 @@ export interface ActionItem {
   command?: string;
 }
 
-const VALID_PKG_NAME = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[^\s]*)?$/;
+const VALID_PKG_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[^\s]*)?$/;
+
+const NOT_A_PACKAGE = new Set([
+  'npm', 'npx', 'yarn', 'pnpm', 'bun', 'node', 'deno',
+  'run', 'dev', 'start', 'build', 'test', 'serve', 'watch', 'lint', 'deploy', 'preview',
+  'install', 'add', 'remove', 'uninstall', 'update', 'init', 'create',
+  'cd', 'ls', 'mkdir', 'rm', 'cp', 'mv', 'cat', 'echo', 'touch', 'git', 'curl', 'wget',
+  'then', 'and', 'or', 'the', 'a', 'an', 'to', 'in', 'of', 'for', 'with', 'from',
+  'your', 'this', 'that', 'it', 'is', 'are', 'was', 'be', 'has', 'have', 'do', 'does',
+  'if', 'not', 'no', 'yes', 'on', 'off', 'up', 'so', 'but', 'by', 'at', 'as',
+  'server', 'app', 'application', 'project', 'file', 'directory', 'folder',
+  'next', 'first', 'following', 'above', 'below', 'after', 'before',
+  'all', 'any', 'each', 'every', 'both', 'new', 'old',
+]);
 
 function sanitizePackageName(name: string): string | null {
   const trimmed = name.trim();
   if (!trimmed || !VALID_PKG_NAME.test(trimmed)) return null;
   if (/[;&|`$(){}]/.test(trimmed)) return null;
+  const baseName = trimmed.replace(/@[^\s]*$/, '');
+  if (NOT_A_PACKAGE.has(baseName.toLowerCase())) return null;
+  if (baseName.length <= 1 && !trimmed.startsWith('@')) return null;
   return trimmed;
 }
 
@@ -93,19 +109,22 @@ export function parseDependencies(text: string): ParsedDependencies {
     }
   }
 
-  const proseInstall = normalized.match(/(?:^|\n)[^\n]*(?:npm\s+install|npm\s+i|yarn\s+add|pnpm\s+add|bun\s+add)\s+([\w@/._ -]+)/gi);
-  if (proseInstall) {
-    for (const match of proseInstall) {
-      const pkgPart = match.replace(/.*(?:npm\s+install|yarn\s+add|pnpm\s+add|bun\s+add)\s+/i, '');
-      const isDev = /--save-dev|-D/.test(pkgPart);
-      const tokens = pkgPart.replace(/--save-dev|-D|--save/g, '').trim().split(/\s+/);
-      for (const t of tokens) {
-        if (t.startsWith('-')) continue;
-        const safe = sanitizePackageName(t);
-        if (safe) {
-          if (isDev) devDeps.push(safe);
-          else deps.push(safe);
-        }
+  const proseInstallRe = /(?:npm\s+install|npm\s+i|yarn\s+add|pnpm\s+add|bun\s+add)\s+/gi;
+  let proseM;
+  while ((proseM = proseInstallRe.exec(normalized)) !== null) {
+    const afterCmd = normalized.slice(proseM.index + proseM[0].length);
+    const lineEnd = afterCmd.indexOf('\n');
+    const rest = lineEnd >= 0 ? afterCmd.slice(0, lineEnd) : afterCmd;
+    const cutAtSentence = rest.split(/[`'",.;:!?]|\s+(?:then|and|or|but|after|before|next|to|into|the|your|this|that|with|from|so)\s/i)[0];
+    const isDev = /--save-dev|-D/.test(cutAtSentence);
+    const tokens = cutAtSentence.replace(/--save-dev|-D|--save|--legacy-peer-deps|--force/g, '').trim().split(/\s+/);
+    for (const t of tokens) {
+      if (!t || t.startsWith('-')) continue;
+      const cleaned = t.replace(/[.,;:!?]+$/, '');
+      const safe = sanitizePackageName(cleaned);
+      if (safe) {
+        if (isDev) devDeps.push(safe);
+        else deps.push(safe);
       }
     }
   }
