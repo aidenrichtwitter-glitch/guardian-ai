@@ -951,17 +951,57 @@ function setupIpcHandlers() {
         const projectRoot = getProjectRoot();
         const projectDir = path.join(projectRoot, 'projects', projectName);
         if (!fs.existsSync(projectDir)) return { success: false, error: 'Project not found' };
+        const isWin = process.platform === 'win32';
+
+        const WIN_NPM_ALTERNATIVES = {
+          'bun.sh/install': 'npm install -g bun',
+          'get.pnpm.io/install.sh': 'npm install -g pnpm',
+          'install.python-poetry.org': 'pip install poetry',
+          'rustup.rs': 'winget install Rustlang.Rustup',
+          'deno.land/install.sh': 'npm install -g deno',
+        };
+
+        if (isWin) {
+          const winKey = Object.keys(WIN_NPM_ALTERNATIVES).find(k => scriptUrl.includes(k));
+          if (winKey) {
+            const altCmd = WIN_NPM_ALTERNATIVES[winKey];
+            return new Promise((resolve) => {
+              exec(altCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+                if (err) {
+                  resolve({ success: false, error: `${err.message?.slice(0, 400)} (ran: ${altCmd})`, output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
+                } else {
+                  resolve({ success: true, output: `Windows alternative: ${altCmd}\n${(stdout || '').slice(0, 4000)}` });
+                }
+              });
+            });
+          }
+
+          const ps1Url = scriptUrl.replace(/\.sh$/, '.ps1');
+          let usePsScript = false;
+          try { const head = await fetch(ps1Url, { method: 'HEAD' }); usePsScript = head.ok; } catch {}
+
+          if (usePsScript) {
+            const psCmd = `irm ${ps1Url} | iex`;
+            const encodedCmd = Buffer.from(psCmd, 'utf16le').toString('base64');
+            return new Promise((resolve) => {
+              exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+                if (err) {
+                  resolve({ success: false, error: err.message?.slice(0, 500), output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
+                } else {
+                  resolve({ success: true, output: (stdout || '').slice(0, 4000) });
+                }
+              });
+            });
+          }
+        }
+
         const resp = await fetch(scriptUrl);
         if (!resp.ok) return { success: false, error: `Failed to download script: ${resp.status} ${resp.statusText}` };
         const script = await resp.text();
         const tmpScript = path.join(os.tmpdir(), `install-${Date.now()}.sh`);
         fs.writeFileSync(tmpScript, script, { mode: 0o755 });
-        const isWin = process.platform === 'win32';
-        const shellCmd = isWin
-          ? `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpScript}"`
-          : `bash "${tmpScript}"`;
         return new Promise((resolve) => {
-          exec(shellCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, BUN_INSTALL: projectDir, CARGO_HOME: projectDir, RUSTUP_HOME: projectDir } }, (err, stdout, stderr) => {
+          exec(`bash "${tmpScript}"`, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, BUN_INSTALL: projectDir, CARGO_HOME: projectDir, RUSTUP_HOME: projectDir } }, (err, stdout, stderr) => {
             try { fs.unlinkSync(tmpScript); } catch {}
             if (err) {
               resolve({ success: false, error: err.message?.slice(0, 500), output: (stdout || '').slice(0, 4000), stderr: (stderr || '').slice(0, 2000) });
