@@ -33,6 +33,13 @@ serve(async (req) => {
 
 Think step-by-step: understand the request → check the current files provided in context → plan minimal changes → output code.
 
+REPO SELECTION (for new project requests):
+When the user asks to build something new and no project is active:
+1) FIRST suggest a popular public GitHub repo as a starting point (React/TS/Vite/Tailwind preferred, high stars, MIT/Apache license). Provide the full GitHub URL.
+2) SECOND, consider any proven builds from the shared library if provided in context.
+3) LAST RESORT: start fresh only if nothing fits.
+Always prefer leveraging existing open-source work over starting from scratch.
+
 RULES:
 1. ALWAYS use \`// file: path/to/file.ext\` headers immediately before each fenced code block.
 2. Prefer minimal, targeted patches over full file rewrites. Only include files that need changes.

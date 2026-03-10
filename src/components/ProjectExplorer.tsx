@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ChevronRight, ChevronDown, FileCode, Folder, FolderOpen,
-  Plus, Trash2, FolderOpen as FolderOpenIcon, RefreshCw, Loader2, X, GitBranch
+  Plus, Trash2, FolderOpen as FolderOpenIcon, RefreshCw, Loader2, X, GitBranch, Pencil
 } from 'lucide-react';
 import {
   listProjects, createProject, deleteProject, getProjectFiles,
@@ -13,6 +13,7 @@ interface ProjectExplorerProps {
   activeProject: string | null;
   onSelectProject: (projectName: string | null) => void;
   onFileSelect?: (filePath: string, content: string) => void;
+  onFileEdit?: (filePath: string, content: string) => void;
 }
 
 const FileNode: React.FC<{
@@ -21,7 +22,8 @@ const FileNode: React.FC<{
   projectName: string;
   selectedFile: string | null;
   onSelect: (path: string, content: string) => void;
-}> = ({ node, depth, projectName, selectedFile, onSelect }) => {
+  onEdit?: (path: string, content: string) => void;
+}> = ({ node, depth, projectName, selectedFile, onSelect, onEdit }) => {
   const [expanded, setExpanded] = useState(depth < 2);
   const isDir = node.type === 'directory';
   const isSelected = node.path === selectedFile;
@@ -40,7 +42,17 @@ const FileNode: React.FC<{
   };
 
   return (
-    <div>
+    <div
+      className="group/filerow"
+      onMouseEnter={(e) => {
+        const editBtn = e.currentTarget.querySelector('[data-edit-btn]') as HTMLElement;
+        if (editBtn) editBtn.style.visibility = 'visible';
+      }}
+      onMouseLeave={(e) => {
+        const editBtn = e.currentTarget.querySelector('[data-edit-btn]') as HTMLElement;
+        if (editBtn) editBtn.style.visibility = 'hidden';
+      }}
+    >
       <button
         data-testid={`file-node-${node.path}`}
         className={`flex items-center gap-1.5 w-full px-2 py-0.5 text-left text-xs transition-colors hover:bg-muted/50 ${
@@ -60,16 +72,37 @@ const FileNode: React.FC<{
             <FileCode className="w-3.5 h-3.5 text-blue-400 shrink-0" />
           </>
         )}
-        <span className="truncate">{node.name}</span>
+        <span className="truncate flex-1">{node.name}</span>
+        {!isDir && onEdit && (
+          <span
+            data-edit-btn
+            data-testid={`button-edit-file-${node.path}`}
+            role="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                const content = await readProjectFile(projectName, node.path);
+                onEdit(node.path, content);
+              } catch {
+                onEdit(node.path, '');
+              }
+            }}
+            className="p-0.5 hover:text-primary transition-all shrink-0"
+            style={{ visibility: 'hidden' }}
+            title="Edit in Monaco editor"
+          >
+            <Pencil className="w-2.5 h-2.5" />
+          </span>
+        )}
       </button>
       {isDir && expanded && node.children?.map(child => (
-        <FileNode key={child.path} node={child} depth={depth + 1} projectName={projectName} selectedFile={selectedFile} onSelect={onSelect} />
+        <FileNode key={child.path} node={child} depth={depth + 1} projectName={projectName} selectedFile={selectedFile} onSelect={onSelect} onEdit={onEdit} />
       ))}
     </div>
   );
 };
 
-const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSelectProject, onFileSelect }) => {
+const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSelectProject, onFileSelect, onFileEdit }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [fileTree, setFileTree] = useState<ProjectFileNode[]>([]);
@@ -352,7 +385,7 @@ const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSele
               </div>
             ) : fileTree.length > 0 ? (
               fileTree.map(node => (
-                <FileNode key={node.path} node={node} depth={0} projectName={activeProject} selectedFile={selectedFile} onSelect={handleFileSelect} />
+                <FileNode key={node.path} node={node} depth={0} projectName={activeProject} selectedFile={selectedFile} onSelect={handleFileSelect} onEdit={onFileEdit} />
               ))
             ) : (
               <p className="text-[9px] text-muted-foreground/40 text-center py-3">No files yet</p>

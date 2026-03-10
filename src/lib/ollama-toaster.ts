@@ -174,7 +174,7 @@ export async function buildSmartContext(
       filesToInclude: fileTree.filter(f =>
         f === 'package.json' || f === 'tsconfig.json' || f === 'vite.config.ts' ||
         f === 'index.html' || f.endsWith('.tsx') || f.endsWith('.ts') || f.endsWith('.css')
-      ).slice(0, 20),
+      ).slice(0, 30),
       errorSummary: '',
       priority: 'medium',
     };
@@ -198,7 +198,7 @@ export async function buildSmartContext(
   return {
     usedOllama: true,
     analysis,
-    filesToInclude: validFiles.slice(0, 25),
+    filesToInclude: validFiles.slice(0, 30),
     errorSummary: analysis.error_summary,
     priority: analysis.priority,
   };
@@ -300,6 +300,185 @@ export function cleanedResponseToBlocks(cleaned: CleanedResponse): import('./cod
         language: extMap[ext] || 'typescript',
       };
     });
+}
+
+export interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+  prompt: string;
+  category: 'fix' | 'enhance' | 'add' | 'optimize';
+}
+
+export interface QuickActionsResult {
+  usedOllama: boolean;
+  actions: QuickAction[];
+}
+
+function heuristicQuickActions(
+  fileTree: string[],
+  packageJson: Record<string, any> | null,
+  errorCount: number,
+  cssContent: string,
+): QuickAction[] {
+  const actions: QuickAction[] = [];
+  const deps = { ...(packageJson?.dependencies || {}), ...(packageJson?.devDependencies || {}) };
+  const depNames = Object.keys(deps);
+  const hasTailwind = depNames.includes('tailwindcss') || fileTree.some(f => f.includes('tailwind.config'));
+  const hasTests = fileTree.some(f => f.includes('.test.') || f.includes('.spec.') || f.includes('__tests__'));
+  const hasAuth = depNames.some(d => d.includes('auth') || d.includes('clerk') || d.includes('next-auth') || d.includes('passport')) || fileTree.some(f => f.toLowerCase().includes('auth'));
+  const hasDarkMode = cssContent.includes('.dark') || cssContent.includes('dark:') || depNames.includes('next-themes');
+  const hasResponsive = cssContent.includes('md:') || cssContent.includes('lg:') || cssContent.includes('sm:') || cssContent.includes('@media');
+  const tsxFiles = fileTree.filter(f => f.endsWith('.tsx') || f.endsWith('.jsx'));
+  const cssFiles = fileTree.filter(f => f.endsWith('.css') || f.endsWith('.scss'));
+  const cssIsMinimal = cssFiles.length <= 1 && cssContent.length < 500;
+
+  if (errorCount > 0) {
+    actions.push({
+      id: 'fix-errors',
+      label: `Fix ${errorCount} error${errorCount > 1 ? 's' : ''}`,
+      icon: 'AlertTriangle',
+      prompt: `The app preview currently has ${errorCount} error${errorCount > 1 ? 's' : ''} in the console/build output. Please analyze the errors from the project context above and fix all issues. Return corrected code blocks for each affected file using the format:\n// file: path/to/file.tsx\n\`\`\`tsx\n// corrected content\n\`\`\``,
+      category: 'fix',
+    });
+  }
+
+  if (!hasDarkMode && hasTailwind) {
+    actions.push({
+      id: 'add-dark-mode',
+      label: 'Add dark mode',
+      icon: 'Moon',
+      prompt: `This project uses Tailwind CSS but has no dark mode support. Add dark mode toggle functionality:\n1. Configure darkMode: ["class"] in tailwind.config.ts if not already set\n2. Add CSS variables for dark theme in the main CSS file\n3. Create a ThemeProvider with localStorage persistence\n4. Add a dark mode toggle button component\n5. Update existing components to use dark: variants where needed\n\nCurrent project files: ${tsxFiles.slice(0, 10).join(', ')}\nReturn all changed files as code blocks.`,
+      category: 'add',
+    });
+  }
+
+  if (!hasAuth) {
+    actions.push({
+      id: 'add-auth',
+      label: 'Add authentication',
+      icon: 'Lock',
+      prompt: `This project has no authentication. Add a simple authentication system:\n1. Add a login/signup form component\n2. Add auth context/provider with state management\n3. Add protected route wrapper\n4. Add a user menu/avatar in the header\n\nKeep it lightweight — use localStorage for demo or integrate with the existing backend if one exists.\nCurrent project files: ${tsxFiles.slice(0, 10).join(', ')}\nReturn all changed files as code blocks.`,
+      category: 'add',
+    });
+  }
+
+  if (cssIsMinimal && !hasTailwind) {
+    actions.push({
+      id: 'improve-styling',
+      label: 'Improve styling',
+      icon: 'Palette',
+      prompt: `The project has minimal CSS styling (${cssFiles.length} CSS file${cssFiles.length !== 1 ? 's' : ''}, ~${cssContent.length} chars total). Significantly improve the visual design:\n1. Add a cohesive color scheme\n2. Improve spacing, typography, and layout\n3. Add hover/focus states for interactive elements\n4. Add transitions for smoother interactions\n\nCurrent component files: ${tsxFiles.slice(0, 10).join(', ')}\nReturn updated files with improved styling.`,
+      category: 'enhance',
+    });
+  }
+
+  if (!hasResponsive && tsxFiles.length > 0) {
+    actions.push({
+      id: 'add-responsive',
+      label: 'Add mobile responsiveness',
+      icon: 'Smartphone',
+      prompt: `This project lacks responsive design — no responsive breakpoint classes (sm:, md:, lg:) or @media queries detected. Make it mobile-friendly:\n1. Add responsive breakpoints to layouts\n2. Stack horizontal layouts vertically on small screens\n3. Adjust font sizes and spacing for mobile\n4. Ensure navigation works on mobile (hamburger menu if needed)\n\nFiles to update: ${tsxFiles.slice(0, 10).join(', ')}\nReturn all modified files as code blocks.`,
+      category: 'enhance',
+    });
+  }
+
+  if (!hasTests && tsxFiles.length > 0) {
+    actions.push({
+      id: 'add-tests',
+      label: 'Add tests',
+      icon: 'TestTube',
+      prompt: `This project has no test files. Add meaningful tests:\n1. Add unit tests for key utility functions\n2. Add component tests for main UI components\n3. Use vitest and @testing-library/react\n4. Cover at least the main page component and any critical business logic\n\nCurrent source files: ${tsxFiles.slice(0, 8).join(', ')}\nReturn test files with proper imports and assertions.`,
+      category: 'add',
+    });
+  }
+
+  if (tsxFiles.length > 5) {
+    actions.push({
+      id: 'optimize-performance',
+      label: 'Optimize performance',
+      icon: 'Gauge',
+      prompt: `Review this project for performance improvements:\n1. Add React.memo to components that receive stable props\n2. Use useMemo/useCallback where appropriate\n3. Add lazy loading for routes if using a router\n4. Optimize any large lists with virtualization if needed\n5. Check for unnecessary re-renders\n\nComponent files: ${tsxFiles.slice(0, 10).join(', ')}\nReturn optimized files with explanations.`,
+      category: 'optimize',
+    });
+  }
+
+  return actions.slice(0, 5);
+}
+
+export async function suggestQuickActions(
+  fileTree: string[],
+  packageJson: Record<string, any> | null,
+  errorCount: number,
+  cssContent: string,
+  config?: OllamaToasterConfig
+): Promise<QuickActionsResult> {
+  const heuristic = heuristicQuickActions(fileTree, packageJson, errorCount, cssContent);
+
+  const availability = await checkToasterAvailability(config);
+  if (!availability.available) {
+    return { usedOllama: false, actions: heuristic };
+  }
+
+  const tsxFiles = fileTree.filter(f => f.endsWith('.tsx') || f.endsWith('.jsx'));
+  const depsStr = packageJson ? Object.keys({ ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) }).join(', ') : 'unknown';
+
+  const prompt = `You are a project analyzer. Given a project's file tree and dependencies, suggest 3-5 high-impact quick actions the developer should take next.
+
+=== FILE TREE (${fileTree.length} files) ===
+${fileTree.slice(0, 60).join('\n')}
+${fileTree.length > 60 ? `... (${fileTree.length} total)` : ''}
+
+=== DEPENDENCIES ===
+${depsStr}
+
+=== CSS CONTENT SNIPPET ===
+${cssContent.slice(0, 1000)}
+
+=== ERROR COUNT ===
+${errorCount}
+
+Output ONLY valid JSON array of objects with this exact format, nothing else:
+[
+  {
+    "id": "unique-id",
+    "label": "Short button label (3-5 words)",
+    "icon": "LucideIconName",
+    "prompt": "Detailed prompt the developer should send to an AI assistant. Reference specific files from the tree. Be specific about what to change.",
+    "category": "fix|enhance|add|optimize"
+  }
+]
+
+Rules:
+- Suggest 3-5 actions only
+- Prioritize fixes if errors exist
+- Reference actual file paths from the tree
+- Each prompt should be detailed and actionable
+- Categories: "fix" for bugs/errors, "enhance" for improvements, "add" for new features, "optimize" for performance`;
+
+  try {
+    const response = await ollamaGenerate(prompt, config);
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return { usedOllama: true, actions: heuristic };
+
+    const parsed = JSON.parse(jsonMatch[0]) as QuickAction[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return { usedOllama: true, actions: heuristic };
+
+    const valid = parsed
+      .filter((a: any) => a && typeof a.label === 'string' && typeof a.prompt === 'string')
+      .map((a: any) => ({
+        id: String(a.id || crypto.randomUUID()),
+        label: String(a.label).slice(0, 30),
+        icon: String(a.icon || 'Zap'),
+        prompt: String(a.prompt),
+        category: (['fix', 'enhance', 'add', 'optimize'].includes(a.category) ? a.category : 'enhance') as QuickAction['category'],
+      }))
+      .slice(0, 5);
+
+    return { usedOllama: true, actions: valid.length > 0 ? valid : heuristic };
+  } catch {
+    return { usedOllama: true, actions: heuristic };
+  }
 }
 
 export function formatAnalysisForPrompt(analysis: ToasterAnalysis): string {

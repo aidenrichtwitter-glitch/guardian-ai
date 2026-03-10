@@ -1,13 +1,14 @@
 import { SafetyCheck } from './self-reference';
 
-// The safety engine - MINIMAL guardrails only
-// We protect against crashes but NOT against ambition
-// The system should be free to build whatever it dreams
-
 let idCounter = 0;
 const nextId = () => `check-${++idCounter}`;
 
-export function validateChange(newContent: string, filePath: string, oldContent?: string): SafetyCheck[] {
+export interface ValidationContext {
+  projectFiles?: string[];
+  packageJson?: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+}
+
+export function validateChange(newContent: string, filePath: string, oldContent?: string, context?: ValidationContext): SafetyCheck[] {
   const checks: SafetyCheck[] = [];
 
   checks.push(...checkBalancedBrackets(newContent, filePath));
@@ -16,6 +17,21 @@ export function validateChange(newContent: string, filePath: string, oldContent?
 
   if (oldContent !== undefined && oldContent.length > 0) {
     checks.push(...checkSizeReduction(newContent, oldContent, filePath));
+  }
+
+  if (context?.projectFiles) {
+    checks.push(...checkImportResolution(newContent, filePath, context.projectFiles));
+  }
+
+  checks.push(...checkDuplicateExports(newContent, filePath));
+
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'tsx' || ext === 'jsx') {
+    checks.push(...checkJsxBalance(newContent, filePath));
+  }
+
+  if (context?.packageJson) {
+    checks.push(...checkPackageReferences(newContent, filePath, context.packageJson));
   }
 
   if (checks.length === 0) {
@@ -160,6 +176,168 @@ function checkCatastrophicPatterns(content: string, file: string): SafetyCheck[]
       if (loopBody.includes('break') || loopBody.includes('return') || loopBody.includes('await')) continue;
       const line = content.substring(0, match.index).split('\n').length;
       checks.push({ id: nextId(), type: 'runtime', severity, message: msg, line, file });
+    }
+  }
+
+  return checks;
+}
+
+function checkImportResolution(content: string, file: string, projectFiles: string[]): SafetyCheck[] {
+  const checks: SafetyCheck[] = [];
+  const importRegex = /import\s+(?:[\s\S]*?\s+from\s+)?['"](\.[^'"]+)['"]/g;
+  let match;
+
+  const fileDir = file.includes('/') ? file.substring(0, file.lastIndexOf('/')) : '';
+
+  while ((match = importRegex.exec(content)) !== null) {
+    const importPath = match[1];
+    let resolvedPath: string;
+    if (importPath.startsWith('./')) {
+      resolvedPath = fileDir ? `${fileDir}/${importPath.slice(2)}` : importPath.slice(2);
+    } else if (importPath.startsWith('../')) {
+      const dirParts = fileDir.split('/');
+      let relPath = importPath;
+      while (relPath.startsWith('../')) {
+        dirParts.pop();
+        relPath = relPath.slice(3);
+      }
+      resolvedPath = dirParts.length > 0 ? `${dirParts.join('/')}/${relPath}` : relPath;
+    } else {
+      continue;
+    }
+
+    const basePath = resolvedPath.replace(/\.[^/.]+$/, '');
+    const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '.json', '.css', '/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+    const found = extensions.some(ext => projectFiles.includes(basePath + ext) || projectFiles.includes(resolvedPath + ext) || projectFiles.includes(resolvedPath));
+
+    if (!found) {
+      checks.push({
+        id: nextId(),
+        type: 'import',
+        severity: 'warning',
+        message: `Import '${importPath}' not found in project`,
+        file,
+      });
+    }
+  }
+
+  return checks;
+}
+
+function checkDuplicateExports(content: string, file: string): SafetyCheck[] {
+  const checks: SafetyCheck[] = [];
+
+  const defaultExportMatches = content.match(/export\s+default\s/g);
+  if (defaultExportMatches && defaultExportMatches.length > 1) {
+    checks.push({
+      id: nextId(),
+      type: 'syntax',
+      severity: 'warning',
+      message: `Multiple 'export default' declarations found (${defaultExportMatches.length})`,
+      file,
+    });
+  }
+
+  const namedExportRegex = /export\s+(?:const|let|var|function|class|enum|type|interface)\s+(\w+)/g;
+  const exportNames = new Map<string, number>();
+  let match;
+  while ((match = namedExportRegex.exec(content)) !== null) {
+    const name = match[1];
+    exportNames.set(name, (exportNames.get(name) || 0) + 1);
+  }
+  for (const [name, count] of exportNames) {
+    if (count > 1) {
+      checks.push({
+        id: nextId(),
+        type: 'syntax',
+        severity: 'warning',
+        message: `Duplicate named export '${name}' (${count} times)`,
+        file,
+      });
+    }
+  }
+
+  return checks;
+}
+
+function checkJsxBalance(content: string, file: string): SafetyCheck[] {
+  const checks: SafetyCheck[] = [];
+
+  const withoutStringsAndComments = content
+    .replace(/\/\/.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '""')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '""');
+
+  const openTagRegex = /<([A-Z][A-Za-z0-9.]*)\b[^/>]*(?<!\/)>/g;
+  const closeTagRegex = /<\/([A-Z][A-Za-z0-9.]*)\s*>/g;
+
+  const openTags: string[] = [];
+  const closeTags: string[] = [];
+  let m;
+
+  while ((m = openTagRegex.exec(withoutStringsAndComments)) !== null) {
+    openTags.push(m[1]);
+  }
+  while ((m = closeTagRegex.exec(withoutStringsAndComments)) !== null) {
+    closeTags.push(m[1]);
+  }
+
+  const diff = Math.abs(openTags.length - closeTags.length);
+  if (diff >= 3) {
+    checks.push({
+      id: nextId(),
+      type: 'syntax',
+      severity: 'warning',
+      message: `JSX tag imbalance: ${openTags.length} opening vs ${closeTags.length} closing component tags (difference of ${diff})`,
+      file,
+    });
+  }
+
+  return checks;
+}
+
+function checkPackageReferences(content: string, file: string, packageJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }): SafetyCheck[] {
+  const checks: SafetyCheck[] = [];
+  const allDeps = new Set([
+    ...Object.keys(packageJson.dependencies || {}),
+    ...Object.keys(packageJson.devDependencies || {}),
+  ]);
+
+  const builtins = new Set([
+    'react', 'react-dom', 'react/jsx-runtime',
+    'path', 'fs', 'os', 'url', 'util', 'stream', 'http', 'https', 'crypto', 'events',
+    'child_process', 'buffer', 'querystring', 'assert', 'net', 'tls', 'zlib',
+    'node:path', 'node:fs', 'node:os', 'node:url', 'node:util', 'node:stream',
+    'node:http', 'node:https', 'node:crypto', 'node:events', 'node:child_process',
+    'node:buffer', 'node:querystring', 'node:assert', 'node:net', 'node:tls', 'node:zlib',
+  ]);
+
+  const importRegex = /import\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"./][^'"]*)['"]/g;
+  const seen = new Set<string>();
+  let match;
+
+  while ((match = importRegex.exec(content)) !== null) {
+    const importPath = match[1];
+    if (importPath.startsWith('@/') || importPath.startsWith('@assets/')) continue;
+    if (builtins.has(importPath)) continue;
+
+    const pkgName = importPath.startsWith('@')
+      ? importPath.split('/').slice(0, 2).join('/')
+      : importPath.split('/')[0];
+
+    if (seen.has(pkgName)) continue;
+    seen.add(pkgName);
+
+    if (!allDeps.has(pkgName)) {
+      checks.push({
+        id: nextId(),
+        type: 'import',
+        severity: 'info',
+        message: `Package '${pkgName}' not in package.json — may need to install`,
+        file,
+      });
     }
   }
 

@@ -231,21 +231,24 @@ export function searchKnowledge(description: string, maxResults = 5): KnowledgeM
 export function formatKnowledgeForGrokPrompt(matches: KnowledgeMatch[]): string {
   if (matches.length === 0) return '';
 
-  let prompt = `\n=== PROVEN BUILDS LIBRARY ===\n`;
-  prompt += `From our proven builds library, these projects match the description:\n\n`;
+  let prompt = `\n=== REPO SELECTION PRIORITY ===\n`;
+  prompt += `When suggesting a starting point for a new project, follow this priority:\n`;
+  prompt += `1) PUBLIC GITHUB REPO — Search for a popular, well-maintained public GitHub repo (React/TS/Vite/Tailwind preferred, high stars, MIT/Apache license). The world's open-source bounties come first.\n`;
+  prompt += `2) PROVEN BUILD — If no high-quality public repo fits, consider these proven builds from our library:\n\n`;
 
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i];
     const e = m.entry;
-    prompt += `${i + 1}) ${e.repoName} — "${e.meta.original_description}" `;
+    prompt += `  ${i + 1}) ${e.repoName} — "${e.meta.original_description}" `;
     prompt += `(stack: ${e.meta.stack || 'unknown'}`;
     if (e.meta.build_success_rating) prompt += `, rating: ${e.meta.build_success_rating}/5`;
     if (e.meta.key_patterns_used.length > 0) prompt += `, patterns: ${e.meta.key_patterns_used.join(', ')}`;
     prompt += `) [${e.repoUrl}]\n`;
   }
 
-  prompt += `\nPick the best one to clone as a base, or say "Starting fresh" if none fit.\n`;
-  prompt += `=== END PROVEN BUILDS ===\n`;
+  prompt += `\n3) START FRESH — Only if nothing above fits the requirements.\n`;
+  prompt += `Always suggest a specific GitHub URL when recommending a repo.\n`;
+  prompt += `=== END REPO SELECTION ===\n`;
 
   return prompt;
 }

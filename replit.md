@@ -129,12 +129,35 @@ supabase/
 
 ## Ollama "Toaster" Integration
 - **Role**: Dumb, reliable pre/post-processor. Never suggests repos, code, or creative decisions. Temperature = 0.0.
-- **Pre-Grok (Context Bundler)**: Takes preview logs + file tree → outputs `{ error_summary, affected_files, missing_files, priority, suggested_context_to_include }` → used to select only relevant files for Grok's context instead of dumping everything
+- **Pre-Grok (Context Bundler)**: Takes preview logs + file tree → outputs `{ error_summary, affected_files, missing_files, priority, suggested_context_to_include }` → used to select only relevant files for Grok's context. Ollama-identified files are now actually read and included as priority 3 sections. Token budget: 16k tokens (64k chars). File limit: 30 files.
 - **Post-Grok (Response Cleaner)**: Takes raw Grok response → extracts code blocks into structured `{ reasoning, files: [{ path, action, content }], unparsed_text }` → falls back to regex parser if Ollama unavailable
-- **Graceful degradation**: If Ollama not running (`localhost:11434`), falls back to existing behavior (raw file concat + regex parsing)
+- **Quick Actions Analyzer** (`suggestQuickActions`): Analyzes project state to generate smart context-aware action buttons. Ollama-first with heuristic fallback. Suggests actions like "Fix N errors", "Add dark mode", "Add authentication", "Improve styling".
+- **Graceful degradation**: If Ollama not running (`localhost:11434`), falls back to existing behavior (raw file concat + regex parsing + heuristic quick actions)
 - **Config**: Endpoint URL + model name stored in localStorage, configurable in settings
 - **Recommended models**: `qwen2.5-coder:7b`, `llama3.2:3b`, `phi-3.5-mini`
 - UI shows "Toaster" status badge in top bar (green=connected, muted=off)
+
+## Auto-Apply & Safety Validation
+- **Auto-Apply Toggle**: Zap icon button in toolbar, persisted in localStorage
+  - When ON: safe changes (no safety errors, <50 line diff per file, no deletions) apply automatically without confirmation dialog
+  - Shows "Undo" toast button (5-second window) for rollback
+  - Falls back to normal confirm dialog for unsafe changes
+- **Enhanced Safety Engine** (`safety-engine.ts`): Validates code before apply
+  - Balanced brackets check, circular import detection, infinite loop detection, size reduction check
+  - **Import resolution**: Verifies local imports (`./`, `../`) reference existing project files
+  - **Duplicate export detection**: Flags multiple `export default` or same-name exports
+  - **JSX/TSX balance**: Checks component tag balance for `.tsx`/`.jsx` files
+  - **Package reference check**: Flags imports from packages not in `package.json` (info-level)
+  - Accepts `ValidationContext` with project file tree and package.json for context-aware checks
+
+## Monaco File Editor
+- **FileEditor component** (`src/components/FileEditor.tsx`): Full Monaco editor for hand-editing project files
+  - Syntax highlighting auto-detected from file extension
+  - Save via button or Ctrl+S → writes via `writeProjectFile` + triggers preview refresh
+  - Runs `validateChange` on save with warnings in status bar
+  - "Send to Grok" button generates context-rich prompt with file content
+- **Three-panel layout**: When editor open: sidebar | editor | preview. Closes to two-panel.
+- **Edit buttons** in ProjectExplorer file tree (pencil icon on hover)
 
 ## Shared GitHub Org & Knowledge Registry
 - **Publish** (`src/lib/guardian-publish.ts`): "Publish to Community" button pushes successful builds to a shared GitHub org
@@ -146,7 +169,7 @@ supabase/
 - **Knowledge Registry** (`src/lib/guardian-knowledge.ts`): On new project, queries shared org for matching past builds
   - Fetches + caches `GUARDIAN-META.json` from org repos (refreshes every 30 minutes)
   - Keyword search against cached metadata
-  - Top 3-5 matches fed to Grok's prompt as hints: "From our proven builds library: [list]. Pick the best one or start fresh."
+  - Top 3-5 matches fed to Grok's prompt with correct priority: 1) Public GitHub repo first, 2) Proven builds second, 3) Start fresh last
   - Grok makes the final decision — no conflicting suggestions from multiple sources
   - Shows "Built Before" indicator when matches found
 

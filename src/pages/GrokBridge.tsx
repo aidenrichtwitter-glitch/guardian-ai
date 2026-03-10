@@ -3,9 +3,10 @@ import {
   Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
   User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
   Clipboard, ClipboardCheck, Zap, X, ChevronUp, ChevronDown as ChevronDownIcon,
-  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download, Terminal, AlertCircle, Key, ArrowRightLeft, FolderPlus, RefreshCw, Monitor, GitBranch, Upload, Settings
+  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download, Terminal, AlertCircle, Key, ArrowRightLeft, FolderPlus, RefreshCw, Monitor, GitBranch, Upload, Settings,
+  Moon, Lock, Smartphone, TestTube2, Gauge, Palette, Wand2
 } from 'lucide-react';
-import { validateChange } from '@/lib/safety-engine';
+import { validateChange, type ValidationContext } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
 import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies, parseActionItems, ActionItem } from '@/lib/code-parser';
@@ -33,9 +34,11 @@ import {
   saveToasterConfig,
   cleanGrokResponse,
   cleanedResponseToBlocks,
+  suggestQuickActions,
   type OllamaToasterConfig,
   type ToasterAnalysis,
   type ToasterAvailability,
+  type QuickAction,
 } from '@/lib/ollama-toaster';
 import { publishProject, type PublishProgress } from '@/lib/guardian-publish';
 import { hasPublishCredentials, getGuardianConfig, setSharedPat, setUserPat } from '@/lib/guardian-config';
@@ -48,6 +51,7 @@ import {
   type KnowledgeMatch,
 } from '@/lib/guardian-knowledge';
 import ProjectExplorer from '@/components/ProjectExplorer';
+import FileEditor from '@/components/FileEditor';
 import LogsPanel, { type LogEntry, formatLogsForGrok } from '@/components/LogsPanel';
 
 const MAX_LOG_ENTRIES = 200;
@@ -984,6 +988,10 @@ const GrokBridge: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [model, setModel] = useState('grok-3-mini');
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [autoApplyEnabled, setAutoApplyEnabled] = useState(() => localStorage.getItem('guardian-auto-apply') === 'true');
+  const autoApplyBackupsRef = useRef<{ filePath: string; oldContent: string; newContent: string }[]>([]);
+  const [autoApplyUndoVisible, setAutoApplyUndoVisible] = useState(false);
+  const autoApplyUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [appliedChanges, setAppliedChanges] = useState<AppliedChange[]>([]);
   const [validationResults, setValidationResults] = useState<Map<string, SafetyCheck[]>>(new Map());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -993,6 +1001,7 @@ const GrokBridge: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [activeProject, setActiveProjectState] = useState<string | null>(() => getActiveProject());
   const [showProjectPanel, setShowProjectPanel] = useState(false);
+  const [editorFile, setEditorFile] = useState<{ path: string; content: string } | null>(null);
   const [previewPort, setPreviewPort] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showPreviewEmbed, setShowPreviewEmbed] = useState(false);
@@ -1029,6 +1038,37 @@ const GrokBridge: React.FC = () => {
   const preApplyErrorCountRef = useRef(0);
   const postApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cleanedApiBlocks, setCleanedApiBlocks] = useState<Map<number, ParsedBlock[]>>(new Map());
+  const [quickActions, setQuickActions] = useState<QuickAction[]>([]);
+  const [quickActionsLoading, setQuickActionsLoading] = useState(false);
+  const validationContextRef = useRef<ValidationContext>({});
+
+  const refreshValidationContext = useCallback(async () => {
+    if (!activeProject) { validationContextRef.current = {}; return; }
+    try {
+      const tree = await getProjectFiles(activeProject);
+      const flatPaths: string[] = [];
+      const collectPaths = (nodes: ProjectFileNode[], prefix = '') => {
+        for (const n of nodes) {
+          const p = prefix ? `${prefix}/${n.name}` : n.name;
+          if (n.type === 'file') flatPaths.push(p);
+          if (n.children) collectPaths(n.children, p);
+        }
+      };
+      collectPaths(tree);
+      validationContextRef.current.projectFiles = flatPaths;
+
+      try {
+        const pkgContent = await readProjectFile(activeProject, 'package.json');
+        validationContextRef.current.packageJson = JSON.parse(pkgContent);
+      } catch {
+        validationContextRef.current.packageJson = undefined;
+      }
+    } catch {
+      validationContextRef.current = {};
+    }
+  }, [activeProject]);
+
+  useEffect(() => { refreshValidationContext(); }, [activeProject, refreshValidationContext]);
 
   const addPreviewLog = useCallback((entry: Omit<LogEntry, 'id'>) => {
     setPreviewLogs(prev => {
@@ -1242,11 +1282,50 @@ const GrokBridge: React.FC = () => {
     setShowPreviewEmbed(false);
     setProjectContext('');
     setPreviewLogs([]);
+    setEditorFile(null);
     setStatusMessage(name ? `Project: ${name}` : 'Switched to Main App');
     if (name) {
       autoStartPreviewRef.current = name;
     }
   }, [activeProject, previewPort]);
+
+  const handleFileEdit = useCallback(async (filePath: string, content: string) => {
+    setEditorFile({ path: filePath, content });
+    setShowProjectPanel(true);
+  }, []);
+
+  const handleEditorSave = useCallback(async (filePath: string, content: string) => {
+    if (activeProject) {
+      await writeProjectFile(activeProject, filePath, content);
+      const isConfigFile = ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs'].includes(filePath);
+      if (previewPort) {
+        setTimeout(() => setPreviewKey(k => k + 1), isConfigFile ? 2500 : 500);
+      }
+      setStatusMessage(`Saved ${filePath}`);
+      await buildProjectContext();
+    } else if (isElectron) {
+      const { ipcRenderer } = (window as any).require('electron');
+      await ipcRenderer.invoke('write-file', { filePath, content });
+      setStatusMessage(`Saved ${filePath}`);
+    }
+  }, [activeProject, previewPort]);
+
+  const handleEditorClose = useCallback(() => {
+    setEditorFile(null);
+  }, []);
+
+  const handleEditorSendToGrok = useCallback((prompt: string) => {
+    if (mode === 'api') {
+      setInput(prompt);
+      inputRef.current?.focus();
+    } else {
+      navigator.clipboard.writeText(prompt).then(() => {
+        setStatusMessage('File prompt copied to clipboard — paste into Grok');
+      }).catch(() => {
+        setStatusMessage('Could not copy file prompt to clipboard');
+      });
+    }
+  }, [mode]);
 
   const handleGitHubImport = useCallback(async (repoUrl: string) => {
     setDetectedRepoUrl(null);
@@ -1375,8 +1454,12 @@ const GrokBridge: React.FC = () => {
     setKnowledgeMatches(matches);
 
     let enrichedText = text;
-    if (messages.length === 0 && matches.length > 0) {
-      enrichedText = text + '\n\n' + formatKnowledgeForGrokPrompt(matches);
+    if (messages.length === 0) {
+      if (matches.length > 0) {
+        enrichedText = text + '\n\n' + formatKnowledgeForGrokPrompt(matches);
+      } else if (!activeProject) {
+        enrichedText = text + '\n\n=== REPO SELECTION ===\nFor this new project, prioritize: 1) A popular public GitHub repo (React/TS/Vite/Tailwind, high stars, MIT license) as a starting point — provide the full URL. 2) Start fresh only if no existing repo fits.\n=== END REPO SELECTION ===';
+      }
     }
 
     const userMsg: Msg = { role: 'user', content: enrichedText };
@@ -1412,11 +1495,20 @@ const GrokBridge: React.FC = () => {
           setDetectedRepoUrl(repoMatch.fullUrl);
           setStatusMessage(`Grok suggested repo: ${repoMatch.owner}/${repoMatch.repo} — click to clone`);
         }
+        const regexBlocks = parseCodeBlocks(assistantSoFar);
+        if (autoApplyEnabled && activeProject && regexBlocks.length > 0) {
+          const validBlocks = regexBlocks.filter(b => b.filePath);
+          if (validBlocks.length > 0) {
+            autoApplyBlocks(validBlocks).then(applied => {
+              if (!applied) setStatusMessage('Auto-apply skipped (safety checks failed) — review manually');
+            }).catch(() => {});
+          }
+        }
+
         cleanGrokResponse(assistantSoFar, toasterConfig).then(cleaned => {
           if (cleaned && cleaned.files.length > 0) {
             const ollamaBlocks = cleanedResponseToBlocks(cleaned);
             if (ollamaBlocks.length > 0) {
-              const regexBlocks = parseCodeBlocks(assistantSoFar);
               const hasMorePaths = ollamaBlocks.filter(b => b.filePath).length >= regexBlocks.filter(b => b.filePath).length;
               if (hasMorePaths) {
                 setCleanedApiBlocks(prev => new Map(prev).set(msgIndex, ollamaBlocks));
@@ -1434,9 +1526,82 @@ const GrokBridge: React.FC = () => {
   };
 
   const runValidation = useCallback((blockKey: string, code: string, filePath: string) => {
-    const checks = validateChange(code, filePath || 'unknown.ts');
+    const checks = validateChange(code, filePath || 'unknown.ts', undefined, validationContextRef.current);
     setValidationResults(prev => new Map(prev).set(blockKey, checks));
   }, []);
+
+  const toggleAutoApply = useCallback((val: boolean) => {
+    setAutoApplyEnabled(val);
+    localStorage.setItem('guardian-auto-apply', val ? 'true' : 'false');
+  }, []);
+
+  const undoAutoApply = useCallback(async () => {
+    if (autoApplyUndoTimerRef.current) { clearTimeout(autoApplyUndoTimerRef.current); autoApplyUndoTimerRef.current = null; }
+    setAutoApplyUndoVisible(false);
+    const backups = autoApplyBackupsRef.current;
+    if (backups.length === 0) return;
+    try {
+      for (const b of backups) {
+        if (activeProject) {
+          await writeProjectFile(activeProject, b.filePath, b.oldContent);
+        } else if (isElectron) {
+          const { ipcRenderer } = (window as any).require('electron');
+          await ipcRenderer.invoke('write-file', { filePath: b.filePath, content: b.oldContent });
+        }
+      }
+      setStatusMessage(`Undid auto-apply of ${backups.length} file${backups.length > 1 ? 's' : ''}`);
+      autoApplyBackupsRef.current = [];
+      if (previewPort) setTimeout(() => setPreviewKey(k => k + 1), 500);
+    } catch (e: any) {
+      setStatusMessage(`Undo failed: ${e.message}`);
+    }
+  }, [activeProject, previewPort]);
+
+  const autoApplyBlocks = useCallback(async (blocks: { filePath: string; code: string }[]) => {
+    if (!activeProject || blocks.length === 0) return false;
+    const backups: { filePath: string; oldContent: string; newContent: string }[] = [];
+    const warnings: string[] = [];
+    let hasErrors = false;
+
+    for (const block of blocks) {
+      let oldContent = '';
+      try { oldContent = await readProjectFile(activeProject, block.filePath); } catch { oldContent = ''; }
+      const checks = validateChange(block.code, block.filePath, oldContent, validationContextRef.current);
+      const errors = checks.filter(c => c.severity === 'error');
+      const warns = checks.filter(c => c.severity === 'warning');
+      if (errors.length > 0) { hasErrors = true; break; }
+      if (warns.length > 0) warnings.push(...warns.map(w => `${block.filePath}: ${w.message}`));
+      const lineChanges = Math.abs(block.code.split('\n').length - oldContent.split('\n').length);
+      if (lineChanges > 50) { hasErrors = true; break; }
+      backups.push({ filePath: block.filePath, oldContent, newContent: block.code });
+    }
+
+    if (hasErrors) return false;
+
+    try {
+      for (const b of backups) {
+        await writeProjectFile(activeProject, b.filePath, b.newContent);
+      }
+      autoApplyBackupsRef.current = backups;
+      setAppliedChanges(prev => [...prev, ...backups.map(b => ({ filePath: `${activeProject}/${b.filePath}`, previousContent: b.oldContent, newContent: b.newContent, timestamp: Date.now() }))]);
+
+      const warningText = warnings.length > 0 ? ` (${warnings.length} warning${warnings.length > 1 ? 's' : ''})` : '';
+      setStatusMessage(`Auto-applied ${backups.length} file${backups.length > 1 ? 's' : ''}${warningText} — Undo available for 5s`);
+      setAutoApplyUndoVisible(true);
+      if (autoApplyUndoTimerRef.current) clearTimeout(autoApplyUndoTimerRef.current);
+      autoApplyUndoTimerRef.current = setTimeout(() => { setAutoApplyUndoVisible(false); autoApplyBackupsRef.current = []; }, 5000);
+
+      const hasConfigChanges = backups.some(b => ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs'].includes(b.filePath));
+      if (previewPort) setTimeout(() => setPreviewKey(k => k + 1), hasConfigChanges ? 2500 : 500);
+      await buildProjectContext();
+      refreshValidationContext();
+      refreshQuickActions();
+      return true;
+    } catch (e: any) {
+      setStatusMessage(`Auto-apply failed: ${e.message}`);
+      return false;
+    }
+  }, [activeProject, previewPort]);
 
   const [pendingApply, setPendingApply] = useState<PendingApply | null>(null);
   const [applyStage, setApplyStage] = useState<ApplyStage>('confirm');
@@ -1495,7 +1660,7 @@ const GrokBridge: React.FC = () => {
       }
     }
 
-    const safetyChecks = validateChange(finalContent, filePath, oldContent);
+    const safetyChecks = validateChange(finalContent, filePath, oldContent, validationContextRef.current);
     setPendingApply({
       filePath,
       newContent: finalContent,
@@ -1757,6 +1922,7 @@ const GrokBridge: React.FC = () => {
           timestamp: Date.now(),
         }))]);
         await buildProjectContext();
+        refreshQuickActions();
 
         const hasConfigChanges = blocks.some(b =>
           ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs', 'postcss.config.mjs', 'postcss.config.ts'].includes(b.filePath)
@@ -1890,6 +2056,7 @@ const GrokBridge: React.FC = () => {
       }
 
       await buildProjectContext();
+      refreshQuickActions();
 
       setBatchStage('done');
       const gitNote = commitResult.success ? ' + committed' : '';
@@ -1943,7 +2110,7 @@ const GrokBridge: React.FC = () => {
 
   const buildProjectContext = useCallback(async () => {
     setContextLoading(true);
-    const TOKEN_BUDGET = 8000;
+    const TOKEN_BUDGET = 16000;
     const CHARS_BUDGET = TOKEN_BUDGET * 4;
 
     try {
@@ -1998,6 +2165,16 @@ const GrokBridge: React.FC = () => {
             setLastToasterAnalysis(smartCtx.analysis);
             toasterSection = formatAnalysisForPrompt(smartCtx.analysis);
             sections.push({ label: 'toasterAnalysis', content: toasterSection, priority: 2 });
+
+            for (const fp of smartCtx.filesToInclude.slice(0, 30)) {
+              if (sections.some(s => s.label === `file:${fp}`)) continue;
+              try {
+                const content = await readProjectFile(activeProject!, fp);
+                if (content.length < 10000) {
+                  sections.push({ label: `file:${fp}`, content: `\n=== ${fp} (TOASTER-IDENTIFIED) ===\n${content}\n`, priority: 3 });
+                }
+              } catch {}
+            }
           }
         } catch {} finally {
           setToasterLoading(false);
@@ -2041,7 +2218,7 @@ const GrokBridge: React.FC = () => {
             )
           );
 
-          const prioritizedFiles = [...changedKeyFiles, ...unchangedKeyFiles].slice(0, 20);
+          const prioritizedFiles = [...changedKeyFiles, ...unchangedKeyFiles].slice(0, 30);
 
           for (const fp of prioritizedFiles) {
             try {
@@ -2127,7 +2304,7 @@ const GrokBridge: React.FC = () => {
 
       for (const section of sections) {
         const sectionChars = section.content.length;
-        if (currentChars + sectionChars > CHARS_BUDGET && section.priority > 4) {
+        if (currentChars + sectionChars > CHARS_BUDGET && section.priority > 7) {
           continue;
         }
         context += section.content;
@@ -2144,6 +2321,46 @@ const GrokBridge: React.FC = () => {
     }
   }, [lastErrors, activeProject, toasterAvailability, toasterConfig, previewLogs, messages, summarizeChatHistory, knowledgeMatches]);
 
+  const refreshQuickActions = useCallback(async () => {
+    if (!activeProject) { setQuickActions([]); return; }
+    setQuickActionsLoading(true);
+    try {
+      const tree = await getProjectFiles(activeProject);
+      const flatPaths: string[] = [];
+      const collectQAPaths = (nodes: ProjectFileNode[], prefix = '') => {
+        for (const n of nodes) {
+          const p = prefix ? `${prefix}/${n.name}` : n.name;
+          if (n.type === 'file') flatPaths.push(p);
+          if (n.children) collectQAPaths(n.children, p);
+        }
+      };
+      collectQAPaths(tree);
+
+      let pkgJson: Record<string, any> | null = null;
+      try {
+        const raw = await readProjectFile(activeProject, 'package.json');
+        pkgJson = JSON.parse(raw);
+      } catch {}
+
+      let cssContent = '';
+      const cssFiles = flatPaths.filter(f => f.endsWith('.css') || f.endsWith('.scss'));
+      for (const cf of cssFiles.slice(0, 3)) {
+        try {
+          const c = await readProjectFile(activeProject, cf);
+          cssContent += c.slice(0, 2000);
+        } catch {}
+      }
+
+      const errorCount = previewLogs.filter(l => l.level === 'error').length;
+      const result = await suggestQuickActions(flatPaths, pkgJson, errorCount, cssContent, toasterConfig);
+      setQuickActions(result.actions);
+    } catch {
+      setQuickActions([]);
+    } finally {
+      setQuickActionsLoading(false);
+    }
+  }, [activeProject, previewLogs, toasterConfig]);
+
   useEffect(() => {
     if (mode === 'browser') {
       buildProjectContext();
@@ -2152,6 +2369,7 @@ const GrokBridge: React.FC = () => {
 
   useEffect(() => {
     buildProjectContext();
+    refreshQuickActions();
   }, [activeProject]);
 
   const copyContextToClipboard = useCallback(async () => {
@@ -2772,6 +2990,18 @@ const GrokBridge: React.FC = () => {
             </button>
           </div>
 
+          <button
+            onClick={() => toggleAutoApply(!autoApplyEnabled)}
+            data-testid="button-auto-apply-toggle"
+            className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors shrink-0 ${
+              autoApplyEnabled ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-secondary/40 text-muted-foreground hover:text-foreground border border-transparent'
+            }`}
+            title={autoApplyEnabled ? 'Auto-apply ON — safe changes apply automatically' : 'Auto-apply OFF — all changes require confirmation'}
+          >
+            <Zap className={`w-3 h-3 ${autoApplyEnabled ? 'fill-green-400' : ''}`} />
+            Auto
+          </button>
+
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={copyContextToClipboard}
@@ -2852,6 +3082,15 @@ const GrokBridge: React.FC = () => {
           {statusMessage && (
             <span className="text-[9px] text-primary/70 truncate max-w-[200px]" title={statusMessage}>{statusMessage}</span>
           )}
+          {autoApplyUndoVisible && (
+            <button
+              onClick={undoAutoApply}
+              data-testid="button-auto-apply-undo"
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 animate-pulse"
+            >
+              <Undo2 className="w-3 h-3" /> Undo
+            </button>
+          )}
 
           {appliedChanges.length > 0 && (
             <div className="ml-auto flex items-center gap-1 overflow-x-auto shrink-0">
@@ -2876,12 +3115,81 @@ const GrokBridge: React.FC = () => {
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {showProjectPanel && (
             <div className="w-52 border-r border-border/30 bg-card/30 shrink-0 overflow-auto">
-              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} />
+              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} onFileEdit={handleFileEdit} />
+            </div>
+          )}
+          {editorFile && (
+            <div className="border-r border-border/30 flex flex-col" style={{ flex: '1 1 40%', minWidth: 0 }}>
+              <FileEditor
+                filePath={editorFile.path}
+                content={editorFile.content}
+                projectName={activeProject}
+                onSave={handleEditorSave}
+                onClose={handleEditorClose}
+                onSendToGrok={handleEditorSendToGrok}
+              />
             </div>
           )}
           <div className="flex-1 flex min-h-0 overflow-hidden">
             <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden" style={showPreviewEmbed && previewPort ? { flex: '1 1 50%' } : undefined}>
               <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+              {activeProject && quickActions.length > 0 && (
+                <div className="shrink-0 border-t border-border/30 bg-card/30 px-3 py-1.5 flex items-center gap-1.5 flex-wrap" data-testid="quick-actions-browser">
+                  <Wand2 className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                  {quickActions.map(action => {
+                    const iconMap: Record<string, React.ReactNode> = {
+                      AlertTriangle: <AlertTriangle className="w-3 h-3" />,
+                      Moon: <Moon className="w-3 h-3" />,
+                      Lock: <Lock className="w-3 h-3" />,
+                      Palette: <Palette className="w-3 h-3" />,
+                      Smartphone: <Smartphone className="w-3 h-3" />,
+                      TestTube: <TestTube2 className="w-3 h-3" />,
+                      Gauge: <Gauge className="w-3 h-3" />,
+                      Zap: <Zap className="w-3 h-3" />,
+                      Sparkles: <Sparkles className="w-3 h-3" />,
+                    };
+                    const categoryColors: Record<string, string> = {
+                      fix: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20',
+                      enhance: 'bg-[hsl(200_60%_50%/0.1)] text-[hsl(200_60%_60%)] border-[hsl(200_60%_50%/0.2)] hover:bg-[hsl(200_60%_50%/0.2)]',
+                      add: 'bg-[hsl(150_60%_50%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_50%/0.2)] hover:bg-[hsl(150_60%_50%/0.2)]',
+                      optimize: 'bg-[hsl(280_60%_50%/0.1)] text-[hsl(280_60%_65%)] border-[hsl(280_60%_50%/0.2)] hover:bg-[hsl(280_60%_50%/0.2)]',
+                    };
+                    return (
+                      <button
+                        key={action.id}
+                        data-testid={`button-quick-action-browser-${action.id}`}
+                        onClick={async () => {
+                          try {
+                            if (isElectron) {
+                              const { clipboard } = (window as any).require('electron');
+                              clipboard.writeText(action.prompt);
+                            } else {
+                              await navigator.clipboard.writeText(action.prompt);
+                            }
+                            setStatusMessage(`Copied "${action.label}" prompt to clipboard — paste into Grok`);
+                          } catch {
+                            setStatusMessage(`Could not copy prompt to clipboard`);
+                          }
+                        }}
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border transition-colors ${categoryColors[action.category] || categoryColors.enhance}`}
+                      >
+                        {iconMap[action.icon] || <Sparkles className="w-3 h-3" />}
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                  {quickActionsLoading && <Loader2 className="w-3 h-3 text-muted-foreground/40 animate-spin" />}
+                  <button
+                    data-testid="button-refresh-quick-actions-browser"
+                    onClick={refreshQuickActions}
+                    disabled={quickActionsLoading}
+                    className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                    title="Refresh suggestions"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${quickActionsLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              )}
             </div>
             {showPreviewEmbed && previewPort && (
               <div className="border-l border-border/30 flex flex-col" style={{ flex: '1 1 50%' }}>
@@ -2980,7 +3288,19 @@ const GrokBridge: React.FC = () => {
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {showProjectPanel && (
             <div className="w-52 border-r border-border/30 bg-card/30 shrink-0 overflow-auto">
-              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} />
+              <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} onFileEdit={handleFileEdit} />
+            </div>
+          )}
+          {editorFile && (
+            <div className="border-r border-border/30 flex flex-col" style={{ flex: '1 1 40%', minWidth: 0 }}>
+              <FileEditor
+                filePath={editorFile.path}
+                content={editorFile.content}
+                projectName={activeProject}
+                onSave={handleEditorSave}
+                onClose={handleEditorClose}
+                onSendToGrok={handleEditorSendToGrok}
+              />
             </div>
           )}
           {/* Conversations sidebar */}
@@ -3094,6 +3414,51 @@ const GrokBridge: React.FC = () => {
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </div>
+              {activeProject && quickActions.length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap" data-testid="quick-actions-api">
+                  <Wand2 className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                  {quickActions.map(action => {
+                    const iconMap: Record<string, React.ReactNode> = {
+                      AlertTriangle: <AlertTriangle className="w-3 h-3" />,
+                      Moon: <Moon className="w-3 h-3" />,
+                      Lock: <Lock className="w-3 h-3" />,
+                      Palette: <Palette className="w-3 h-3" />,
+                      Smartphone: <Smartphone className="w-3 h-3" />,
+                      TestTube: <TestTube2 className="w-3 h-3" />,
+                      Gauge: <Gauge className="w-3 h-3" />,
+                      Zap: <Zap className="w-3 h-3" />,
+                      Sparkles: <Sparkles className="w-3 h-3" />,
+                    };
+                    const categoryColors: Record<string, string> = {
+                      fix: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20',
+                      enhance: 'bg-[hsl(200_60%_50%/0.1)] text-[hsl(200_60%_60%)] border-[hsl(200_60%_50%/0.2)] hover:bg-[hsl(200_60%_50%/0.2)]',
+                      add: 'bg-[hsl(150_60%_50%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_50%/0.2)] hover:bg-[hsl(150_60%_50%/0.2)]',
+                      optimize: 'bg-[hsl(280_60%_50%/0.1)] text-[hsl(280_60%_65%)] border-[hsl(280_60%_50%/0.2)] hover:bg-[hsl(280_60%_50%/0.2)]',
+                    };
+                    return (
+                      <button
+                        key={action.id}
+                        data-testid={`button-quick-action-${action.id}`}
+                        onClick={() => setInput(action.prompt)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border transition-colors ${categoryColors[action.category] || categoryColors.enhance}`}
+                      >
+                        {iconMap[action.icon] || <Sparkles className="w-3 h-3" />}
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                  {quickActionsLoading && <Loader2 className="w-3 h-3 text-muted-foreground/40 animate-spin" />}
+                  <button
+                    data-testid="button-refresh-quick-actions"
+                    onClick={refreshQuickActions}
+                    disabled={quickActionsLoading}
+                    className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                    title="Refresh suggestions"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${quickActionsLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
