@@ -578,7 +578,8 @@ function projectManagementPlugin(): Plugin {
                 const file = psCmd.replace(/^touch\s+/i, "").trim();
                 psCmd = `New-Item -ItemType File -Force -Path '${file}'`;
               }
-              actualCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCmd.replace(/"/g, '\\"')}"`;
+              const encodedCmd = Buffer.from(psCmd, "utf16le").toString("base64");
+              actualCmd = `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`;
             } else if (/^corepack\s/i.test(actualCmd)) {
               actualCmd = `npx ${actualCmd}`;
             }
