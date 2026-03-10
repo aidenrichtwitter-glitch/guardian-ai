@@ -682,7 +682,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                         )}
                         {item.command && !progResult && (
                           <>
-                            {activeProject && item.type === 'command' && (
+                            {activeProject && item.command && ['command', 'delete', 'create-dir', 'rename'].includes(item.type) && (
                               <button
                                 disabled={runningCommands.has(i)}
                                 onClick={async () => {

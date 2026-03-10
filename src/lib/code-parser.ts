@@ -251,9 +251,13 @@ export function parseActionItems(text: string): ActionItem[] {
       const trimmed = line.replace(/^\$\s*/, '').trim();
       if (trimmed && !trimmed.startsWith('#')) {
         const DEV_SERVER_RE = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
-        if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(trimmed)) {
+        if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s+[^-]/i.test(trimmed) && !/\s-g\b/.test(trimmed) && !/\s--global\b/.test(trimmed)) {
         } else if (DEV_SERVER_RE.test(trimmed)) {
-        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:run|test|build)\b/i.test(trimmed)) {
+        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i)\s*$/i.test(trimmed)) {
+          addItem({ type: 'command', description: `Install dependencies: ${trimmed}`, command: trimmed }, lineOffset);
+        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s+.*(?:-g|--global)/i.test(trimmed)) {
+          addItem({ type: 'command', description: `Install global: ${trimmed}`, command: trimmed }, lineOffset);
+        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:run|test|build|why)\b/i.test(trimmed)) {
           addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
         } else if (/^npx\s+/i.test(trimmed)) {
           addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
@@ -269,6 +273,10 @@ export function parseActionItems(text: string): ActionItem[] {
           const varName = trimmed.match(/^(?:export|set)\s+(\w+)=/)?.[1] || '';
           addItem({ type: 'env', description: `Set environment variable: ${varName}`, command: trimmed }, lineOffset);
         } else if (/^(?:cd|node|python|pip)\s+/.test(trimmed)) {
+          addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
+        } else if (/^corepack\s+/i.test(trimmed)) {
+          addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
+        } else if (trimmed.length > 2 && trimmed.length < 200 && /^[a-z_./~]/.test(trimmed) && !/^[→➜▸▹⮕●•\-\s>]/.test(trimmed) && !/^[A-Z]{2,}\s/.test(trimmed) && !/^(Local|Network|ready|press|open|http|https|localhost)/i.test(trimmed)) {
           addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, lineOffset);
         }
       }
@@ -298,12 +306,26 @@ export function parseActionItems(text: string): ActionItem[] {
     if (isInsideFence(lineStart)) continue;
     if (!line) continue;
 
-    const runMatch = line.match(/(?:^[-*•]\s*)?(?:run|execute|type|enter)\s+`([^`]+)`/i);
-    if (runMatch) {
-      const cmd = runMatch[1];
+    const PROSE_CMD_RE = /`([^`]{3,80})`/g;
+    let proseCmd;
+    while ((proseCmd = PROSE_CMD_RE.exec(line)) !== null) {
+      const cmd = proseCmd[1].trim();
       const DEV_CMD = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
-      if (/^(?:npm|yarn|pnpm|bun|npx|node|python|pip|cargo|go)\s/i.test(cmd)) {
-        if (!/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(cmd) && !DEV_CMD.test(cmd)) {
+      const SHELL_CMD_RE = /^(?:npm|yarn|pnpm|bun|npx|node|python|pip|cargo|go|corepack|docker|git|curl|wget|mkdir|rm|mv|cp|cat|touch|echo|chmod|chown|ln|source)\s/i;
+      if (SHELL_CMD_RE.test(cmd)) {
+        if (DEV_CMD.test(cmd)) continue;
+        if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s+[^-]/i.test(cmd) && !/(?:-g|--global)/.test(cmd)) continue;
+        if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i)\s*$/i.test(cmd)) {
+          addItem({ type: 'command', description: `Install dependencies: ${cmd}`, command: cmd }, lineStart);
+        } else if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s+.*(?:-g|--global)/i.test(cmd)) {
+          addItem({ type: 'command', description: `Install global: ${cmd}`, command: cmd }, lineStart);
+        } else if (/^rm\s/i.test(cmd)) {
+          addItem({ type: 'delete', description: `Delete: ${cmd.replace(/^rm\s+(-rf?\s+)?/i, '')}`, command: cmd }, lineStart);
+        } else if (/^mkdir\s/i.test(cmd)) {
+          addItem({ type: 'create-dir', description: `Create directory: ${cmd.replace(/^mkdir\s+(-p\s+)?/i, '')}`, command: cmd }, lineStart);
+        } else if (/^mv\s/i.test(cmd)) {
+          addItem({ type: 'rename', description: `Move/rename: ${cmd.replace(/^mv\s+/i, '')}`, command: cmd }, lineStart);
+        } else {
           addItem({ type: 'command', description: `Run: ${cmd}`, command: cmd }, lineStart);
         }
       }
