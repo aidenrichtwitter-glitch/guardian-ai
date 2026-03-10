@@ -888,6 +888,7 @@ const GrokBridge: React.FC = () => {
   const [showPreviewEmbed, setShowPreviewEmbed] = useState(false);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const [previewKey, setPreviewKey] = useState(0);
+  const autoStartPreviewRef = useRef<string | null>(null);
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const [evolutionState, setEvolutionState] = useState<EvolutionState | null>(null);
   const [currentPlan, setCurrentPlan] = useState<EvolutionPlan | null>(loadEvolutionPlan());
@@ -929,12 +930,21 @@ const GrokBridge: React.FC = () => {
     setShowPreviewEmbed(false);
     setProjectContext('');
     setStatusMessage(name ? `Project: ${name}` : 'Switched to Main App');
+    if (name) {
+      autoStartPreviewRef.current = name;
+    }
   }, [activeProject, previewPort]);
 
   const startPreview = useCallback(async () => {
     if (!activeProject) return;
     setPreviewLoading(true);
     try {
+      if (isElectron) {
+        try {
+          const { ipcRenderer } = (window as any).require('electron');
+          await ipcRenderer.invoke('ensure-project-polling', { projectName: activeProject });
+        } catch {}
+      }
       const res = await fetch('/api/projects/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -947,7 +957,8 @@ const GrokBridge: React.FC = () => {
         setPreviewKey(k => k + 1);
         setStatusMessage(`Preview started on port ${data.port}`);
       } else {
-        setStatusMessage('Failed to start preview');
+        const errData = await res.json().catch(() => ({} as any));
+        setStatusMessage(`Failed to start preview: ${errData.error || res.statusText}`);
       }
     } catch (e: any) {
       setStatusMessage(`Preview error: ${e.message}`);
@@ -967,6 +978,14 @@ const GrokBridge: React.FC = () => {
     setPreviewPort(null);
     setShowPreviewEmbed(false);
   }, [activeProject]);
+
+  useEffect(() => {
+    if (autoStartPreviewRef.current && activeProject === autoStartPreviewRef.current) {
+      const projectToStart = autoStartPreviewRef.current;
+      autoStartPreviewRef.current = null;
+      startPreview();
+    }
+  }, [activeProject, startPreview]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { saveConversations(conversations); }, [conversations]);

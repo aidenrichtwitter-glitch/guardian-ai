@@ -96,9 +96,12 @@ supabase/
   - `applyBlock`/`confirmApply`/`batchApplyAll` write to project directory instead of main app
   - `buildProjectContext` reads project files instead of SELF_SOURCE
   - Copy Context includes the project's file tree and key file contents
-  - Preview button spawns a Vite dev server in the project directory on a dynamic port (5100+)
+  - Preview auto-starts when a project is selected (no manual click needed). Shows as embedded split-view iframe alongside Grok browser.
   - **HMR-first updates**: Normal file writes rely on Vite's Hot Module Replacement (no server kill). Full preview restart only triggered for config file changes (`vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `package.json`, `postcss.config.*`) or after dependency installs.
+  - **Windows polling**: Sub-project `vite.config.ts` is scaffolded with `usePolling: true` for reliable file watching on Windows. Existing projects without polling are auto-patched when preview starts.
   - Preview restart waits for port to be free (up to 3s) before spawning new server, preventing port conflicts.
+  - Refresh button in toolbar and preview panel header force-reloads the iframe. Auto-refresh after applying code (500ms for normal files, 2.5s for config changes).
+  - Electron IPC `ensure-project-polling` patches sub-project `vite.config.ts` with `usePolling` before starting preview.
 - Switching to "Main App" restores all original behavior (no project scoping)
 
 ## Testing

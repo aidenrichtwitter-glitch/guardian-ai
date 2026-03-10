@@ -925,6 +925,27 @@ function setupIpcHandlers() {
     });
   });
 
+  ipcMain.handle('ensure-project-polling', async (_event, { projectName }) => {
+    if (!projectName || typeof projectName !== 'string' || /[\/\\]|\.\./.test(projectName)) {
+      return { success: false, error: 'Invalid project name' };
+    }
+    const projectRoot = getProjectRoot();
+    const projectDir = path.join(projectRoot, 'projects', projectName);
+    const viteConfigPath = path.join(projectDir, 'vite.config.ts');
+    if (!fs.existsSync(viteConfigPath)) return { success: true, patched: false, reason: 'No vite.config.ts' };
+    const content = fs.readFileSync(viteConfigPath, 'utf-8');
+    if (content.includes('usePolling')) return { success: true, patched: false, reason: 'Already has polling' };
+    const patched = content.replace(
+      /defineConfig\(\{/,
+      `defineConfig({\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },`
+    );
+    if (patched !== content) {
+      fs.writeFileSync(viteConfigPath, patched, 'utf-8');
+      return { success: true, patched: true };
+    }
+    return { success: true, patched: false, reason: 'No defineConfig found' };
+  });
+
   ipcMain.handle('install-project-deps', async (_event, { projectName, dependencies, devDependencies }) => {
     if (!projectName || typeof projectName !== 'string' || /[\/\\]|\.\./.test(projectName)) {
       return { success: false, error: 'Invalid project name' };

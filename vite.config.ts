@@ -164,8 +164,8 @@ function projectManagementPlugin(): Plugin {
               ? `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${name}</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="/src/main.tsx"></script>\n</body>\n</html>`
               : `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${name}</title>\n</head>\n<body>\n  <div id="app"></div>\n  <script type="module" src="/src/main.ts"></script>\n</body>\n</html>`,
             "vite.config.ts": framework === "react"
-              ? `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react-swc";\n\nexport default defineConfig({\n  plugins: [react()],\n});`
-              : `import { defineConfig } from "vite";\n\nexport default defineConfig({});`,
+              ? `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react-swc";\n\nexport default defineConfig({\n  plugins: [react()],\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },\n});`
+              : `import { defineConfig } from "vite";\n\nexport default defineConfig({\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },\n});`,
             "tsconfig.json": JSON.stringify({
               compilerOptions: {
                 target: "ES2020",
@@ -338,6 +338,26 @@ function projectManagementPlugin(): Plugin {
               const { execSync } = await import("child_process");
               execSync("npm install", { cwd: projectDir, timeout: 30000, stdio: "pipe", shell: true });
             } catch {}
+          }
+
+          const viteConfigPath = path.join(projectDir, "vite.config.ts");
+          if (fs.existsSync(viteConfigPath)) {
+            const viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
+            if (!viteConfigContent.includes("usePolling")) {
+              const patched = viteConfigContent.includes("plugins:")
+                ? viteConfigContent.replace(
+                    /defineConfig\(\{/,
+                    `defineConfig({\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },`
+                  )
+                : viteConfigContent.replace(
+                    /defineConfig\(\{/,
+                    `defineConfig({\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },`
+                  );
+              if (patched !== viteConfigContent) {
+                fs.writeFileSync(viteConfigPath, patched, "utf-8");
+                console.log(`Patched ${name}/vite.config.ts with usePolling for Windows compatibility`);
+              }
+            }
           }
 
           const child = spawn("npx", ["vite", "--host", "0.0.0.0", "--port", String(port)], {
