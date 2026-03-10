@@ -454,12 +454,15 @@ function projectManagementPlugin(): Plugin {
             ...process.env as Record<string, string>,
             BROWSER: "none",
             PORT: String(port),
+            NODE_PATH: path.join(projectDir, "node_modules"),
           };
 
           const isReactScripts = devCmd.args.includes("react-scripts");
           if (isReactScripts) {
             portEnv.PORT = String(port);
             portEnv.HOST = "0.0.0.0";
+            portEnv.SKIP_PREFLIGHT_CHECK = "true";
+            portEnv.NODE_OPTIONS = (portEnv.NODE_OPTIONS || "") + " --openssl-legacy-provider";
           }
 
           const isNextDev = devCmd.args.includes("next");
