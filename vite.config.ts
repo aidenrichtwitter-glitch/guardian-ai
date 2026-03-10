@@ -1318,9 +1318,12 @@ function projectManagementPlugin(): Plugin {
       server.middlewares.use("/api/projects/import-github", async (req, res) => {
         if (req.method !== "POST") { res.statusCode = 405; res.end("Method not allowed"); return; }
         try {
-          const { owner, repo } = JSON.parse(await readBody(req));
+          const { owner, repo, targetProject } = JSON.parse(await readBody(req));
           if (!owner || !repo || /[\/\\]|\.\./.test(owner) || /[\/\\]|\.\./.test(repo)) {
             res.statusCode = 400; res.end(JSON.stringify({ error: "Invalid owner or repo" })); return;
+          }
+          if (targetProject && /[\/\\]|\.\./.test(targetProject)) {
+            res.statusCode = 400; res.end(JSON.stringify({ error: "Invalid target project name" })); return;
           }
 
           const fs = await import("fs");
@@ -1329,13 +1332,21 @@ function projectManagementPlugin(): Plugin {
           const projectsDir = path.resolve(process.cwd(), "projects");
           if (!fs.existsSync(projectsDir)) fs.mkdirSync(projectsDir, { recursive: true });
 
-          const projectName = repo.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+          const projectName = targetProject || repo.toLowerCase().replace(/[^a-z0-9-]/g, '-');
           const projectDir = path.resolve(projectsDir, projectName);
 
-          if (fs.existsSync(projectDir)) {
+          if (fs.existsSync(projectDir) && !targetProject) {
             res.statusCode = 409;
             res.end(JSON.stringify({ error: `Project '${projectName}' already exists. Delete it first or use a different name.` }));
             return;
+          }
+          if (targetProject && fs.existsSync(projectDir)) {
+            const existingFiles = fs.readdirSync(projectDir);
+            for (const f of existingFiles) {
+              if (f === "node_modules" || f === ".git") continue;
+              try { fs.rmSync(path.join(projectDir, f), { recursive: true, force: true }); } catch {}
+            }
+            console.log(`[Import] Cleared existing project '${projectName}' for clone into`);
           }
 
           const ghToken = process.env.GITHUB_TOKEN || "";

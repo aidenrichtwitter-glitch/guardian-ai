@@ -149,7 +149,8 @@ export function detectAllGitHubUrls(responseText: string): { owner: string; repo
 
 export async function importFromGitHub(
   githubUrl: string,
-  onProgress?: (progress: GitHubImportProgress) => void
+  onProgress?: (progress: GitHubImportProgress) => void,
+  targetProject?: string
 ): Promise<{ projectName: string; framework: string }> {
   const parsed = parseGitHubUrl(githubUrl);
   if (!parsed) throw new Error('Invalid GitHub URL');
@@ -160,10 +161,13 @@ export async function importFromGitHub(
     repoName: parsed.repo,
   });
 
+  const body: Record<string, string> = { owner: parsed.owner, repo: parsed.repo };
+  if (targetProject) body.targetProject = targetProject;
+
   const res = await fetch('/api/projects/import-github', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ owner: parsed.owner, repo: parsed.repo }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {

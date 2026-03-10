@@ -1554,7 +1554,7 @@ const GrokBridge: React.FC = () => {
     try {
       const result = await importFromGitHub(repoUrl, (progress) => {
         setGithubImportProgress(progress);
-      });
+      }, activeProject || undefined);
       setGithubImportProgress({
         stage: 'done',
         message: `Imported ${result.projectName} — switching to project`,
@@ -1566,7 +1566,7 @@ const GrokBridge: React.FC = () => {
       setGithubImportProgress({ stage: 'error', message: e.message || 'Import failed' });
       setTimeout(() => setGithubImportProgress(null), 6000);
     }
-  }, [handleSelectProject]);
+  }, [handleSelectProject, activeProject]);
 
   const handlePublish = useCallback(async () => {
     if (!activeProject || !publishDescription.trim()) return;

@@ -193,7 +193,7 @@ const ProjectExplorer: React.FC<ProjectExplorerProps> = ({ activeProject, onSele
     try {
       const result = await importFromGitHub(importUrl.trim(), (progress) => {
         setImportProgress(progress);
-      });
+      }, activeProject || undefined);
       await fetchProjects();
       onSelectProject(result.projectName);
       setShowImport(false);
