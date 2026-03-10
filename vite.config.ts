@@ -1038,6 +1038,8 @@ function projectManagementPlugin(): Plugin {
           }
 
           const fs = await import("fs");
+          const { execSync } = await import("child_process");
+          const os = await import("os");
           const projectsDir = path.resolve(process.cwd(), "projects");
           if (!fs.existsSync(projectsDir)) fs.mkdirSync(projectsDir, { recursive: true });
 
@@ -1050,114 +1052,96 @@ function projectManagementPlugin(): Plugin {
             return;
           }
 
-          const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`;
-          const headers: Record<string, string> = { "Accept": "application/vnd.github.v3+json", "User-Agent": "Guardian-AI" };
           const ghToken = process.env.GITHUB_TOKEN || "";
-          if (ghToken) {
-            headers["Authorization"] = `token ${ghToken}`;
-          }
+          const headers: Record<string, string> = { "User-Agent": "Guardian-AI" };
+          if (ghToken) headers["Authorization"] = `token ${ghToken}`;
 
-          const treeResp = await fetch(treeUrl, { headers });
-          if (!treeResp.ok) {
-            const errBody = await treeResp.text().catch(() => "");
-            if (treeResp.status === 404) {
-              res.statusCode = 404;
-              res.end(JSON.stringify({ error: `Repository ${owner}/${repo} not found or is private` }));
-            } else if (treeResp.status === 403) {
-              res.statusCode = 429;
-              res.end(JSON.stringify({ error: "GitHub API rate limit exceeded. Try again later." }));
-            } else {
-              res.statusCode = 502;
-              res.end(JSON.stringify({ error: `GitHub API error: ${treeResp.status} ${errBody.slice(0, 200)}` }));
-            }
+          const infoResp = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: { ...headers, "Accept": "application/vnd.github.v3+json" } });
+          if (!infoResp.ok) {
+            const status = infoResp.status;
+            if (status === 404) { res.statusCode = 404; res.end(JSON.stringify({ error: `Repository ${owner}/${repo} not found or is private` })); }
+            else if (status === 403) { res.statusCode = 429; res.end(JSON.stringify({ error: "GitHub API rate limit exceeded. Try again later." })); }
+            else { res.statusCode = 502; res.end(JSON.stringify({ error: `GitHub API error: ${status}` })); }
+            return;
+          }
+          const repoInfo: any = await infoResp.json();
+          const defaultBranch = repoInfo.default_branch || "main";
+
+          const MAX_TARBALL_SIZE = 200 * 1024 * 1024;
+          console.log(`[Import] Downloading tarball for ${owner}/${repo} (branch: ${defaultBranch})...`);
+          const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${encodeURIComponent(defaultBranch)}`;
+          const tarResp = await fetch(tarballUrl, { headers: { ...headers, "Accept": "application/vnd.github.v3+json" }, redirect: "follow" });
+          if (!tarResp.ok) {
+            res.statusCode = 502;
+            res.end(JSON.stringify({ error: `Failed to download tarball: ${tarResp.status}` }));
             return;
           }
 
-          const treeData: any = await treeResp.json();
-          const tree = treeData.tree || [];
+          const contentLength = parseInt(tarResp.headers.get("content-length") || "0", 10);
+          if (contentLength > MAX_TARBALL_SIZE) {
+            res.statusCode = 413;
+            res.end(JSON.stringify({ error: `Repository too large (${(contentLength / 1024 / 1024).toFixed(0)}MB). Max is ${MAX_TARBALL_SIZE / 1024 / 1024}MB.` }));
+            return;
+          }
 
-          const SKIP_PATTERNS = [
-            /^\.git\//,
-            /node_modules\//,
-            /\.cache\//,
-            /dist\//,
-            /build\//,
-            /\.next\//,
-            /\.DS_Store$/,
-            /\.env$/,
-            /\.env\.local$/,
-          ];
-          const MAX_FILE_SIZE = 500000;
+          const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "guardian-import-"));
+          try {
+          const tarPath = path.join(tmpDir, "repo.tar.gz");
 
-          const filesToDownload = tree.filter((item: any) => {
-            if (item.type !== "blob") return false;
-            if (item.size > MAX_FILE_SIZE) return false;
-            return !SKIP_PATTERNS.some(p => p.test(item.path));
-          });
+          const arrayBuf = await tarResp.arrayBuffer();
+          if (arrayBuf.byteLength > MAX_TARBALL_SIZE) {
+            res.statusCode = 413;
+            res.end(JSON.stringify({ error: `Repository too large (${(arrayBuf.byteLength / 1024 / 1024).toFixed(0)}MB). Max is ${MAX_TARBALL_SIZE / 1024 / 1024}MB.` }));
+            return;
+          }
+          fs.writeFileSync(tarPath, Buffer.from(arrayBuf));
+          const tarSize = fs.statSync(tarPath).size;
+          console.log(`[Import] Tarball downloaded: ${(tarSize / 1024 / 1024).toFixed(1)}MB`);
 
           fs.mkdirSync(projectDir, { recursive: true });
+          try {
+            execSync(`tar xzf "${tarPath}" --strip-components=1 -C "${projectDir}"`, { timeout: 60000, stdio: "pipe" });
+          } catch (tarErr: any) {
+            try { fs.rmSync(projectDir, { recursive: true, force: true }); } catch {}
+            throw new Error(`Failed to extract tarball: ${tarErr.message?.slice(0, 200)}`);
+          }
+          console.log(`[Import] Extracted tarball to ${projectDir}`);
 
-          let filesWritten = 0;
-          const BATCH_SIZE = 10;
-
-          const priorityFiles = ["package.json", "tsconfig.json", "vite.config.ts", "vite.config.js", "next.config.js", "next.config.mjs", "next.config.ts"];
-          const prioritized = [
-            ...filesToDownload.filter((f: any) => priorityFiles.includes(f.path)),
-            ...filesToDownload.filter((f: any) => !priorityFiles.includes(f.path)),
-          ];
-
-          let rateLimited = false;
-          const failedFiles: string[] = [];
-          for (let i = 0; i < prioritized.length; i += BATCH_SIZE) {
-            const batch = prioritized.slice(i, i + BATCH_SIZE);
-            await Promise.allSettled(
-              batch.map(async (item: any) => {
-                const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${item.path}`;
-                try {
-                  const rawResp = await fetch(rawUrl, { headers: ghToken ? { "Authorization": `token ${ghToken}` } : {} });
-                  if (rawResp.ok) {
-                    const content = await rawResp.text();
-                    const filePath = path.join(projectDir, item.path);
-                    const dir = path.dirname(filePath);
-                    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                    fs.writeFileSync(filePath, content, "utf-8");
-                    filesWritten++;
-                    return;
-                  }
-                } catch {}
-
-                const blobUrl = `https://api.github.com/repos/${owner}/${repo}/git/blobs/${item.sha}`;
-                try {
-                  const blobResp = await fetch(blobUrl, { headers });
-                  if (!blobResp.ok) {
-                    if (blobResp.status === 403 || blobResp.status === 429) rateLimited = true;
-                    failedFiles.push(item.path);
-                    return;
-                  }
-                  const blobData: any = await blobResp.json();
-                  let content: string;
-                  if (blobData.encoding === "base64") {
-                    content = Buffer.from(blobData.content, "base64").toString("utf-8");
-                  } else {
-                    content = blobData.content || "";
-                  }
-                  const filePath = path.join(projectDir, item.path);
-                  const dir = path.dirname(filePath);
-                  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                  fs.writeFileSync(filePath, content, "utf-8");
-                  filesWritten++;
-                } catch {
-                  failedFiles.push(item.path);
-                }
-              })
-            );
-            if (rateLimited && !ghToken) {
-              console.warn(`[Import] Rate limited after ${filesWritten} files. Consider setting GITHUB_TOKEN.`);
+          const CLEANUP_PATTERNS = ["node_modules", ".git", ".next", ".nuxt", "dist", ".cache", ".turbo", ".vercel", ".output"];
+          for (const pattern of CLEANUP_PATTERNS) {
+            const cleanPath = path.join(projectDir, pattern);
+            if (fs.existsSync(cleanPath)) {
+              try { fs.rmSync(cleanPath, { recursive: true, force: true }); } catch {}
             }
           }
-          if (failedFiles.length > 0) {
-            console.warn(`[Import] Failed to download ${failedFiles.length} files: ${failedFiles.slice(0, 10).join(", ")}`);
-          }
+          const walkAndClean = (dir: string) => {
+            try {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  if (entry.name === "node_modules" || entry.name === ".git") {
+                    try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+                  } else {
+                    walkAndClean(full);
+                  }
+                } else if (entry.name === ".DS_Store") {
+                  try { fs.unlinkSync(full); } catch {}
+                }
+              }
+            } catch {}
+          };
+          walkAndClean(projectDir);
+
+          let filesWritten = 0;
+          const countFiles = (dir: string) => {
+            try {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (entry.isDirectory()) countFiles(path.join(dir, entry.name));
+                else filesWritten++;
+              }
+            } catch {}
+          };
+          countFiles(projectDir);
 
           let framework = "vanilla";
           const pkgPath = path.join(projectDir, "package.json");
@@ -1166,7 +1150,7 @@ function projectManagementPlugin(): Plugin {
               const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
               const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
               if (deps["next"]) framework = "nextjs";
-              else if (deps["nuxt"]) framework = "nuxt";
+              else if (deps["nuxt"] || deps["nuxt3"]) framework = "nuxt";
               else if (deps["@angular/core"]) framework = "angular";
               else if (deps["svelte"] || deps["@sveltejs/kit"]) framework = "svelte";
               else if (deps["astro"]) framework = "astro";
@@ -1176,56 +1160,65 @@ function projectManagementPlugin(): Plugin {
           }
 
           let npmInstalled = false;
+          let installError = "";
           if (fs.existsSync(pkgPath)) {
             const detectPM = (): string => {
               if (fs.existsSync(path.join(projectDir, "bun.lockb")) || fs.existsSync(path.join(projectDir, "bun.lock"))) return "bun";
-              if (fs.existsSync(path.join(projectDir, "pnpm-lock.yaml"))) return "pnpm";
+              if (fs.existsSync(path.join(projectDir, "pnpm-lock.yaml")) || fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml"))) return "pnpm";
               if (fs.existsSync(path.join(projectDir, "yarn.lock"))) return "yarn";
               return "npm";
             };
             const detectedPM = detectPM();
-            const installCmd = detectedPM === "npm" ? "npm install --legacy-peer-deps --ignore-scripts"
-              : detectedPM === "pnpm" ? "npx pnpm install --no-frozen-lockfile --ignore-scripts"
-              : detectedPM === "yarn" ? "npx yarn install --ignore-engines --ignore-scripts"
-              : "npx bun install --ignore-scripts";
+
+            let isMonorepo = false;
             try {
-              const { execSync } = await import("child_process");
-              console.log(`[Import] Installing deps for ${projectName} with: ${installCmd}`);
-              execSync(installCmd, {
-                cwd: projectDir,
-                timeout: 120000,
-                stdio: "pipe",
-                shell: true,
-              });
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+              if (pkg.workspaces || fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml")) || fs.existsSync(path.join(projectDir, "lerna.json"))) {
+                isMonorepo = true;
+              }
+            } catch {}
+
+            const installCmd = detectedPM === "pnpm" ? "npx pnpm install --no-frozen-lockfile --ignore-scripts"
+              : detectedPM === "yarn" ? "npx yarn install --ignore-engines --ignore-scripts"
+              : detectedPM === "bun" ? "npx bun install --ignore-scripts"
+              : "npm install --legacy-peer-deps --ignore-scripts";
+
+            console.log(`[Import] Installing deps for ${projectName} with: ${installCmd} (pm: ${detectedPM}, monorepo: ${isMonorepo})`);
+            try {
+              execSync(installCmd, { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true });
               npmInstalled = true;
               console.log(`[Import] Deps installed for ${projectName}`);
             } catch (installErr: any) {
-              console.error(`[Import] Install failed for ${projectName}:`, installErr.message?.slice(0, 300));
+              installError = installErr.stderr?.toString().slice(-500) || installErr.message?.slice(0, 500) || "Unknown error";
+              console.error(`[Import] Install failed for ${projectName} with ${detectedPM}:`, installError.slice(0, 300));
               if (detectedPM !== "npm") {
                 try {
-                  const { execSync } = await import("child_process");
                   console.log(`[Import] Retrying with npm for ${projectName}`);
-                  execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: projectDir, timeout: 120000, stdio: "pipe", shell: true });
+                  execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true });
                   npmInstalled = true;
-                } catch {}
+                  installError = "";
+                  console.log(`[Import] Deps installed for ${projectName} (npm fallback)`);
+                } catch (retryErr: any) {
+                  installError = retryErr.stderr?.toString().slice(-300) || retryErr.message?.slice(0, 300) || "Retry failed";
+                }
               }
             }
           }
 
-          const importPartial = failedFiles.length > filesToDownload.length * 0.2;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({
-            success: !importPartial,
-            partial: importPartial,
+            success: true,
             projectName,
             framework,
             filesWritten,
-            totalFiles: filesToDownload.length,
-            failedFiles: failedFiles.length,
             npmInstalled,
             sourceRepo: `https://github.com/${owner}/${repo}`,
-            ...(rateLimited && !ghToken ? { warning: "GitHub API rate limited. Set GITHUB_TOKEN for higher limits." } : {}),
+            defaultBranch,
+            ...(installError ? { installError: installError.slice(0, 500) } : {}),
           }));
+          } finally {
+            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+          }
         } catch (err: any) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: err.message }));
@@ -1320,6 +1313,9 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: true,
     hmr: {
       overlay: false,
+    },
+    watch: {
+      ignored: ["**/projects/**", "**/.local/**", "**/node_modules/**"],
     },
   },
   plugins: [
