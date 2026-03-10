@@ -784,23 +784,40 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
     const wv = webviewRef.current;
     if (!wv) return;
 
-    const onLoading = () => setLoading(true);
-    const onLoaded = () => setLoading(false);
+    let loadTimer: ReturnType<typeof setTimeout> | null = null;
+    const onLoading = () => {
+      setLoading(true);
+      if (loadTimer) clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => setLoading(false), 15000);
+    };
+    const onLoaded = () => {
+      if (loadTimer) clearTimeout(loadTimer);
+      setLoading(false);
+    };
     const onNavigation = (e: any) => {
       if (e.url && e.url !== currentUrlRef.current) {
         currentUrlRef.current = e.url;
         setBrowserUrl(e.url);
       }
     };
+    const onFailLoad = (e: any) => {
+      if (e.errorCode !== -3) {
+        console.error('[webview] did-fail-load:', e.errorCode, e.errorDescription, e.validatedURL);
+      }
+      setLoading(false);
+    };
 
     wv.addEventListener('did-start-loading', onLoading);
     wv.addEventListener('did-stop-loading', onLoaded);
     wv.addEventListener('did-navigate', onNavigation);
+    wv.addEventListener('did-fail-load', onFailLoad);
 
     return () => {
+      if (loadTimer) clearTimeout(loadTimer);
       wv.removeEventListener('did-start-loading', onLoading);
       wv.removeEventListener('did-stop-loading', onLoaded);
       wv.removeEventListener('did-navigate', onNavigation);
+      wv.removeEventListener('did-fail-load', onFailLoad);
     };
   }, [setBrowserUrl]);
 
