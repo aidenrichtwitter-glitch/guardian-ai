@@ -16,10 +16,10 @@ import {
 } from "@/components/ui/sidebar";
 
 const items = [
-  { title: "Home", url: "/", icon: Home },
+  { title: "AI Bridge", url: "/", icon: BrainCircuit },
   { title: "Evolution", url: "/evolution", icon: Dna },
   { title: "Evolution Cycle", url: "/evolution-cycle", icon: RefreshCw },
-  { title: "AI Bridge", url: "/grok-bridge", icon: BrainCircuit },
+  { title: "Home", url: "/home", icon: Home },
 ];
 
 export function AppSidebar() {

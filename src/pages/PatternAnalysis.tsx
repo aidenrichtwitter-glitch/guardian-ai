@@ -253,7 +253,7 @@ const PatternAnalysis: React.FC = () => {
                   ) : (
                     <div className="text-[10px] text-muted-foreground/50 text-center py-2">
                       <p>No evolution plan saved yet.</p>
-                      <p className="mt-1">Go to <Link to="/grok-bridge" className="text-[hsl(280_80%_65%)] hover:underline">AI Bridge</Link> and click <strong>Evolution Context</strong> to start.</p>
+                      <p className="mt-1">Go to <Link to="/" className="text-[hsl(280_80%_65%)] hover:underline">AI Bridge</Link> and click <strong>Evolution Context</strong> to start.</p>
                     </div>
                   )}
                 </div>

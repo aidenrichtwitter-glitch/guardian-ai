@@ -20,10 +20,10 @@ const App = () => (
       <BrowserRouter>
         <AppLayout>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<GrokBridge />} />
+            <Route path="/home" element={<Index />} />
             <Route path="/evolution" element={<Evolution />} />
             <Route path="/evolution-cycle" element={<EvolutionCycle />} />
-            <Route path="/grok-bridge" element={<GrokBridge />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppLayout>

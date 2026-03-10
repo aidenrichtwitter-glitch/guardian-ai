@@ -97,6 +97,7 @@ const MODELS = [
 
 const BROWSER_SITES = [
   { id: 'grok', name: 'Grok', url: 'https://grok.com', icon: '🤖' },
+  { id: 'x', name: 'X', url: 'https://x.com/i/grok', icon: '𝕏' },
   { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com', icon: '💬' },
   { id: 'claude', name: 'Claude', url: 'https://claude.ai', icon: '🧠' },
   { id: 'github', name: 'GitHub', url: 'https://github.com', icon: '🐙' },
@@ -896,6 +897,17 @@ function GrokDesktopBrowser({ browserUrl, setBrowserUrl, customUrl, setCustomUrl
                 <span>{site.name}</span>
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Globe className="w-3 h-3 text-muted-foreground/50" />
+            <input
+              value={customUrl}
+              onChange={e => setCustomUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && customUrl.trim()) { const url = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`; window.open(url, '_blank'); setCustomUrl(''); } }}
+              placeholder="Custom URL..."
+              data-testid="input-custom-url-web"
+              className="w-36 bg-background border border-border/50 rounded px-2 py-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/30"
+            />
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center p-8">
