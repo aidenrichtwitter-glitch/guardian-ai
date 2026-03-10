@@ -389,12 +389,32 @@ function projectManagementPlugin(): Plugin {
               const { execSync } = await import("child_process");
               try { execSync(`taskkill /pid ${entry.process.pid} /T /F`, { stdio: "pipe" }); } catch {}
             } else {
-              entry.process.kill("SIGTERM");
+              try { process.kill(-entry.process.pid, "SIGTERM"); } catch { try { entry.process.kill("SIGTERM"); } catch {} }
             }
           } catch {}
           previewProcesses.delete(name);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+          const waitForPortFree = async (port: number, maxWait: number) => {
+            const net = await import("net");
+            const start = Date.now();
+            while (Date.now() - start < maxWait) {
+              const inUse = await new Promise<boolean>(resolve => {
+                const s = net.createServer();
+                s.once("error", () => resolve(true));
+                s.once("listening", () => { s.close(); resolve(false); });
+                s.listen(port, "0.0.0.0");
+              });
+              if (!inUse) return true;
+              await new Promise(r => setTimeout(r, 200));
+            }
+            return false;
+          };
+          const portFree = await waitForPortFree(oldPort, 3000);
+          if (!portFree) {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ restarted: false, reason: "Port still in use after 3s" }));
+            return;
+          }
 
           const fs = await import("fs");
           const projectDir = path.resolve(process.cwd(), "projects", name);

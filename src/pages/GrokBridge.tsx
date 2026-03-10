@@ -1113,17 +1113,24 @@ const GrokBridge: React.FC = () => {
           setApplyStageMessage(`Write failed: ${e.message}`);
           return;
         }
-        if (previewPort) {
+        const isConfigFile = ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs', 'postcss.config.mjs', 'postcss.config.ts'].includes(filePath);
+        if (previewPort && isConfigFile) {
           try {
-            await fetch('/api/projects/restart-preview', {
+            const restartRes = await fetch('/api/projects/restart-preview', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: activeProject }),
             });
-          } catch {}
+            const restartData = await restartRes.json().catch(() => ({} as any));
+            if (!restartData.restarted) {
+              setStatusMessage(`Preview restart skipped: ${restartData.reason || 'unknown'}`);
+            }
+          } catch (restartErr: any) {
+            setStatusMessage(`Preview restart failed: ${restartErr.message}`);
+          }
         }
         setApplyStage('done');
-        setApplyStageMessage(`Written to ${activeProject}/${filePath}${previewPort ? ' — preview refreshing' : ''}`);
+        setApplyStageMessage(`Written to ${activeProject}/${filePath}${previewPort ? (isConfigFile ? ' — preview restarting (refresh your browser tab)' : ' — HMR updating') : ''}`);
       } else if (isElectron) {
         const { ipcRenderer } = (window as any).require('electron');
 
@@ -1333,19 +1340,30 @@ const GrokBridge: React.FC = () => {
         }))]);
         await buildProjectContext();
 
-        if (previewPort) {
+        const hasConfigChanges = blocks.some(b =>
+          ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs', 'postcss.config.mjs', 'postcss.config.ts'].includes(b.filePath)
+        );
+        const needsRestart = previewPort && (hasConfigChanges || hasDeps);
+        if (needsRestart) {
           setBatchMessage('Restarting preview...');
           try {
-            await fetch('/api/projects/restart-preview', {
+            const restartRes = await fetch('/api/projects/restart-preview', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: activeProject }),
             });
-          } catch {}
+            const restartData = await restartRes.json().catch(() => ({} as any));
+            if (!restartData.restarted) {
+              setStatusMessage(`Preview restart skipped: ${restartData.reason || 'unknown'}`);
+            }
+          } catch (restartErr: any) {
+            setStatusMessage(`Preview restart failed: ${restartErr.message}`);
+          }
         }
 
         setBatchStage('done');
-        setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}${previewPort ? ' — preview refreshing' : ''}`);
+        const previewNote = previewPort ? (needsRestart ? ' — preview restarting (refresh your browser tab)' : ' — HMR updating') : '';
+        setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}${previewNote}`);
         setTimeout(() => { setBatchStage('idle'); setBatchMessage(''); }, 4000);
       } catch (e: any) {
         setBatchStage('error');

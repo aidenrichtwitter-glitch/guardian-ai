@@ -97,6 +97,8 @@ supabase/
   - `buildProjectContext` reads project files instead of SELF_SOURCE
   - Copy Context includes the project's file tree and key file contents
   - Preview button spawns a Vite dev server in the project directory on a dynamic port (5100+)
+  - **HMR-first updates**: Normal file writes rely on Vite's Hot Module Replacement (no server kill). Full preview restart only triggered for config file changes (`vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `package.json`, `postcss.config.*`) or after dependency installs.
+  - Preview restart waits for port to be free (up to 3s) before spawning new server, preventing port conflicts.
 - Switching to "Main App" restores all original behavior (no project scoping)
 
 ## Testing
