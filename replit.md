@@ -107,6 +107,9 @@ supabase/
   - Preview auto-starts when a project is selected (no manual click needed). Shows as embedded split-view iframe alongside Grok browser.
   - **HMR-first updates**: Normal file writes rely on Vite's Hot Module Replacement (no server kill). Full preview restart only triggered for config file changes (`vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `package.json`, `postcss.config.*`) or after dependency installs.
   - **Windows polling**: Sub-project `vite.config.ts` is scaffolded with `usePolling: true` for reliable file watching on Windows. Existing projects without polling are auto-patched when preview starts.
+  - **Auto config patching**: Preview startup auto-cleans stale `base: "/__preview/..."` from vite configs, patches rspack configs with correct port/host, and adds usePolling to vite configs.
+  - **Framework detection**: Supports next, vite, react-scripts, webpack, rspack, nuxt, astro, SvelteKit (`vite dev` not `vite`), pnpm monorepos (auto-finds `--filter` dev scripts + pre-builds workspace packages).
+  - **Process group kill**: Preview processes spawn with `detached: true`; stop/restart use `process.kill(-pid, SIGKILL)` for full process tree cleanup. Stale port detection uses `/proc/net/tcp` inode matching (since lsof/fuser/ss are unavailable).
   - Preview restart waits for port to be free (up to 3s) before spawning new server, preventing port conflicts.
   - Refresh button in toolbar and preview panel header force-reloads the iframe. Auto-refresh after applying code (500ms for normal files, 2.5s for config changes).
   - Electron IPC `ensure-project-polling` patches sub-project `vite.config.ts` with `usePolling` before starting preview.

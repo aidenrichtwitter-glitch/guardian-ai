@@ -307,9 +307,34 @@ function projectManagementPlugin(): Plugin {
             }).listen(port);
           });
           if (portInUse) {
-            console.log(`[Preview] Port ${port} still in use — attempting cleanup`);
-            try { execSync(`kill -9 $(ss -tlnp 'sport = :${port}' | grep -oP 'pid=\\K[0-9]+') 2>/dev/null || true`, { stdio: "ignore" }); } catch {}
-            await new Promise(r => setTimeout(r, 500));
+            console.log(`[Preview] Port ${port} still in use — killing`);
+            try {
+              const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
+              const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+              const lines = netTcp.split("\n").filter(l => l.includes(`:${portHex} `) && l.includes("0A"));
+              for (const line of lines) {
+                const cols = line.trim().split(/\s+/);
+                const inode = cols[9];
+                if (!inode || inode === "0") continue;
+                const procDirs = fs.readdirSync("/proc").filter((d: string) => /^\d+$/.test(d));
+                for (const pid of procDirs) {
+                  try {
+                    const fds = fs.readdirSync(`/proc/${pid}/fd`);
+                    for (const fd of fds) {
+                      try {
+                        const link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
+                        if (link === `socket:[${inode}]`) {
+                          console.log(`[Preview] Killing PID ${pid} on port ${port}`);
+                          try { process.kill(-parseInt(pid), 9); } catch {}
+                          try { process.kill(parseInt(pid), 9); } catch {}
+                        }
+                      } catch {}
+                    }
+                  } catch {}
+                }
+              }
+            } catch (e: any) { console.log(`[Preview] Port cleanup error: ${e.message}`); }
+            await new Promise(r => setTimeout(r, 800));
           }
 
           const hasPkg = fs.existsSync(path.join(projectDir, "package.json"));
@@ -354,71 +379,93 @@ function projectManagementPlugin(): Plugin {
           const detectDevCommand = (): { cmd: string; args: string[] } => {
             const scripts = pkg.scripts || {};
             const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+            const portStr = String(port);
+
+            const matchScript = (scriptBody: string): { cmd: string; args: string[] } | null => {
+              if (scriptBody.includes("next")) return { cmd: "npx", args: ["next", "dev", "--port", portStr] };
+              if (scriptBody.includes("react-scripts")) return { cmd: "npx", args: ["react-scripts", "start"] };
+              if (scriptBody.includes("nuxt")) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
+              if (scriptBody.includes("astro")) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+              if (scriptBody.includes("webpack")) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("rspack")) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("svelte") || scriptBody.includes("sveltekit")) return null;
+              if (scriptBody.includes("vite")) return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
+              return null;
+            };
+
+            const isSvelteKit = deps["@sveltejs/kit"] || deps["sveltekit"];
+            const isPnpmMonorepo = fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml"));
+
+            if (isPnpmMonorepo) {
+              const wsYaml = fs.readFileSync(path.join(projectDir, "pnpm-workspace.yaml"), "utf-8");
+              const hasPackages = wsYaml.includes("packages:");
+              if (hasPackages) {
+                for (const key of Object.keys(scripts)) {
+                  if (scripts[key].includes("--filter") && (key.includes("dev") || key === "lp:dev")) {
+                    console.log(`[Preview] Detected pnpm monorepo, using script "${key}": ${scripts[key]}`);
+                    return { cmd: pm === "pnpm" ? "pnpm" : "npx pnpm", args: ["run", key] };
+                  }
+                }
+              }
+            }
 
             if (scripts.dev) {
-              const devScript = scripts.dev;
-              if (devScript.includes("next")) {
-                return { cmd: "npx", args: ["next", "dev", "--port", String(port)] };
+              if (isSvelteKit) {
+                return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
               }
-              if (devScript.includes("vite")) {
-                return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", String(port)] };
-              }
-              if (devScript.includes("react-scripts")) {
-                return { cmd: "npx", args: ["react-scripts", "start"] };
-              }
-              if (devScript.includes("webpack")) {
-                return { cmd: "npx", args: ["webpack", "serve", "--port", String(port)] };
-              }
-              if (devScript.includes("nuxt")) {
-                return { cmd: "npx", args: ["nuxt", "dev", "--port", String(port)] };
-              }
-              if (devScript.includes("astro")) {
-                return { cmd: "npx", args: ["astro", "dev", "--port", String(port)] };
-              }
-              if (devScript.includes("svelte") || devScript.includes("sveltekit")) {
-                return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", String(port)] };
-              }
+              const matched = matchScript(scripts.dev);
+              if (matched) return matched;
               return { cmd: pm === "npm" ? "npm" : `npx ${pm}`, args: pm === "npm" ? ["run", "dev"] : ["run", "dev"] };
             }
 
             if (scripts.start) {
-              const startScript = scripts.start;
-              if (startScript.includes("react-scripts")) {
-                return { cmd: "npx", args: ["react-scripts", "start"] };
-              }
-              if (startScript.includes("next")) {
-                return { cmd: "npx", args: ["next", "dev", "--port", String(port)] };
-              }
-              if (startScript.includes("webpack")) {
-                return { cmd: "npx", args: ["webpack", "serve", "--port", String(port)] };
-              }
-              if (startScript.includes("vite")) {
-                return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", String(port)] };
-              }
-              if (startScript.includes("nuxt")) {
-                return { cmd: "npx", args: ["nuxt", "dev", "--port", String(port)] };
-              }
-              if (startScript.includes("astro")) {
-                return { cmd: "npx", args: ["astro", "dev", "--port", String(port)] };
-              }
+              const matched = matchScript(scripts.start);
+              if (matched) return matched;
               return { cmd: pm === "npm" ? "npm" : `npx ${pm}`, args: pm === "npm" ? ["run", "start"] : ["run", "start"] };
             }
 
-            if (deps["next"]) return { cmd: "npx", args: ["next", "dev", "--port", String(port)] };
-            if (deps["react-scripts"]) return { cmd: "npx", args: ["react-scripts", "start"] };
-            if (deps["nuxt"]) return { cmd: "npx", args: ["nuxt", "dev", "--port", String(port)] };
-            if (deps["astro"]) return { cmd: "npx", args: ["astro", "dev", "--port", String(port)] };
-            if (deps["webpack-dev-server"]) return { cmd: "npx", args: ["webpack", "serve", "--port", String(port)] };
-
-            if (fs.existsSync(path.join(projectDir, "vite.config.ts")) || fs.existsSync(path.join(projectDir, "vite.config.js")) || fs.existsSync(path.join(projectDir, "vite.config.mjs"))) {
-              return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", String(port)] };
+            if (scripts.serve || scripts["serve:rspack"]) {
+              const serveScript = scripts.serve || scripts["serve:rspack"];
+              const matched = matchScript(serveScript);
+              if (matched) return matched;
+              const serveKey = scripts.serve ? "serve" : "serve:rspack";
+              return { cmd: pm === "npm" ? "npm" : `npx ${pm}`, args: pm === "npm" ? ["run", serveKey] : ["run", serveKey] };
             }
 
-            return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", String(port)] };
+            if (deps["next"]) return { cmd: "npx", args: ["next", "dev", "--port", portStr] };
+            if (deps["react-scripts"]) return { cmd: "npx", args: ["react-scripts", "start"] };
+            if (deps["nuxt"]) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
+            if (deps["astro"]) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+            if (deps["webpack-dev-server"]) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["@rspack/cli"] || deps["@rspack/core"]) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (isSvelteKit) return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
+
+            if (fs.existsSync(path.join(projectDir, "vite.config.ts")) || fs.existsSync(path.join(projectDir, "vite.config.js")) || fs.existsSync(path.join(projectDir, "vite.config.mjs"))) {
+              return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
+            }
+
+            return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
           };
 
           const devCmd = detectDevCommand();
           console.log(`[Preview] Starting ${name} with: ${devCmd.cmd} ${devCmd.args.join(" ")}`);
+
+          const isPnpmMonorepo = fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml"));
+          if (isPnpmMonorepo) {
+            const scripts = pkg.scripts || {};
+            const buildScript = scripts["packages:build"] || scripts.build;
+            if (buildScript && (buildScript.includes("--filter") || buildScript.includes("packages"))) {
+              const buildKey = scripts["packages:build"] ? "packages:build" : "build";
+              console.log(`[Preview] Pre-building pnpm monorepo packages with: pnpm run ${buildKey}`);
+              try {
+                const { execSync: execSyncBuild } = await import("child_process");
+                execSyncBuild(`pnpm run ${buildKey}`, { cwd: projectDir, stdio: "pipe", timeout: 90000 });
+                console.log(`[Preview] Monorepo packages built successfully`);
+              } catch (e: any) {
+                console.log(`[Preview] Monorepo package build warning: ${e.message?.slice(0, 200)}`);
+              }
+            }
+          }
 
           const consoleBridgeScript = `<script data-guardian-console-bridge>
 (function() {
@@ -474,16 +521,50 @@ function projectManagementPlugin(): Plugin {
             const viteConfigPath = path.join(projectDir, cfgName);
             if (fs.existsSync(viteConfigPath)) {
               const viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
-              if (!viteConfigContent.includes("usePolling")) {
-                const patched = viteConfigContent.replace(
+              let content = viteConfigContent;
+              if (!content.includes("usePolling")) {
+                content = content.replace(
                   /defineConfig\(\{/,
                   `defineConfig({\n  server: {\n    watch: {\n      usePolling: true,\n      interval: 500,\n    },\n  },`
                 );
-                if (patched !== viteConfigContent) {
-                  fs.writeFileSync(viteConfigPath, patched, "utf-8");
+                if (content !== viteConfigContent) {
                   console.log(`[Preview] Patched ${name}/${cfgName} with usePolling`);
                 }
               }
+              if (/base:\s*["']\/(__preview|__dev)[^"']*["']/.test(content)) {
+                content = content.replace(/\s*base:\s*["']\/(__preview|__dev)[^"']*["'],?\n?/g, "\n");
+                console.log(`[Preview] Removed stale base path from ${name}/${cfgName}`);
+              }
+              if (content !== viteConfigContent) {
+                fs.writeFileSync(viteConfigPath, content, "utf-8");
+              }
+              break;
+            }
+          }
+
+          for (const rspackCfg of ["rspack.config.js", "rspack.config.ts"]) {
+            const rspackPath = path.join(projectDir, rspackCfg);
+            if (fs.existsSync(rspackPath)) {
+              try {
+                let rsContent = fs.readFileSync(rspackPath, "utf-8");
+                let changed = false;
+                const portMatch = rsContent.match(/port:\s*(\d+)/);
+                if (portMatch && portMatch[1] !== String(port)) {
+                  rsContent = rsContent.replace(/port:\s*\d+/, `port: ${port}`);
+                  changed = true;
+                }
+                if (rsContent.includes("devServer") && !rsContent.includes("host:")) {
+                  rsContent = rsContent.replace(/(devServer:\s*\{)/, `$1\n    host: '0.0.0.0',`);
+                  changed = true;
+                } else if (rsContent.includes("host:") && !rsContent.includes("0.0.0.0")) {
+                  rsContent = rsContent.replace(/host:\s*['"][^'"]*['"]/, `host: '0.0.0.0'`);
+                  changed = true;
+                }
+                if (changed) {
+                  fs.writeFileSync(rspackPath, rsContent, "utf-8");
+                  console.log(`[Preview] Patched ${name}/${rspackCfg} with port ${port} and host 0.0.0.0`);
+                }
+              } catch {}
               break;
             }
           }
@@ -525,9 +606,10 @@ function projectManagementPlugin(): Plugin {
             cwd: projectDir,
             stdio: "pipe",
             shell: true,
-            detached: false,
+            detached: true,
             env: portEnv,
           });
+          child.unref();
 
           let startupOutput = "";
           let serverReady = false;
@@ -614,7 +696,7 @@ function projectManagementPlugin(): Plugin {
               const { execSync } = await import("child_process");
               try { execSync(`taskkill /pid ${entry.process.pid} /T /F`, { stdio: "pipe" }); } catch {}
             } else {
-              try { process.kill(-entry.process.pid, "SIGTERM"); } catch { try { entry.process.kill("SIGTERM"); } catch {} }
+              try { process.kill(-entry.process.pid, "SIGKILL"); } catch { try { entry.process.kill("SIGKILL"); } catch {} }
             }
           } catch {}
           previewProcesses.delete(name);
@@ -661,31 +743,55 @@ function projectManagementPlugin(): Plugin {
           };
           const pmR = detectPMRestart();
 
-          let devCmd = "npx";
-          let devArgs = ["vite", "--host", "0.0.0.0", "--port", String(oldPort)];
-          if (scripts.dev) {
-            if (scripts.dev.includes("next")) { devCmd = "npx"; devArgs = ["next", "dev", "--port", String(oldPort)]; }
-            else if (scripts.dev.includes("react-scripts")) { devCmd = "npx"; devArgs = ["react-scripts", "start"]; }
-            else if (scripts.dev.includes("vite")) { devCmd = "npx"; devArgs = ["vite", "--host", "0.0.0.0", "--port", String(oldPort)]; }
-            else if (scripts.dev.includes("nuxt")) { devCmd = "npx"; devArgs = ["nuxt", "dev", "--port", String(oldPort)]; }
-            else if (scripts.dev.includes("astro")) { devCmd = "npx"; devArgs = ["astro", "dev", "--port", String(oldPort)]; }
-            else { devCmd = pmR === "npm" ? "npm" : `npx ${pmR}`; devArgs = pmR === "npm" ? ["run", "dev"] : ["run", "dev"]; }
-          } else if (scripts.start) {
-            if (scripts.start.includes("react-scripts")) { devCmd = "npx"; devArgs = ["react-scripts", "start"]; }
-            else if (scripts.start.includes("next")) { devCmd = "npx"; devArgs = ["next", "dev", "--port", String(oldPort)]; }
-            else { devCmd = pmR === "npm" ? "npm" : `npx ${pmR}`; devArgs = pmR === "npm" ? ["run", "start"] : ["run", "start"]; }
-          } else if (deps["next"]) { devCmd = "npx"; devArgs = ["next", "dev", "--port", String(oldPort)]; }
-          else if (deps["react-scripts"]) { devCmd = "npx"; devArgs = ["react-scripts", "start"]; }
-          else if (deps["nuxt"]) { devCmd = "npx"; devArgs = ["nuxt", "dev", "--port", String(oldPort)]; }
-          else if (deps["astro"]) { devCmd = "npx"; devArgs = ["astro", "dev", "--port", String(oldPort)]; }
+          const restartDetect = (): { cmd: string; args: string[] } => {
+            const portStr = String(oldPort);
+            const matchScript = (scriptBody: string): { cmd: string; args: string[] } | null => {
+              if (scriptBody.includes("next")) return { cmd: "npx", args: ["next", "dev", "--port", portStr] };
+              if (scriptBody.includes("react-scripts")) return { cmd: "npx", args: ["react-scripts", "start"] };
+              if (scriptBody.includes("nuxt")) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
+              if (scriptBody.includes("astro")) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+              if (scriptBody.includes("webpack")) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("rspack")) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+              if (scriptBody.includes("svelte") || scriptBody.includes("sveltekit")) return null;
+              if (scriptBody.includes("vite")) return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
+              return null;
+            };
+            const isSvelteKit = deps["@sveltejs/kit"] || deps["sveltekit"];
+            const isPnpmMono = fs.existsSync(path.join(projectDir, "pnpm-workspace.yaml"));
+            if (isPnpmMono) {
+              for (const key of Object.keys(scripts)) {
+                if (scripts[key].includes("--filter") && (key.includes("dev") || key === "lp:dev")) {
+                  return { cmd: "pnpm", args: ["run", key] };
+                }
+              }
+            }
+            if (scripts.dev) {
+              if (isSvelteKit) return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
+              const m = matchScript(scripts.dev); if (m) return m;
+              return { cmd: pmR === "npm" ? "npm" : `npx ${pmR}`, args: pmR === "npm" ? ["run", "dev"] : ["run", "dev"] };
+            }
+            if (scripts.start) { const m = matchScript(scripts.start); if (m) return m; return { cmd: pmR === "npm" ? "npm" : `npx ${pmR}`, args: pmR === "npm" ? ["run", "start"] : ["run", "start"] }; }
+            if (scripts.serve || scripts["serve:rspack"]) { const s = scripts.serve || scripts["serve:rspack"]; const m = matchScript(s); if (m) return m; const k = scripts.serve ? "serve" : "serve:rspack"; return { cmd: pmR === "npm" ? "npm" : `npx ${pmR}`, args: pmR === "npm" ? ["run", k] : ["run", k] }; }
+            if (deps["next"]) return { cmd: "npx", args: ["next", "dev", "--port", portStr] };
+            if (deps["react-scripts"]) return { cmd: "npx", args: ["react-scripts", "start"] };
+            if (deps["nuxt"]) return { cmd: "npx", args: ["nuxt", "dev", "--port", portStr] };
+            if (deps["astro"]) return { cmd: "npx", args: ["astro", "dev", "--port", portStr] };
+            if (deps["webpack-dev-server"]) return { cmd: "npx", args: ["webpack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (deps["@rspack/cli"] || deps["@rspack/core"]) return { cmd: "npx", args: ["rspack", "serve", "--host", "0.0.0.0", "--port", portStr] };
+            if (isSvelteKit) return { cmd: "npx", args: ["vite", "dev", "--host", "0.0.0.0", "--port", portStr] };
+            return { cmd: "npx", args: ["vite", "--host", "0.0.0.0", "--port", portStr] };
+          };
+          const restartCmd = restartDetect();
+          console.log(`[Preview] Restarting ${name} with: ${restartCmd.cmd} ${restartCmd.args.join(" ")}`);
 
-          const child = spawn(devCmd, devArgs, {
+          const child = spawn(restartCmd.cmd, restartCmd.args, {
             cwd: projectDir,
             stdio: "pipe",
             shell: true,
-            detached: false,
+            detached: true,
             env: { ...process.env, BROWSER: "none", PORT: String(oldPort), HOST: "0.0.0.0", HOSTNAME: "0.0.0.0" },
           });
+          child.unref();
 
           previewProcesses.set(name, { process: child, port: oldPort });
 
@@ -1378,13 +1484,36 @@ function projectManagementPlugin(): Plugin {
           const { name } = JSON.parse(await readBody(req));
           const entry = previewProcesses.get(name);
           if (entry) {
+            const pid = entry.process.pid;
+            try { process.kill(-pid, 9); } catch {}
+            try { entry.process.kill("SIGKILL"); } catch {}
             try {
-              if (process.platform === "win32") {
-                const { execSync } = await import("child_process");
-                execSync(`taskkill /pid ${entry.process.pid} /T /F`, { stdio: "pipe" });
-              } else {
-                entry.process.kill("SIGTERM");
-              }
+              const fs = await import("fs");
+              const killPort = async (port: number) => {
+                const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
+                const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+                const lines = netTcp.split("\n").filter((l: string) => l.includes(`:${portHex} `));
+                for (const line of lines) {
+                  const cols = line.trim().split(/\s+/);
+                  const inode = cols[9];
+                  if (!inode || inode === "0") continue;
+                  const procDirs = fs.readdirSync("/proc").filter((d: string) => /^\d+$/.test(d));
+                  for (const p of procDirs) {
+                    try {
+                      const fds = fs.readdirSync(`/proc/${p}/fd`);
+                      for (const fd of fds) {
+                        try {
+                          if (fs.readlinkSync(`/proc/${p}/fd/${fd}`) === `socket:[${inode}]`) {
+                            try { process.kill(-parseInt(p), 9); } catch {}
+                            try { process.kill(parseInt(p), 9); } catch {}
+                          }
+                        } catch {}
+                      }
+                    } catch {}
+                  }
+                }
+              };
+              await killPort(entry.port);
             } catch {}
             if (activePreviewPort === entry.port) activePreviewPort = null;
             previewProcesses.delete(name);

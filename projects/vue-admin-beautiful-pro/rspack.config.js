@@ -257,7 +257,7 @@ module.exports = {
   devServer: {
     hot: true,
     // 修改端口，避免冲突
-    port: 8090,
+    port: 5192,
     historyApiFallback: true,
     static: {
       directory: path.join(__dirname, 'public'),
