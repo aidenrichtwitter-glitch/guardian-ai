@@ -943,6 +943,7 @@ function setupIpcHandlers() {
       'docker ', 'docker-compose ',
     ];
     const trimmed = command.trim().replace(/\s+#\s+.*$/, '').trim();
+    if (/[\r\n\x00]/.test(trimmed)) return { success: false, error: 'Control characters not allowed in commands' };
     const devServerRe = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
     if (devServerRe.test(trimmed)) return { success: false, error: 'Dev server commands should use the Preview button instead' };
     const isAllowed = allowedPrefixes.some(p => trimmed.startsWith(p)) || trimmed === 'npm install' || trimmed === 'corepack enable';

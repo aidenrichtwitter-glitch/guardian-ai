@@ -543,6 +543,7 @@ function projectManagementPlugin(): Plugin {
             "docker ", "docker-compose ",
           ];
           const trimmed = command.trim().replace(/\s+#\s+.*$/, '').trim();
+          if (/[\r\n\x00]/.test(trimmed)) { res.statusCode = 403; res.end(JSON.stringify({ error: "Control characters not allowed in commands" })); return; }
           const devServerRe = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
           if (devServerRe.test(trimmed)) { res.statusCode = 400; res.end(JSON.stringify({ error: "Dev server commands should use the Preview button instead" })); return; }
           const isAllowed = allowedPrefixes.some(p => trimmed.startsWith(p)) || trimmed === "npm install" || trimmed === "corepack enable";
@@ -559,7 +560,30 @@ function projectManagementPlugin(): Plugin {
           if (!fs.existsSync(projectDir)) { res.statusCode = 404; res.end(JSON.stringify({ success: false, error: `Project directory not found: ${projectDir}` })); return; }
 
           const { exec: execAsync } = await import("child_process");
-          const actualCmd = trimmed === "npm install" ? "npm install --legacy-peer-deps" : trimmed;
+          const os = await import("os");
+          const isWin = os.platform() === "win32";
+          let actualCmd = trimmed === "npm install" ? "npm install --legacy-peer-deps" : trimmed;
+
+          if (isWin) {
+            const UNIX_CMDS = /^(?:rm|mkdir|mv|cp|touch|cat|ls|ln|chmod|chown|head|tail|grep|find|wc|sort|uniq|diff|sed|awk|xargs|which|whoami|env|printenv|curl|wget)\b/i;
+            if (UNIX_CMDS.test(actualCmd)) {
+              let psCmd = actualCmd;
+              if (/^rm\s+(-rf?\s+)?/i.test(psCmd)) {
+                const targets = psCmd.replace(/^rm\s+(-rf?\s+)?/i, "").trim().split(/\s+/);
+                psCmd = targets.map(t => `Remove-Item -Path '${t}' -Recurse -Force -ErrorAction SilentlyContinue`).join("; ");
+              } else if (/^mkdir\s+(-p\s+)?/i.test(psCmd)) {
+                const dir = psCmd.replace(/^mkdir\s+(-p\s+)?/i, "").trim();
+                psCmd = `New-Item -ItemType Directory -Force -Path '${dir}'`;
+              } else if (/^touch\s/i.test(psCmd)) {
+                const file = psCmd.replace(/^touch\s+/i, "").trim();
+                psCmd = `New-Item -ItemType File -Force -Path '${file}'`;
+              }
+              actualCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCmd.replace(/"/g, '\\"')}"`;
+            } else if (/^corepack\s/i.test(actualCmd)) {
+              actualCmd = `npx ${actualCmd}`;
+            }
+          }
+
           await new Promise<void>((resolve) => {
             execAsync(actualCmd, { cwd: projectDir, timeout: 60000, shell: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
               res.setHeader("Content-Type", "application/json");
