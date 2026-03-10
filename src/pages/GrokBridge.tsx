@@ -3,7 +3,7 @@ import {
   Send, Shield, Check, AlertTriangle, Undo2, FileCode, Sparkles, Bot,
   User, Loader2, Code2, Trash2, ChevronDown, Globe, MessageSquare,
   Clipboard, ClipboardCheck, Zap, X, ChevronUp, ChevronDown as ChevronDownIcon,
-  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download, Terminal, AlertCircle, Key, ArrowRightLeft, FolderPlus
+  Dna, FolderOpen, PanelLeftClose, PanelLeft, Play, ExternalLink, Download, Terminal, AlertCircle, Key, ArrowRightLeft, FolderPlus, RefreshCw, Monitor
 } from 'lucide-react';
 import { validateChange } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
@@ -885,6 +885,9 @@ const GrokBridge: React.FC = () => {
   const [showProjectPanel, setShowProjectPanel] = useState(false);
   const [previewPort, setPreviewPort] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [showPreviewEmbed, setShowPreviewEmbed] = useState(false);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  const [previewKey, setPreviewKey] = useState(0);
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const [evolutionState, setEvolutionState] = useState<EvolutionState | null>(null);
   const [currentPlan, setCurrentPlan] = useState<EvolutionPlan | null>(loadEvolutionPlan());
@@ -923,6 +926,7 @@ const GrokBridge: React.FC = () => {
     persistActiveProject(name);
     setAppliedChanges([]);
     setPreviewPort(null);
+    setShowPreviewEmbed(false);
     setProjectContext('');
     setStatusMessage(name ? `Project: ${name}` : 'Switched to Main App');
   }, [activeProject, previewPort]);
@@ -939,6 +943,8 @@ const GrokBridge: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setPreviewPort(data.port);
+        setShowPreviewEmbed(true);
+        setPreviewKey(k => k + 1);
         setStatusMessage(`Preview started on port ${data.port}`);
       } else {
         setStatusMessage('Failed to start preview');
@@ -959,6 +965,7 @@ const GrokBridge: React.FC = () => {
       });
     } catch {}
     setPreviewPort(null);
+    setShowPreviewEmbed(false);
   }, [activeProject]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -1129,8 +1136,13 @@ const GrokBridge: React.FC = () => {
             setStatusMessage(`Preview restart failed: ${restartErr.message}`);
           }
         }
+        if (previewPort && !isConfigFile) {
+          setTimeout(() => setPreviewKey(k => k + 1), 500);
+        } else if (previewPort && isConfigFile) {
+          setTimeout(() => setPreviewKey(k => k + 1), 2500);
+        }
         setApplyStage('done');
-        setApplyStageMessage(`Written to ${activeProject}/${filePath}${previewPort ? (isConfigFile ? ' — preview restarting (refresh your browser tab)' : ' — HMR updating') : ''}`);
+        setApplyStageMessage(`Written to ${activeProject}/${filePath}${previewPort ? (isConfigFile ? ' — preview restarting' : ' — HMR updating') : ''}`);
       } else if (isElectron) {
         const { ipcRenderer } = (window as any).require('electron');
 
@@ -1361,8 +1373,11 @@ const GrokBridge: React.FC = () => {
           }
         }
 
+        if (previewPort) {
+          setTimeout(() => setPreviewKey(k => k + 1), needsRestart ? 2500 : 500);
+        }
         setBatchStage('done');
-        const previewNote = previewPort ? (needsRestart ? ' — preview restarting (refresh your browser tab)' : ' — HMR updating') : '';
+        const previewNote = previewPort ? (needsRestart ? ' — preview restarting' : ' — HMR updating') : '';
         setBatchMessage(`${blocks.length} files written${hasDeps ? ' + deps installed' : ''} to ${activeProject}${previewNote}`);
         setTimeout(() => { setBatchStage('idle'); setBatchMessage(''); }, 4000);
       } catch (e: any) {
@@ -1915,11 +1930,29 @@ const GrokBridge: React.FC = () => {
               </button>
               {previewPort && (
                 <>
-                  <a href={`http://localhost:${previewPort}`} target="_blank" rel="noopener noreferrer" data-testid="link-preview" className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20">
-                    <ExternalLink className="w-3 h-3" /> :{previewPort}
+                  <button
+                    data-testid="button-toggle-preview"
+                    onClick={() => setShowPreviewEmbed(prev => !prev)}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] transition-colors border ${
+                      showPreviewEmbed
+                        ? 'bg-primary/20 text-primary border-primary/30'
+                        : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'
+                    }`}
+                  >
+                    <Monitor className="w-3 h-3" /> :{previewPort}
+                  </button>
+                  <button
+                    data-testid="button-refresh-preview"
+                    onClick={() => setPreviewKey(k => k + 1)}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-[hsl(200_60%_40%/0.15)] text-[hsl(200_60%_55%)] hover:bg-[hsl(200_60%_40%/0.25)] transition-colors border border-[hsl(200_60%_40%/0.3)]"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                  <a href={`http://localhost:${previewPort}`} target="_blank" rel="noopener noreferrer" data-testid="link-preview-external" className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-secondary/30 text-muted-foreground hover:bg-secondary/50 transition-colors border border-border/30">
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                   <button data-testid="button-stop-preview" onClick={stopPreview} className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors border border-destructive/20">
-                    <X className="w-3 h-3" /> Stop
+                    <X className="w-3 h-3" />
                   </button>
                 </>
               )}
@@ -2006,7 +2039,47 @@ const GrokBridge: React.FC = () => {
               <ProjectExplorer activeProject={activeProject} onSelectProject={handleSelectProject} onFileSelect={(path, content) => setStatusMessage(`Viewing: ${path} (${content.length} chars)`)} />
             </div>
           )}
-          <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+          {showPreviewEmbed && previewPort ? (
+            <div className="flex-1 flex min-h-0 overflow-hidden">
+              <div className={isElectron ? 'flex-1 min-w-0' : 'flex-1 min-w-0'} style={{ flex: '1 1 50%' }}>
+                <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+              </div>
+              <div className="border-l border-border/30 flex flex-col" style={{ flex: '1 1 50%' }}>
+                <div className="flex items-center gap-2 px-2 py-1 bg-card/50 border-b border-border/30 shrink-0">
+                  <Monitor className="w-3 h-3 text-[hsl(150_60%_55%)]" />
+                  <span className="text-[10px] font-medium text-foreground/80">{activeProject} Preview</span>
+                  <span className="text-[9px] text-muted-foreground/50">:{previewPort}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      data-testid="button-refresh-preview-panel"
+                      onClick={() => setPreviewKey(k => k + 1)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-[hsl(200_60%_40%/0.15)] text-[hsl(200_60%_55%)] hover:bg-[hsl(200_60%_40%/0.25)] transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Refresh
+                    </button>
+                    <button
+                      data-testid="button-close-preview-panel"
+                      onClick={() => setShowPreviewEmbed(false)}
+                      className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                <iframe
+                  ref={previewIframeRef}
+                  key={previewKey}
+                  src={`http://localhost:${previewPort}`}
+                  data-testid="iframe-preview"
+                  className="flex-1 w-full border-0 bg-white"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                  title={`${activeProject} preview`}
+                />
+              </div>
+            </div>
+          ) : (
+            <GrokDesktopBrowser browserUrl={browserUrl} setBrowserUrl={setBrowserUrl} customUrl={customUrl} setCustomUrl={setCustomUrl} onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+          )}
         </div>
       )}
 
