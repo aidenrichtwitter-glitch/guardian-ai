@@ -2289,11 +2289,23 @@ const GrokBridge: React.FC = () => {
       }
 
       let instructions = `\n=== INSTRUCTIONS ===\n`;
-      instructions += `When suggesting code changes, use this exact format for each file:\n`;
-      instructions += `// file: path/to/file.tsx\n`;
-      instructions += `\`\`\`tsx\n// file content here\n\`\`\`\n`;
-      instructions += `Prefer minimal patches — only include files that need changes.\n`;
-      instructions += `The code extractor will automatically detect and apply these blocks.\n\n`;
+      instructions += `You are assisting with code for a self-recursive IDE called λ Recursive (Guardian AI).\n`;
+      instructions += `Think step-by-step: understand the request → check the current files provided in context → plan minimal changes → output code.\n\n`;
+
+      instructions += `REPO SELECTION (for new project requests or major feature additions):\n`;
+      instructions += `When the user asks to build something new or significantly enhance a project:\n`;
+      instructions += `1) FIRST suggest a popular public GitHub repo as a starting point (React/TS/Vite/Tailwind preferred, high stars, MIT/Apache license). Provide the full GitHub URL.\n`;
+      instructions += `2) SECOND, consider any proven builds from the shared library if listed above.\n`;
+      instructions += `3) LAST RESORT: start fresh only if nothing fits.\n`;
+      instructions += `Always prefer leveraging existing open-source work over starting from scratch.\n\n`;
+
+      instructions += `RULES:\n`;
+      instructions += `1. ALWAYS use \`// file: path/to/file.ext\` headers immediately before each fenced code block.\n`;
+      instructions += `2. Prefer minimal, targeted patches over full file rewrites. Only include files that need changes.\n`;
+      instructions += `3. Only cite real, published npm packages — never invent package names.\n`;
+      instructions += `4. Keep explanations brief. Focus on what changed and why.\n`;
+      instructions += `5. The code extractor will automatically detect and apply these blocks.\n\n`;
+
       instructions += `If your changes require new npm packages, include a dependencies block BEFORE the code blocks:\n\n`;
       instructions += `=== DEPENDENCIES ===\n`;
       instructions += `package-name\n`;

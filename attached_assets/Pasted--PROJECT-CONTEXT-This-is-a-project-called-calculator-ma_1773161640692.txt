@@ -1,0 +1,191 @@
+=== PROJECT CONTEXT ===
+This is a project called "calculator" managed by Guardian AI.
+All file paths are relative to the project root.
+
+=== INSTRUCTIONS ===
+When suggesting code changes, use this exact format for each file:
+// file: path/to/file.tsx
+```tsx
+// file content here
+```
+Prefer minimal patches — only include files that need changes.
+The code extractor will automatically detect and apply these blocks.
+
+If your changes require new npm packages, include a dependencies block BEFORE the code blocks:
+
+=== DEPENDENCIES ===
+package-name
+dev: @types/package-name
+=== END_DEPENDENCIES ===
+
+List one package per line. Prefix dev dependencies with "dev: ".
+The app will automatically install these before applying code changes.
+=== FILE TREE ===
+src/main.tsx
+index.html
+package-lock.json
+package.json
+tsconfig.json
+vite.config.ts
+
+=== src/main.tsx ===
+import { createRoot } from "react-dom/client";
+import { useState } from 'react';
+
+function App() {
+  const [display, setDisplay] = useState('0');
+
+  const handleClick = (value: string) => {
+    if (value === '=') {
+      try {
+        setDisplay(eval(display).toString());
+      } catch {
+        setDisplay('Error');
+      }
+    } else if (value === 'C') {
+      setDisplay('0');
+    } else {
+      setDisplay(display === '0' ? value : display + value);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: '24px', marginBottom: '10px' }}>{display}</div>
+      <button onClick={() => handleClick('7')}>7</button>
+      <button onClick={() => handleClick('8')}>8</button>
+      <button onClick={() => handleClick('9')}>9</button>
+      <button onClick={() => handleClick('/')}>/</button>
+      <br />
+      <button onClick={() => handleClick('4')}>4</button>
+      <button onClick={() => handleClick('5')}>5</button>
+      <button onClick={() => handleClick('6')}>6</button>
+      <button onClick={() => handleClick('*')}>*</button>
+      <br />
+      <button onClick={() => handleClick('1')}>1</button>
+      <button onClick={() => handleClick('2')}>2</button>
+      <button onClick={() => handleClick('3')}>3</button>
+      <button onClick={() => handleClick('-')}>-</button>
+      <br />
+      <button onClick={() => handleClick('0')}>0</button>
+      <button onClick={() => handleClick('=')}>=</button>
+      <button onClick={() => handleClick('+')}>+</button>
+      <button onClick={() => handleClick('C')}>C</button>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+
+=== index.html ===
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script data-guardian-console-bridge>
+(function() {
+  if (window.__guardianConsoleBridge) return;
+  window.__guardianConsoleBridge = true;
+  var origLog = console.log, origWarn = console.warn, origError = console.error, origInfo = console.info;
+  function send(level, args, stack) {
+    try {
+      var serialized = [];
+      for (var i = 0; i < args.length; i++) {
+        try { serialized.push(typeof args[i] === 'object' ? JSON.parse(JSON.stringify(args[i])) : args[i]); }
+        catch(e) { serialized.push(String(args[i])); }
+      }
+      window.parent.postMessage({ type: 'guardian-console-bridge', level: level, args: serialized, stack: stack || null }, '*');
+    } catch(e) {}
+  }
+  console.log = function() { send('log', Array.prototype.slice.call(arguments)); origLog.apply(console, arguments); };
+  console.warn = function() { send('warn', Array.prototype.slice.call(arguments)); origWarn.apply(console, arguments); };
+  console.error = function() { send('error', Array.prototype.slice.call(arguments)); origError.apply(console, arguments); };
+  console.info = function() { send('info', Array.prototype.slice.call(arguments)); origInfo.apply(console, arguments); };
+  window.onerror = function(msg, source, line, column, error) {
+    send('error', [String(msg)], error && error.stack ? error.stack : null);
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function(event) {
+    var reason = event.reason;
+    var msg = reason instanceof Error ? reason.message : String(reason);
+    var stack = reason instanceof Error ? reason.stack : null;
+    send('error', ['Unhandled Promise Rejection: ' + msg], stack);
+  });
+})();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>calculator</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
+
+=== package.json ===
+{
+  "name": "calculator",
+  "version": "0.0.1",
+  "private": true,
+  "description": "first app",
+  "_framework": "react",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lodash": "^4.17.23",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react-swc": "^3.7.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  }
+}
+
+
+=== tsconfig.json ===
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true
+  },
+  "include": [
+    "src"
+  ]
+}
+
+=== vite.config.ts ===
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+
+export default defineConfig({
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 500,
+    },
+  },
+  plugins: [react()],
+});
