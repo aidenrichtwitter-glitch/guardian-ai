@@ -10,9 +10,10 @@ export interface ParsedDependencies {
 }
 
 export interface ActionItem {
-  type: 'command' | 'env' | 'install' | 'manual' | 'create-dir' | 'rename' | 'delete';
+  type: 'command' | 'env' | 'install' | 'manual' | 'create-dir' | 'rename' | 'delete' | 'info';
   description: string;
   command?: string;
+  url?: string;
 }
 
 const VALID_PKG_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[^\s]*)?$/;
