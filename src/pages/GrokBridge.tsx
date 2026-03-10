@@ -23,7 +23,7 @@ import {
 import {
   getActiveProject, setActiveProject as persistActiveProject,
   readProjectFile, writeProjectFile, getProjectFiles,
-  importFromGitHub, detectGitHubUrlInResponse,
+  importFromGitHub, detectAllGitHubUrls, detectGitHubUrlInResponse,
   type ProjectFileNode, type GitHubImportProgress
 } from '@/lib/project-manager';
 import {
@@ -35,6 +35,7 @@ import {
   cleanGrokResponse,
   cleanedResponseToBlocks,
   suggestQuickActions,
+  clearAvailabilityCache,
   type OllamaToasterConfig,
   type ToasterAnalysis,
   type ToasterAvailability,
@@ -177,7 +178,7 @@ function extractContextSections(fullText: string): string[] {
   return sections;
 }
 
-function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activeProject }: { onApply: (filePath: string, code: string) => void; onApplyAll?: (blocks: { filePath: string; code: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void; activeProject?: string | null }) {
+function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activeProject, onGithubImport }: { onApply: (filePath: string, code: string) => void; onApplyAll?: (blocks: { filePath: string; code: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void; activeProject?: string | null; onGithubImport?: (url: string) => void }) {
   const [blocks, setBlocks] = useState<ExtractedBlock[]>([]);
   const [detectedDeps, setDetectedDeps] = useState<{ dependencies: string[]; devDependencies: string[] }>({ dependencies: [], devDependencies: [] });
   const [depsInstalling, setDepsInstalling] = useState(false);
@@ -197,6 +198,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
   const [showPasteBox, setShowPasteBox] = useState(false);
   const [clipboardAvailable, setClipboardAvailable] = useState(true);
   const [ollamaCleaned, setOllamaCleaned] = useState(false);
+  const [detectedGithubUrls, setDetectedGithubUrls] = useState<{ owner: string; repo: string; fullUrl: string }[]>([]);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const extractorContentRef = useRef<HTMLDivElement>(null);
 
@@ -223,6 +225,9 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
     setLastClipboard(text);
     setResponseContext(text);
     setContextSections(extractContextSections(text));
+
+    const githubUrls = detectAllGitHubUrls(text);
+    setDetectedGithubUrls(githubUrls);
 
     const regexParsed = parseCodeBlocks(text);
     applyParsedBlocks(text, regexParsed, false);
@@ -319,10 +324,17 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
     }
   };
 
+  const handleGithubClone = (url: string) => {
+    if (onGithubImport) {
+      onGithubImport(url);
+      setDetectedGithubUrls([]);
+    }
+  };
+
   return (
     <div className={`border-t bg-background/95 backdrop-blur-sm shadow-2xl transition-colors z-20 ${flash ? 'border-primary bg-primary/10' : 'border-primary/30'}`}>
       {/* Toolbar */}
-      <div className="px-4 py-2 flex items-center gap-3 border-b border-border/30">
+      <div className="px-4 py-2 flex items-center gap-3 border-b border-border/30 flex-wrap">
         <div className="flex items-center gap-2">
           <Zap className={`w-3.5 h-3.5 text-primary ${flash ? 'animate-ping' : 'animate-pulse'}`} />
           <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Code Extractor</span>
@@ -391,6 +403,17 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
             {actionItems.length} action{actionItems.length > 1 ? 's' : ''} needed
           </span>
         )}
+        {detectedGithubUrls.length > 0 && onGithubImport && detectedGithubUrls.slice(0, 3).map((gh, i) => (
+          <button
+            key={gh.fullUrl}
+            onClick={() => handleGithubClone(gh.fullUrl)}
+            data-testid={`button-clone-repo-${i}`}
+            className="text-[9px] text-[hsl(200_70%_60%)] ml-1 flex items-center gap-1 px-2 py-1.5 rounded bg-[hsl(200_70%_60%/0.1)] hover:bg-[hsl(200_70%_60%/0.25)] border border-[hsl(200_70%_60%/0.3)] cursor-pointer transition-colors font-bold"
+          >
+            <GitBranch className="w-2.5 h-2.5" />
+            {gh.owner}/{gh.repo} → Clone
+          </button>
+        ))}
         {isElectron && onApplyAll && blocks.filter(b => b.filePath && !b.applied).length > 1 && (
           <button
             onClick={() => {
@@ -1249,6 +1272,23 @@ const GrokBridge: React.FC = () => {
   }, [toasterConfig]);
 
   useEffect(() => {
+    const poll = setInterval(async () => {
+      clearAvailabilityCache();
+      const result = await checkToasterAvailability(toasterConfig);
+      setToasterAvailability(prev => {
+        if (prev && prev.available !== result.available) {
+          setStatusMessage(result.available
+            ? `Toaster reconnected — ${result.models.slice(0, 2).join(', ')}`
+            : `Toaster disconnected${result.error ? ': ' + result.error : ''}`
+          );
+        }
+        return result;
+      });
+    }, 60_000);
+    return () => clearInterval(poll);
+  }, [toasterConfig]);
+
+  useEffect(() => {
     startKnowledgeRefreshLoop();
     return () => stopKnowledgeRefreshLoop();
   }, []);
@@ -1294,6 +1334,11 @@ const GrokBridge: React.FC = () => {
       autoStartPreviewRef.current = name;
     }
   }, [activeProject, previewPort]);
+
+  useEffect(() => {
+    (window as any).__guardianSelectProject = handleSelectProject;
+    return () => { delete (window as any).__guardianSelectProject; };
+  }, [handleSelectProject]);
 
   const handleFileEdit = useCallback(async (filePath: string, content: string) => {
     setEditorFile({ path: filePath, content });
@@ -1500,6 +1545,24 @@ const GrokBridge: React.FC = () => {
         if (repoMatch && !assistantSoFar.toLowerCase().includes('starting fresh')) {
           setDetectedRepoUrl(repoMatch.fullUrl);
           setStatusMessage(`Grok suggested repo: ${repoMatch.owner}/${repoMatch.repo} — click to clone`);
+          if (autoApplyEnabled && activeProject) {
+            getProjectFiles(activeProject).then(tree => {
+              const flatFiles: string[] = [];
+              const walk = (nodes: ProjectFileNode[], prefix = '') => {
+                for (const n of nodes) {
+                  const p = prefix ? `${prefix}/${n.name}` : n.name;
+                  if (n.type === 'file') flatFiles.push(p);
+                  if (n.children) walk(n.children, p);
+                }
+              };
+              walk(tree);
+              const sourceFiles = flatFiles.filter(f => !['package.json', 'package-lock.json'].includes(f));
+              if (sourceFiles.length === 0) {
+                setStatusMessage(`Auto-cloning ${repoMatch.owner}/${repoMatch.repo}...`);
+                handleGitHubImport(repoMatch.fullUrl);
+              }
+            }).catch(() => {});
+          }
         }
         const regexBlocks = parseCodeBlocks(assistantSoFar);
         if (autoApplyEnabled && activeProject && regexBlocks.length > 0) {
@@ -2918,6 +2981,7 @@ const GrokBridge: React.FC = () => {
                   const newConfig = { endpoint: settingsOllamaEndpoint, model: settingsOllamaModel };
                   saveToasterConfig(newConfig);
                   setToasterConfig(newConfig);
+                  clearAvailabilityCache();
                   checkToasterAvailability(newConfig).then(setToasterAvailability);
                   setShowSettings(false);
                   setStatusMessage('Settings saved');
@@ -3072,11 +3136,28 @@ const GrokBridge: React.FC = () => {
           </div>
 
           {toasterAvailability !== null && (
-            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border shrink-0 ${
-              toasterAvailability.available
-                ? 'bg-[hsl(150_60%_40%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_40%/0.2)]'
-                : 'bg-secondary/20 text-muted-foreground/50 border-border/20'
-            }`} data-testid="status-ollama-toaster">
+            <button
+              onClick={async () => {
+                clearAvailabilityCache();
+                const result = await checkToasterAvailability(toasterConfig);
+                setToasterAvailability(result);
+                if (result.available) {
+                  setStatusMessage(`Toaster connected — ${result.models.length} model${result.models.length !== 1 ? 's' : ''}: ${result.models.slice(0, 3).join(', ')}${result.version ? ` (v${result.version})` : ''}`);
+                } else {
+                  setStatusMessage(`Toaster: ${result.error || 'Connection failed'}`);
+                }
+              }}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border shrink-0 cursor-pointer transition-colors ${
+                toasterAvailability.available
+                  ? 'bg-[hsl(150_60%_40%/0.1)] text-[hsl(150_60%_55%)] border-[hsl(150_60%_40%/0.2)] hover:bg-[hsl(150_60%_40%/0.2)]'
+                  : 'bg-secondary/20 text-muted-foreground/50 border-border/20 hover:bg-secondary/40 hover:text-muted-foreground'
+              }`}
+              data-testid="button-ollama-toaster"
+              title={toasterAvailability.available
+                ? `Connected — ${toasterAvailability.models.slice(0, 3).join(', ')}${toasterAvailability.version ? ` (v${toasterAvailability.version})` : ''}\nClick to test connection`
+                : `${toasterAvailability.error || 'Not connected'}\nClick to test connection`
+              }
+            >
               <Bot className="w-3 h-3" />
               {toasterLoading ? (
                 <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Analyzing...</>
@@ -3085,7 +3166,7 @@ const GrokBridge: React.FC = () => {
               ) : (
                 <span>Toaster off</span>
               )}
-            </div>
+            </button>
           )}
 
           <button
@@ -3359,7 +3440,7 @@ const GrokBridge: React.FC = () => {
             )}
 
             {/* Code extractor — shared across both modes */}
-            <ClipboardExtractor onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} />
+            <ClipboardExtractor onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} onGithubImport={handleGitHubImport} />
           </div>
 
           {/* Preview panel — shared across both modes */}

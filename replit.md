@@ -111,9 +111,12 @@ supabase/
   - Electron IPC `ensure-project-polling` patches sub-project `vite.config.ts` with `usePolling` before starting preview.
 - Switching to "Main App" restores all original behavior (no project scoping)
 - **GitHub Import**: "Import from GitHub" button in project panel. Paste a repo URL → app downloads via GitHub API → creates project → installs deps → starts preview
-  - Also triggered automatically when Grok suggests a repo URL in response to "What do you want to build?"
+  - Auto-detected in Grok responses: `detectAllGitHubUrls` finds all GitHub repo URLs in any AI response (browser or API mode)
+  - **Browser mode**: Clone buttons appear in ClipboardExtractor toolbar for each detected repo
+  - **API mode**: Banner appears at top with "Clone & Import" button; also auto-clones when auto-apply is ON and the active project is empty (no source files)
   - Endpoint: `/api/projects/import-github` — recursive tree fetch + blob download, skips node_modules/dist/.env, 500KB file size limit
   - Grok is the single decision-maker for repo selection — Ollama never suggests repos
+- **Empty project creation**: New projects start with only a `package.json` (name, version, description, framework metadata). No scaffold files — the idea is Grok suggests a repo to clone or generates the initial files
 
 ## Preview Log Capture & Auto-Error Feedback
 - **LogsPanel** (`src/components/LogsPanel.tsx`): Collapsible console panel below the preview iframe
@@ -135,7 +138,9 @@ supabase/
 - **Graceful degradation**: If Ollama not running (`localhost:11434`), falls back to existing behavior (raw file concat + regex parsing + heuristic quick actions)
 - **Config**: Endpoint URL + model name stored in localStorage, configurable in settings
 - **Recommended models**: `qwen2.5-coder:7b`, `llama3.2:3b`, `phi-3.5-mini`
-- UI shows "Toaster" status badge in top bar (green=connected, muted=off)
+- UI shows "Toaster" status badge in top bar (green=connected, muted=off). **Clickable** — click to test connection with clear success/failure feedback
+- **Periodic health polling**: Checks connection every 60 seconds. Shows status message when connection state changes (connected/disconnected)
+- **Diagnostic errors**: Connection check now returns specific reasons: "Connection refused", "Timeout", "No models found — run ollama pull", etc.
 
 ## Auto-Apply & Safety Validation
 - **Auto-Apply Toggle**: Zap icon button in toolbar, persisted in localStorage

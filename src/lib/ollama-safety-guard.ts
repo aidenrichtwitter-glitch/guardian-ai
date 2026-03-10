@@ -76,19 +76,34 @@ export async function checkOllamaAvailability(baseUrl = 'http://localhost:11434'
   available: boolean;
   models: string[];
   version?: string;
+  error?: string;
 }> {
   try {
-    const [tagsRes, versionRes] = await Promise.all([
-      fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) }).catch(() => null),
-      fetch(`${baseUrl}/api/version`, { signal: AbortSignal.timeout(3000) }).catch(() => null),
-    ]);
+    let tagsRes: Response | null = null;
+    let versionRes: Response | null = null;
+    try {
+      [tagsRes, versionRes] = await Promise.all([
+        fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) }),
+        fetch(`${baseUrl}/api/version`, { signal: AbortSignal.timeout(3000) }).catch(() => null),
+      ]);
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.includes('abort') || msg.includes('timeout') || msg.includes('Timeout')) {
+        return { available: false, models: [], error: `Timeout connecting to ${baseUrl} — check the endpoint URL` };
+      }
+      return { available: false, models: [], error: `Connection refused — is Ollama running? (${baseUrl})` };
+    }
 
     if (!tagsRes || !tagsRes.ok) {
-      return { available: false, models: [] };
+      return { available: false, models: [], error: `Ollama responded with status ${tagsRes?.status || 'unknown'} — check endpoint` };
     }
 
     const tagsData = await tagsRes.json();
     const models = (tagsData.models || []).map((m: any) => m.name || m.model || '');
+
+    if (models.length === 0) {
+      return { available: false, models: [], error: 'Connected to Ollama but no models found — run: ollama pull qwen2.5-coder:7b' };
+    }
 
     let version: string | undefined;
     if (versionRes?.ok) {
@@ -97,8 +112,8 @@ export async function checkOllamaAvailability(baseUrl = 'http://localhost:11434'
     }
 
     return { available: true, models, version };
-  } catch {
-    return { available: false, models: [] };
+  } catch (e: any) {
+    return { available: false, models: [], error: `Unexpected error: ${e?.message || 'unknown'}` };
   }
 }
 

@@ -36,6 +36,7 @@ export interface ToasterAvailability {
   available: boolean;
   models: string[];
   version?: string;
+  error?: string;
 }
 
 let cachedAvailability: ToasterAvailability | null = null;

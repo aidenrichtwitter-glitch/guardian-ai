@@ -119,13 +119,32 @@ export function parseGitHubUrl(text: string): { owner: string; repo: string; ful
 }
 
 export function detectGitHubUrlInResponse(responseText: string): { owner: string; repo: string; fullUrl: string } | null {
-  const lines = responseText.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const parsed = parseGitHubUrl(trimmed);
-    if (parsed) return parsed;
+  const all = detectAllGitHubUrls(responseText);
+  return all.length > 0 ? all[0] : null;
+}
+
+const GITHUB_NON_REPO_PATHS = new Set([
+  'features', 'settings', 'explore', 'topics', 'trending', 'collections',
+  'events', 'sponsors', 'notifications', 'issues', 'pulls', 'marketplace',
+  'login', 'signup', 'join', 'pricing', 'about', 'security', 'customer-stories',
+]);
+
+export function detectAllGitHubUrls(responseText: string): { owner: string; repo: string; fullUrl: string }[] {
+  const seen = new Set<string>();
+  const results: { owner: string; repo: string; fullUrl: string }[] = [];
+  const regex = /https?:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)/g;
+  let match;
+  while ((match = regex.exec(responseText)) !== null) {
+    const owner = match[1];
+    const repo = match[2].replace(/\.git$/, '');
+    const key = `${owner}/${repo}`.toLowerCase();
+    if (seen.has(key)) continue;
+    if (GITHUB_NON_REPO_PATHS.has(owner.toLowerCase())) continue;
+    if (GITHUB_NON_REPO_PATHS.has(repo.toLowerCase())) continue;
+    seen.add(key);
+    results.push({ owner, repo, fullUrl: `https://github.com/${owner}/${repo}` });
   }
-  return null;
+  return results;
 }
 
 export async function importFromGitHub(
