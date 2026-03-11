@@ -2,6 +2,8 @@ export interface ParsedBlock {
   filePath: string;
   code: string;
   language: string;
+  editType?: 'full' | 'search-replace' | 'diff';
+  searchCode?: string;
 }
 
 export interface ParsedDependencies {
@@ -493,6 +495,238 @@ export function parseActionItems(text: string): ActionItem[] {
   return positioned.map(({ pos, ...item }) => item);
 }
 
+function parseSearchReplaceBlocks(text: string): ParsedBlock[] {
+  const blocks: ParsedBlock[] = [];
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const srRe = /(?:(?:\/\/|#|<!--)\s*(?:file:\s?|filename:\s?|path:\s?)([\S]+?)(?:-->)?\s*\n)?[<]{3,}\s*SEARCH\s*\n([\s\S]*?)\n={3,}\s*\n([\s\S]*?)\n[>]{3,}\s*REPLACE/g;
+  let m;
+  while ((m = srRe.exec(normalized)) !== null) {
+    let filePath = m[1] || '';
+    const searchCode = m[2].trim();
+    const replaceCode = m[3].trim();
+    if (!filePath) {
+      filePath = extractFilePathFromPrecedingText(normalized, m.index);
+    }
+    const ext = filePath.match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+      html: 'html', css: 'css', json: 'json', py: 'python',
+      vue: 'vue', svelte: 'svelte', go: 'go', rs: 'rust',
+      scss: 'scss', less: 'less', yaml: 'yaml', yml: 'yaml',
+    };
+    blocks.push({
+      filePath,
+      code: replaceCode,
+      language: langMap[ext] || 'typescript',
+      editType: 'search-replace',
+      searchCode,
+    });
+  }
+
+  const altRe = /(?:(?:\/\/|#|<!--)\s*(?:file:\s?|filename:\s?|path:\s?)([\S]+?)(?:-->)?\s*\n)?```\w*\n([\s\S]*?)```\s*\n+(?:(?:replace|change|update|should\s+be|becomes?|with|→|->|=>)\s*(?:it\s+)?(?:with|to|:)?\s*\n+)```\w*\n([\s\S]*?)```/gi;
+  let am;
+  while ((am = altRe.exec(normalized)) !== null) {
+    let filePath = am[1] || '';
+    const searchCode = am[2].trim();
+    const replaceCode = am[3].trim();
+    if (!filePath) {
+      filePath = extractFilePathFromPrecedingText(normalized, am.index);
+    }
+    if (blocks.some(b => b.searchCode === searchCode && b.code === replaceCode)) continue;
+    const ext = filePath.match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+      html: 'html', css: 'css', json: 'json', py: 'python',
+    };
+    blocks.push({
+      filePath,
+      code: replaceCode,
+      language: langMap[ext] || 'typescript',
+      editType: 'search-replace',
+      searchCode,
+    });
+  }
+  return blocks;
+}
+
+function parseUnifiedDiffs(text: string): ParsedBlock[] {
+  const blocks: ParsedBlock[] = [];
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const diffBlockRe = /```(?:diff|patch)\n([\s\S]*?)```/g;
+  let dm;
+  while ((dm = diffBlockRe.exec(normalized)) !== null) {
+    const diffContent = dm[1];
+    const fileHeaderRe = /^(?:---\s+a\/(.+)|diff\s+--git\s+a\/(\S+)\s+b\/\S+)\n(?:\+\+\+\s+b\/\S+\n)?/gm;
+    let fhm;
+    while ((fhm = fileHeaderRe.exec(diffContent)) !== null) {
+      const filePath = fhm[1] || fhm[2] || '';
+      if (!filePath || !isValidFilePath(filePath)) continue;
+      const hunkStart = fhm.index + fhm[0].length;
+      const nextFileIdx = diffContent.indexOf('\n--- ', hunkStart);
+      const nextGitIdx = diffContent.indexOf('\ndiff --git ', hunkStart);
+      let end = diffContent.length;
+      if (nextFileIdx >= 0) end = Math.min(end, nextFileIdx + 1);
+      if (nextGitIdx >= 0) end = Math.min(end, nextGitIdx + 1);
+      const hunks = diffContent.substring(hunkStart, end);
+      const ext = filePath.match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
+      const langMap: Record<string, string> = {
+        ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+        html: 'html', css: 'css', json: 'json', py: 'python',
+      };
+      blocks.push({
+        filePath,
+        code: hunks.trim(),
+        language: langMap[ext] || 'typescript',
+        editType: 'diff',
+      });
+    }
+  }
+
+  const proseDiffRe = /^(?:---\s+a\/(.+)|diff\s+--git\s+a\/(\S+)\s+b\/\S+)\n\+\+\+\s+b\/\S+\n(@@[\s\S]*?)(?=\n(?:---\s+a\/|diff\s+--git\s+)|$)/gm;
+  let pdm;
+  while ((pdm = proseDiffRe.exec(normalized)) !== null) {
+    const filePath = pdm[1] || pdm[2] || '';
+    if (!filePath || !isValidFilePath(filePath)) continue;
+    if (blocks.some(b => b.filePath === filePath && b.editType === 'diff')) continue;
+    const hunks = pdm[3];
+    const ext = filePath.match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+      html: 'html', css: 'css', json: 'json', py: 'python',
+    };
+    blocks.push({
+      filePath,
+      code: hunks.trim(),
+      language: langMap[ext] || 'typescript',
+      editType: 'diff',
+    });
+  }
+  return blocks;
+}
+
+export function applySearchReplace(existing: string, searchCode: string, replaceCode: string): string | null {
+  if (existing.includes(searchCode)) {
+    return existing.replace(searchCode, replaceCode);
+  }
+  const normalizeWs = (s: string) => s.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n');
+  const normalizedExisting = normalizeWs(existing);
+  const normalizedSearch = normalizeWs(searchCode);
+  if (normalizedExisting.includes(normalizedSearch)) {
+    const idx = normalizedExisting.indexOf(normalizedSearch);
+    let origStart = 0;
+    let normPos = 0;
+    for (let i = 0; i < existing.length && normPos < idx; i++) {
+      const chunk = normalizeWs(existing.substring(origStart, i + 1));
+      if (chunk.length > normPos) normPos = chunk.length;
+      if (normPos >= idx) { origStart = i + 1 - (normPos - idx); break; }
+    }
+    const searchLen = searchCode.length;
+    let bestStart = Math.max(0, origStart - 20);
+    let bestEnd = Math.min(existing.length, bestStart + searchLen + 40);
+    let bestScore = 0;
+    for (let s = bestStart; s < Math.min(existing.length, origStart + 20); s++) {
+      for (let e = s + searchLen - 10; e < Math.min(existing.length + 1, s + searchLen + 20); e++) {
+        const candidate = existing.substring(s, e);
+        if (normalizeWs(candidate) === normalizedSearch) {
+          const score = candidate.length;
+          if (score > bestScore) { bestStart = s; bestEnd = e; bestScore = score; }
+        }
+      }
+    }
+    if (bestScore > 0) {
+      return existing.substring(0, bestStart) + replaceCode + existing.substring(bestEnd);
+    }
+  }
+  const searchLines = searchCode.split('\n').map(l => l.trim()).filter(Boolean);
+  if (searchLines.length >= 3) {
+    const firstLine = searchLines[0];
+    const lastLine = searchLines[searchLines.length - 1];
+    const existingLines = existing.split('\n');
+    let startIdx = -1;
+    let endIdx = -1;
+    for (let i = 0; i < existingLines.length; i++) {
+      if (existingLines[i].trim() === firstLine) {
+        startIdx = i;
+        for (let j = i + 1; j < existingLines.length; j++) {
+          if (existingLines[j].trim() === lastLine) {
+            endIdx = j;
+            break;
+          }
+        }
+        if (endIdx >= 0) break;
+      }
+    }
+    if (startIdx >= 0 && endIdx >= 0) {
+      const indent = existingLines[startIdx].match(/^(\s*)/)?.[1] || '';
+      const replaceLines = replaceCode.split('\n').map((l, i) => i === 0 ? indent + l.trimStart() : l);
+      const result = [
+        ...existingLines.slice(0, startIdx),
+        ...replaceLines,
+        ...existingLines.slice(endIdx + 1),
+      ];
+      return result.join('\n');
+    }
+  }
+  return null;
+}
+
+export function applyUnifiedDiff(existing: string, diffText: string): string | null {
+  const lines = existing.split('\n');
+  const diffLines = diffText.split('\n');
+  const hunkRe = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/;
+  interface HunkLine { type: 'context' | 'remove' | 'add'; text: string }
+  interface Hunk { oldStart: number; oldCount: number; lines: HunkLine[] }
+  const hunks: Hunk[] = [];
+  let currentHunk: Hunk | null = null;
+  for (const dl of diffLines) {
+    const hm = dl.match(hunkRe);
+    if (hm) {
+      if (currentHunk) hunks.push(currentHunk);
+      currentHunk = { oldStart: parseInt(hm[1], 10), oldCount: parseInt(hm[2] || '1', 10), lines: [] };
+      continue;
+    }
+    if (!currentHunk) continue;
+    if (dl.startsWith('-')) currentHunk.lines.push({ type: 'remove', text: dl.substring(1) });
+    else if (dl.startsWith('+')) currentHunk.lines.push({ type: 'add', text: dl.substring(1) });
+    else if (dl.startsWith(' ')) currentHunk.lines.push({ type: 'context', text: dl.substring(1) });
+    else if (dl.startsWith('\\')) continue;
+  }
+  if (currentHunk) hunks.push(currentHunk);
+  if (hunks.length === 0) return null;
+  let offset = 0;
+  const result = [...lines];
+  for (const hunk of hunks) {
+    const startLine = hunk.oldStart - 1 + offset;
+    const oldLines = hunk.lines.filter(l => l.type === 'context' || l.type === 'remove').map(l => l.text);
+    const chunk = result.slice(startLine, startLine + oldLines.length);
+    let matched = chunk.length === oldLines.length && chunk.every((l, i) => l === oldLines[i]);
+    let effectiveStart = startLine;
+    if (!matched) {
+      matched = chunk.length === oldLines.length && chunk.every((l, i) => l.trim() === oldLines[i].trim());
+    }
+    if (!matched && oldLines.length > 0) {
+      const firstOld = oldLines[0].trim();
+      for (let s = Math.max(0, startLine - 15); s < Math.min(result.length, startLine + 15); s++) {
+        if (result[s].trim() !== firstOld) continue;
+        const candidate = result.slice(s, s + oldLines.length);
+        if (candidate.length === oldLines.length && candidate.every((l, i) => l.trim() === oldLines[i].trim())) {
+          effectiveStart = s;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) continue;
+    const newLines: string[] = [];
+    for (const hl of hunk.lines) {
+      if (hl.type === 'context' || hl.type === 'add') newLines.push(hl.text);
+    }
+    result.splice(effectiveStart, oldLines.length, ...newLines);
+    offset += newLines.length - oldLines.length;
+  }
+  return result.join('\n');
+}
+
 const KNOWN_LANG_TAGS = ['typescript', 'tsx', 'jsx', 'javascript', 'html', 'css', 'scss', 'less', 'json', 'python', 'bash', 'sh', 'shell', 'sql', 'yaml', 'yml', 'toml', 'xml', 'svg', 'vue', 'svelte', 'go', 'rust', 'ruby', 'java', 'kotlin', 'swift', 'cpp', 'glsl', 'graphql', 'proto', 'markdown', 'md', 'prisma', 'dockerfile', 'makefile'];
 
 function parseUnfencedFileBlocks(text: string): ParsedBlock[] {
@@ -546,60 +780,83 @@ function parseUnfencedFileBlocks(text: string): ParsedBlock[] {
   return blocks;
 }
 
-export function parseCodeBlocks(text: string): ParsedBlock[] {
+function parseFencedBlocks(text: string): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!/```\w*\n/.test(normalized)) return blocks;
 
-  const hasFences = /```\w*\n/.test(normalized);
+  const regex = new RegExp(
+    `(?:(?:\\/\\/|#|<!--)\\s*(?:file:\\s?)?(${FILE_EXT_PATTERN})\\s*(?:-->)?\\s*\\n)?\`\`\`(\\w+)?\\n([\\s\\S]*?)\`\`\``,
+    'g'
+  );
+  let match;
+  while ((match = regex.exec(normalized)) !== null) {
+    let filePath = match[1] || '';
+    const language = match[2] || 'typescript';
+    let code = match[3].trim();
 
-  if (hasFences) {
-    const regex = new RegExp(
-      `(?:(?:\\/\\/|#|<!--)\\s*(?:file:\\s?)?(${FILE_EXT_PATTERN})\\s*(?:-->)?\\s*\\n)?\`\`\`(\\w+)?\\n([\\s\\S]*?)\`\`\``,
-      'g'
-    );
-    let match;
-    while ((match = regex.exec(normalized)) !== null) {
-      let filePath = match[1] || '';
-      const language = match[2] || 'typescript';
-      let code = match[3].trim();
-
-      if (/^(bash|sh|shell|terminal|console|cmd|powershell)$/i.test(language) && !filePath) {
-        const isOperationalOnly = code.split('\n').every(l => {
-          const t = l.replace(/^\$\s*/, '').trim();
-          return !t || t.startsWith('#') ||
-            /^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(t) ||
-            /^(?:npm|yarn|pnpm|bun)\s+(?:run|start|test|build|dev)\b/i.test(t) ||
-            /^npx\s/i.test(t) ||
-            /^(?:mkdir)\s/i.test(t) ||
-            /^cd\s/i.test(t);
-        });
-        if (isOperationalOnly) continue;
-      }
-
-      if (!filePath) {
-        const extracted = extractFilePathFromCode(code);
-        if (extracted.filePath) {
-          filePath = extracted.filePath;
-          code = extracted.cleanedCode;
-        }
-      }
-
-      if (!filePath) {
-        filePath = extractFilePathFromPrecedingText(normalized, match.index);
-      }
-
-      if (!filePath) {
-        filePath = inferFilePathFromContent(code, language);
-      }
-
-      if (code.length > 0) blocks.push({ filePath, code, language });
+    if (/^(bash|sh|shell|terminal|console|cmd|powershell)$/i.test(language) && !filePath) {
+      const isOperationalOnly = code.split('\n').every(l => {
+        const t = l.replace(/^\$\s*/, '').trim();
+        return !t || t.startsWith('#') ||
+          /^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s/i.test(t) ||
+          /^(?:npm|yarn|pnpm|bun)\s+(?:run|start|test|build|dev)\b/i.test(t) ||
+          /^npx\s/i.test(t) ||
+          /^(?:mkdir)\s/i.test(t) ||
+          /^cd\s/i.test(t);
+      });
+      if (isOperationalOnly) continue;
     }
-  }
 
-  if (blocks.length === 0) {
+    if (/^(diff|patch)$/i.test(language) && !filePath) continue;
+
+    if (!filePath) {
+      const extracted = extractFilePathFromCode(code);
+      if (extracted.filePath) {
+        filePath = extracted.filePath;
+        code = extracted.cleanedCode;
+      }
+    }
+
+    if (!filePath) {
+      filePath = extractFilePathFromPrecedingText(normalized, match.index);
+    }
+
+    if (!filePath) {
+      filePath = inferFilePathFromContent(code, language);
+    }
+
+    if (code.length > 0) blocks.push({ filePath, code, language, editType: 'full' });
+  }
+  return blocks;
+}
+
+export function parseCodeBlocks(text: string): ParsedBlock[] {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  const searchReplace = parseSearchReplaceBlocks(normalized);
+  const diffs = parseUnifiedDiffs(normalized);
+  const fenced = parseFencedBlocks(normalized);
+
+  const patchedFiles = new Set<string>();
+  for (const b of searchReplace) if (b.filePath) patchedFiles.add(b.filePath);
+  for (const b of diffs) if (b.filePath) patchedFiles.add(b.filePath);
+
+  const dedupedFenced = fenced.filter(b => {
+    if (!b.filePath) return true;
+    if (patchedFiles.has(b.filePath)) {
+      if (b.code.startsWith('@@') || b.code.startsWith('---') || b.code.startsWith('diff ')) return false;
+      return true;
+    }
+    return true;
+  });
+
+  const allBlocks = [...dedupedFenced, ...searchReplace, ...diffs];
+
+  if (allBlocks.length === 0) {
     const unfenced = parseUnfencedFileBlocks(normalized);
     if (unfenced.length > 0) return unfenced;
   }
 
-  return blocks;
+  return allBlocks;
 }

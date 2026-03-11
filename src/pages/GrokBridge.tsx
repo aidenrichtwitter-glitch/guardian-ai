@@ -9,7 +9,7 @@ import {
 import { validateChange, type ValidationContext } from '@/lib/safety-engine';
 import { SELF_SOURCE } from '@/lib/self-source';
 import { SafetyCheck } from '@/lib/self-reference';
-import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies, parseActionItems, ActionItem } from '@/lib/code-parser';
+import { parseCodeBlocks, ParsedBlock, isLikelySnippet, mergeCSSVariables, parseDependencies, parseActionItems, ActionItem, applySearchReplace, applyUnifiedDiff } from '@/lib/code-parser';
 import {
   fetchEvolutionState,
   buildEvolutionContext,
@@ -180,7 +180,7 @@ function extractContextSections(fullText: string): string[] {
   return sections;
 }
 
-function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activeProject, onGithubImport, onReplaceRepo, toasterConfig, toasterAvailable }: { onApply: (filePath: string, code: string) => void; onApplyAll?: (blocks: { filePath: string; code: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void; activeProject?: string | null; onGithubImport?: (url: string) => void; onReplaceRepo?: (url: string) => void; toasterConfig?: OllamaToasterConfig; toasterAvailable?: boolean }) {
+function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activeProject, onGithubImport, onReplaceRepo, toasterConfig, toasterAvailable }: { onApply: (filePath: string, code: string, editType?: string, searchCode?: string) => void; onApplyAll?: (blocks: { filePath: string; code: string; editType?: string; searchCode?: string }[]) => void; onResponseCaptured?: (fullResponse: string) => void; activeProject?: string | null; onGithubImport?: (url: string) => void; onReplaceRepo?: (url: string) => void; toasterConfig?: OllamaToasterConfig; toasterAvailable?: boolean }) {
   type ProjectExtractorState = {
     blocks: ExtractedBlock[];
     detectedDeps: { dependencies: string[]; devDependencies: string[] };
@@ -375,7 +375,7 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
   };
 
   const apply = (block: ExtractedBlock) => {
-    onApply(block.filePath, block.code);
+    onApply(block.filePath, block.code, block.editType, block.searchCode);
     setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, applied: true } : b));
     setTimeout(() => {
       setBlocks(prev => prev.filter(b => b.id !== block.id));
@@ -473,11 +473,11 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
             onClick={() => {
               const applyable = blocks.filter(b => b.filePath && !b.applied);
               if (applyable.length === 1) {
-                onApply(applyable[0].filePath, applyable[0].code);
+                onApply(applyable[0].filePath, applyable[0].code, applyable[0].editType, applyable[0].searchCode);
               } else if (onApplyAll) {
-                onApplyAll(applyable.map(b => ({ filePath: b.filePath, code: b.code })));
+                onApplyAll(applyable.map(b => ({ filePath: b.filePath, code: b.code, editType: b.editType, searchCode: b.searchCode })));
               } else {
-                applyable.forEach(b => onApply(b.filePath, b.code));
+                applyable.forEach(b => onApply(b.filePath, b.code, b.editType, b.searchCode));
               }
               const ids = new Set(applyable.map(b => b.id));
               setBlocks(prev => prev.map(b => ids.has(b.id) ? { ...b, applied: true } : b));
@@ -2044,7 +2044,7 @@ const GrokBridge: React.FC = () => {
   const [applyCompileError, setApplyCompileError] = useState('');
   const lastBackupPathRef = useRef('');
 
-  const applyBlock = useCallback(async (filePath: string, code: string) => {
+  const applyBlock = useCallback(async (filePath: string, code: string, editType?: 'full' | 'search-replace' | 'diff', searchCode?: string) => {
     if (!filePath) { setStatusMessage('⚠ No file path detected'); return; }
 
     let oldContent = '';
@@ -2087,7 +2087,25 @@ const GrokBridge: React.FC = () => {
     let finalContent = code;
     let mergeNote = '';
 
-    if (exists && isLikelySnippet(code, oldContent) && filePath.endsWith('.css')) {
+    if (editType === 'search-replace' && searchCode && exists) {
+      const result = applySearchReplace(oldContent, searchCode, code);
+      if (result !== null) {
+        finalContent = result;
+        mergeNote = ' (search/replace applied)';
+      } else {
+        mergeNote = ' ⚠ search pattern not found — applying as full replacement';
+      }
+    } else if (editType === 'diff' && exists) {
+      const result = applyUnifiedDiff(oldContent, code);
+      if (result !== null) {
+        finalContent = result;
+        mergeNote = ' (diff patch applied)';
+      } else {
+        mergeNote = ' ⚠ diff could not be applied — showing raw diff';
+        setStatusMessage('⚠ Diff could not be applied to current file content');
+        return;
+      }
+    } else if (exists && isLikelySnippet(code, oldContent) && filePath.endsWith('.css')) {
       const merged = mergeCSSVariables(code, oldContent);
       if (merged) {
         finalContent = merged;
@@ -2374,7 +2392,7 @@ const GrokBridge: React.FC = () => {
   const [batchBackups, setBatchBackups] = useState<{ filePath: string; backupPath: string }[]>([]);
   const [batchError, setBatchError] = useState('');
 
-  const batchApplyAll = useCallback(async (blocks: { filePath: string; code: string }[]) => {
+  const batchApplyAll = useCallback(async (blocks: { filePath: string; code: string; editType?: string; searchCode?: string }[]) => {
     if (blocks.length === 0) return;
 
     if (activeProject) {
@@ -2386,8 +2404,40 @@ const GrokBridge: React.FC = () => {
         const detectedDeps = responseText ? parseDependencies(responseText) : { dependencies: [], devDependencies: [] };
         const hasDeps = detectedDeps.dependencies.length > 0 || detectedDeps.devDependencies.length > 0;
 
+        const patchFailures: string[] = [];
         for (const block of blocks) {
-          await writeProjectFile(activeProject, block.filePath, block.code);
+          let finalContent = block.code;
+          if ((block.editType === 'search-replace' || block.editType === 'diff') && block.filePath) {
+            try {
+              const existing = await readProjectFile(activeProject, block.filePath);
+              if (block.editType === 'search-replace' && block.searchCode) {
+                const result = applySearchReplace(existing, block.searchCode, block.code);
+                if (result !== null) {
+                  finalContent = result;
+                } else {
+                  patchFailures.push(`${block.filePath}: search pattern not found`);
+                  continue;
+                }
+              } else if (block.editType === 'diff') {
+                const result = applyUnifiedDiff(existing, block.code);
+                if (result !== null) {
+                  finalContent = result;
+                } else {
+                  patchFailures.push(`${block.filePath}: diff could not be applied`);
+                  continue;
+                }
+              }
+            } catch {
+              if (block.editType === 'diff') {
+                patchFailures.push(`${block.filePath}: file not found for diff`);
+                continue;
+              }
+            }
+          }
+          await writeProjectFile(activeProject, block.filePath, finalContent);
+        }
+        if (patchFailures.length > 0) {
+          setStatusMessage(`⚠ ${patchFailures.length} patch(es) skipped: ${patchFailures.join('; ')}`);
         }
 
         if (hasDeps) {
@@ -2723,14 +2773,22 @@ const GrokBridge: React.FC = () => {
         active += `npm run build\n`;
         active += `npx prisma generate\n`;
         active += `=== END_COMMANDS ===\n\n`;
+        active += `ALTERNATIVE FORMAT FOR SMALL EDITS — search/replace blocks (use when changing only a few lines in a large file):\n`;
+        active += `// file: src/components/App.tsx\n`;
+        active += `<<<<<<< SEARCH\n`;
+        active += `[exact old code to find]\n`;
+        active += `=======\n`;
+        active += `[new replacement code]\n`;
+        active += `>>>>>>> REPLACE\n\n`;
         active += `RULES:\n`;
         active += `1. Every code block MUST have a // file: header. No exceptions. Guardian auto-applies blocks with headers.\n`;
-        active += `2. Provide COMPLETE file content — Guardian replaces the entire file. Do NOT use "// ... rest unchanged" or partial snippets.\n`;
-        active += `3. Only cite real, published npm packages — never invent package names.\n`;
-        active += `4. Keep explanations brief BEFORE the code blocks. Focus on what changed and why.\n`;
-        active += `5. Do NOT show "old code vs new code" comparisons — just provide the final correct version with the // file: header.\n`;
+        active += `2. For FULL replacement: provide COMPLETE file content. Do NOT use "// ... rest unchanged" or partial snippets.\n`;
+        active += `3. For SEARCH/REPLACE: the SEARCH section must match existing code EXACTLY (including whitespace). The REPLACE section is the new code.\n`;
+        active += `4. Only cite real, published npm packages — never invent package names.\n`;
+        active += `5. Keep explanations brief BEFORE the code blocks. Focus on what changed and why.\n`;
         active += `6. Do NOT wrap code in narrative like "here's what your file should look like". Just use the // file: header directly.\n`;
-        active += `7. If multiple files need changes, output multiple // file: blocks in sequence.\n\n`;
+        active += `7. If multiple files need changes, output multiple // file: blocks in sequence.\n`;
+        active += `8. You may use multiple SEARCH/REPLACE blocks for the same file if making several edits.\n\n`;
       } else {
         active += `1. Only cite real, published npm packages — never invent package names.\n`;
         active += `2. Suggest a GitHub repo URL instead of writing code from scratch.\n\n`;
@@ -3025,14 +3083,16 @@ const GrokBridge: React.FC = () => {
                       <div className="flex items-center gap-2 min-w-0">
                         <Code2 className="w-3 h-3 text-muted-foreground shrink-0" />
                         <span className="text-[10px] text-muted-foreground truncate">{block.filePath || block.language}</span>
+                        {block.editType === 'search-replace' && <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">S/R</span>}
+                        {block.editType === 'diff' && <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400">DIFF</span>}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button onClick={() => runValidation(blockKey, block.code, block.filePath)} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 text-[9px] transition-colors">
                           <Shield className="w-2.5 h-2.5" /> Check
                         </button>
                         {block.filePath && (
-                          <button onClick={() => applyBlock(block.filePath, block.code)} disabled={isApplied} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[9px] transition-colors disabled:opacity-30">
-                            <Check className="w-2.5 h-2.5" /> {isApplied ? 'Applied' : 'Apply'}
+                          <button onClick={() => applyBlock(block.filePath, block.code, block.editType, block.searchCode)} disabled={isApplied} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[9px] transition-colors disabled:opacity-30">
+                            <Check className="w-2.5 h-2.5" /> {isApplied ? 'Applied' : block.editType === 'search-replace' ? 'Patch' : block.editType === 'diff' ? 'Patch' : 'Apply'}
                           </button>
                         )}
                       </div>
