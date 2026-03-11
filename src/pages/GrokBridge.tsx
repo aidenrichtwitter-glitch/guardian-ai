@@ -22,7 +22,7 @@ import {
 } from '@/lib/evolution-bridge';
 import {
   getActiveProject, setActiveProject as persistActiveProject,
-  readProjectFile, writeProjectFile, getProjectFiles,
+  readProjectFile, writeProjectFile, getProjectFiles, deleteProject,
   importFromGitHub, detectAllGitHubUrls, detectGitHubUrlInResponse,
   type ProjectFileNode, type GitHubImportProgress
 } from '@/lib/project-manager';
@@ -2155,6 +2155,74 @@ const GrokBridge: React.FC = () => {
       setStatusMessage(`⚠ Rollback error: ${e.message || 'Unknown'}`);
     }
   }, []);
+
+  const [undoAllInProgress, setUndoAllInProgress] = useState(false);
+  const undoAll = useCallback(async () => {
+    if (appliedChanges.length === 0) return;
+    setUndoAllInProgress(true);
+    let restored = 0;
+    let failed = 0;
+    const changesToUndo = [...appliedChanges].reverse();
+    for (const change of changesToUndo) {
+      try {
+        if (activeProject) {
+          const projName = change.filePath.startsWith(activeProject + '/') ? activeProject : activeProject;
+          const filePath = change.filePath.startsWith(activeProject + '/') ? change.filePath.slice(activeProject.length + 1) : change.filePath;
+          await writeProjectFile(projName, filePath, change.previousContent);
+          restored++;
+        } else if (isElectron && change.backupPath) {
+          const { ipcRenderer } = (window as any).require('electron');
+          const result = await ipcRenderer.invoke('rollback-file', { filePath: change.filePath, backupPath: change.backupPath });
+          if (result.success) restored++; else failed++;
+        } else if (isElectron) {
+          const { ipcRenderer } = (window as any).require('electron');
+          await ipcRenderer.invoke('write-file', { filePath: change.filePath, content: change.previousContent });
+          restored++;
+        } else {
+          await writeProjectFile('__main__', change.filePath, change.previousContent);
+          restored++;
+        }
+        const file = SELF_SOURCE.find(f => f.path === change.filePath);
+        if (file) { file.content = change.previousContent; file.isModified = true; file.lastModified = Date.now(); }
+      } catch {
+        failed++;
+      }
+    }
+    setAppliedChanges([]);
+    setUndoAllInProgress(false);
+    setStatusMessage(`↩ Undid all — ${restored} file${restored !== 1 ? 's' : ''} restored${failed > 0 ? `, ${failed} failed` : ''}`);
+    if (previewPort) setTimeout(() => setPreviewKey(k => k + 1), 1000);
+  }, [appliedChanges, activeProject, previewPort]);
+
+  const [clearRepoConfirm, setClearRepoConfirm] = useState(false);
+  const clearRepo = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      if (previewPort) {
+        try {
+          await fetch('/api/projects/stop-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: activeProject }),
+          });
+        } catch {}
+      }
+      await deleteProject(activeProject);
+      setActiveProjectState(null);
+      persistActiveProject(null);
+      setAppliedChanges([]);
+      setPreviewPort(null);
+      setShowPreviewEmbed(false);
+      setProjectContext('');
+      setPreviewLogs([]);
+      setEditorFile(null);
+      setClearRepoConfirm(false);
+      setStatusMessage('Repo cleared — ready for a new clone');
+    } catch (e: any) {
+      setStatusMessage(`⚠ Clear failed: ${e.message}`);
+      setClearRepoConfirm(false);
+    }
+  }, [activeProject, previewPort]);
 
   // ─── Batch Apply All ───────────────────────────────────────────────────────
 
