@@ -800,6 +800,30 @@ function projectManagementPlugin(): Plugin {
             }
           }
 
+          for (const indexHtmlPath of indexHtmlPaths) {
+            if (fs.existsSync(indexHtmlPath)) {
+              try {
+                const indexContent = fs.readFileSync(indexHtmlPath, "utf-8");
+                const scriptMatch = indexContent.match(/src=["']\/?(src\/[^"']+\.tsx?)["']/);
+                if (scriptMatch) {
+                  const entryFile = path.join(projectDir, scriptMatch[1]);
+                  if (!fs.existsSync(entryFile)) {
+                    const entryDir = path.dirname(entryFile);
+                    if (!fs.existsSync(entryDir)) fs.mkdirSync(entryDir, { recursive: true });
+                    const ext = entryFile.endsWith(".tsx") ? "tsx" : "ts";
+                    if (ext === "tsx") {
+                      fs.writeFileSync(entryFile, `import { createRoot } from "react-dom/client";\n\nfunction App() {\n  return (\n    <div style={{ fontFamily: "system-ui", padding: 32, textAlign: "center" }}>\n      <h1>Project Ready</h1>\n      <p>Edit <code>${scriptMatch[1]}</code> to get started.</p>\n    </div>\n  );\n}\n\ncreateRoot(document.getElementById("root")!).render(<App />);\n`);
+                    } else {
+                      fs.writeFileSync(entryFile, `document.getElementById("root")!.innerHTML = "<h1>Project Ready</h1><p>Edit <code>${scriptMatch[1]}</code> to start.</p>";\n`);
+                    }
+                    console.log(`[Preview] Created missing entry point ${scriptMatch[1]} for ${name}`);
+                  }
+                }
+              } catch {}
+              break;
+            }
+          }
+
           let hasTsconfigPaths = false;
           for (const tscfg of ["tsconfig.json", "tsconfig.app.json"]) {
             const tscfgPath = path.join(projectDir, tscfg);
