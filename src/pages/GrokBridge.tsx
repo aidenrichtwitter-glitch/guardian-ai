@@ -3079,18 +3079,54 @@ const GrokBridge: React.FC = () => {
           <span className="text-[11px] font-mono text-primary">{detectedRepoUrl}</span>
           <button
             data-testid="button-clone-detected-repo"
-            onClick={() => handleGitHubImport(detectedRepoUrl)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+            onClick={async () => {
+              if (activeProject) {
+                if (previewPort) {
+                  try { await fetch('/api/projects/stop-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: activeProject }) }); } catch {}
+                }
+                try { await deleteProject(activeProject); } catch {}
+                setPreviewPort(null);
+                setShowPreviewEmbed(false);
+                setAppliedChanges([]);
+                setPreviewLogs([]);
+                setEditorFile(null);
+              }
+              handleGitHubImport(detectedRepoUrl);
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] text-primary-foreground hover:opacity-90 transition-colors font-medium ${
+              activeProject ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary hover:bg-primary/90'
+            }`}
           >
-            <GitBranch className="w-3 h-3" /> Clone & Import
+            <ArrowRightLeft className="w-3 h-3" />
+            {activeProject ? 'Replace Repo' : 'Clone & Import'}
           </button>
-          <button
-            data-testid="button-dismiss-detected-repo"
-            onClick={() => setDetectedRepoUrl(null)}
-            className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          {!activeProject && (
+            <button
+              data-testid="button-dismiss-detected-repo"
+              onClick={() => setDetectedRepoUrl(null)}
+              className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+          {activeProject && (
+            <>
+              <button
+                data-testid="button-clone-keep-repo"
+                onClick={() => handleGitHubImport(detectedRepoUrl)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-primary/15 text-primary hover:bg-primary/25 transition-colors font-medium border border-primary/30"
+              >
+                <GitBranch className="w-3 h-3" /> Clone Alongside
+              </button>
+              <button
+                data-testid="button-dismiss-detected-repo"
+                onClick={() => setDetectedRepoUrl(null)}
+                className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -3563,18 +3599,23 @@ const GrokBridge: React.FC = () => {
           )}
 
           {appliedChanges.length > 0 && (
-            <div className="ml-auto flex items-center gap-1 overflow-x-auto shrink-0">
-              <span className="text-[8px] uppercase tracking-widest text-muted-foreground/40 shrink-0">Applied:</span>
-              {appliedChanges.slice(-3).map((change, i) => (
-                <button key={i} onClick={() => rollback(change)} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive text-[9px] transition-colors shrink-0 group">
+            <div className="ml-auto flex items-center gap-1.5 overflow-x-auto shrink-0">
+              <button
+                data-testid="button-undo-all"
+                onClick={undoAll}
+                disabled={undoAllInProgress}
+                className="flex items-center gap-1.5 px-3 py-1 rounded text-[10px] font-bold bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors border border-destructive/40 shrink-0"
+              >
+                {undoAllInProgress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                UNDO {appliedChanges.length > 1 ? `ALL (${appliedChanges.length})` : appliedChanges[0].filePath.split('/').pop()}
+              </button>
+              {appliedChanges.length > 1 && appliedChanges.slice(-2).map((change, i) => (
+                <button key={i} onClick={() => rollback(change)} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary/30 text-muted-foreground hover:bg-destructive/10 hover:text-destructive text-[8px] transition-colors shrink-0 group" title={`Undo ${change.filePath}`}>
                   <FileCode className="w-2.5 h-2.5" />
                   {change.filePath.split('/').pop()}
-                  <Undo2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Undo2 className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
               ))}
-              {appliedChanges.length > 3 && (
-                <span className="text-[8px] text-muted-foreground/40">+{appliedChanges.length - 3}</span>
-              )}
             </div>
           )}
         </div>
