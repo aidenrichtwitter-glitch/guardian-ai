@@ -1916,7 +1916,7 @@ const GrokBridge: React.FC = () => {
       if (matches.length > 0) {
         enrichedText = text + '\n\n' + formatKnowledgeForGrokPrompt(matches);
       } else if (!activeProject) {
-        enrichedText = text + '\n\n=== REPO SELECTION ===\nFor this new project, suggest ONE public GitHub repo as a starting point — provide the full URL.\nOnly suggest repos using proven frameworks: React+Vite, Vue+Vite, SvelteKit, Next.js, Nuxt, Webpack, Rspack, or static HTML/CSS/JS.\nDo NOT suggest: Solid/SolidStart, Deno, Bun-only, mobile-only (React Native/Flutter), or backend-only repos.\nPrefer: TypeScript, Tailwind CSS, high stars, MIT license. Start fresh only if no repo fits.\n=== END REPO SELECTION ===';
+        enrichedText = text + '\n\n=== REPO SELECTION ===\nFor this new project, suggest ONE public GitHub repo as a starting point — provide the full URL.\nChoose whatever framework or tech stack best fits the user\'s request. The only requirement is it must run in a browser and be previewable via Vite dev server (no native-only or backend-only repos).\nPrefer: TypeScript, Tailwind CSS, high stars, MIT license. Start fresh only if no repo fits.\nGuardian AI source (scan for capabilities): https://github.com/aidenrichtwitter-glitch/guardian-ai\n=== END REPO SELECTION ===';
       }
     }
 
@@ -2749,7 +2749,7 @@ const GrokBridge: React.FC = () => {
       const hasSourceFiles = sourceFiles.length > 0;
       const isEmptyProject = activeProject && !hasSourceFiles;
 
-      const hostSection = `\n=== GUARDIAN AI HOST ENVIRONMENT (READ-ONLY — NEVER MODIFY OR SUGGEST CHANGES TO) ===\nThis context is from Guardian AI (your local Electron/PWA coding IDE).\nImportant runtime facts (use these to make smart choices, but do NOT propose edits to them):\n- All user projects are sandboxed in /projects/<project-name>/ (isolated from Guardian's src/, public/, supabase/, etc.).\n- Preview: App auto-runs via Vite dev server inside a sandboxed iframe or embedded browser view in Guardian.\n  - Supports HMR for live updates.\n  - Responsive design assumed; fit viewport.\n  - Browser APIs only (Web Audio, Canvas, Three.js, mic access via getUserMedia).\n  - No Electron/node APIs in target app.\n- Guardian auto-handles: One-click clone from suggested GitHub URL, safe parsing/applying of copied code/diffs/deps/commands, dep install with safeguards, run/build commands.\n- Strict rule: You are ONLY building the ACTIVE PROJECT above. NEVER suggest changes to Guardian AI itself (clipboard logic, context gen, parser, UI, Supabase bridge, etc.). Ignore any self-referential ideas.\n\nSTRICT INSTRUCTION: Respond only to the ACTIVE PROJECT section. Treat the HOST section as fixed background knowledge.\n`;
+      const hostSection = `\n=== GUARDIAN AI HOST ENVIRONMENT (READ-ONLY — NEVER MODIFY OR SUGGEST CHANGES TO) ===\nThis context is from Guardian AI (λ Recursive) — your local Electron/PWA coding IDE.\nGuardian source repo: https://github.com/aidenrichtwitter-glitch/guardian-ai\nScan this repo to understand Guardian's full capabilities: its code parser (search/replace blocks, unified diffs, fenced code blocks), file structure, preview system, dependency installer, and command runner.\n\nImportant runtime facts (use these to make smart choices, but do NOT propose edits to them):\n- All user projects are sandboxed in /projects/<project-name>/ (isolated from Guardian's src/, public/, supabase/, etc.).\n- Preview: App auto-runs via Vite dev server inside a sandboxed iframe or embedded browser view in Guardian.\n  - Supports HMR for live updates.\n  - Responsive design assumed; fit viewport.\n  - Browser APIs only (Web Audio, Canvas, Three.js, mic access via getUserMedia).\n  - No Electron/node APIs in target app.\n- Guardian auto-handles: One-click clone from suggested GitHub URL, safe parsing/applying of copied code/diffs/deps/commands, dep install with safeguards, run/build commands.\n- You may choose ANY framework or tech stack that runs in a browser and can be previewed via Vite dev server. There are no framework restrictions — pick whatever best fits the user's request.\n- Strict rule: You are ONLY building the ACTIVE PROJECT above. NEVER suggest changes to Guardian AI itself (clipboard logic, context gen, parser, UI, Supabase bridge, etc.). Ignore any self-referential ideas.\n\nSTRICT INSTRUCTION: Respond only to the ACTIVE PROJECT section. Treat the HOST section as fixed background knowledge.\n`;
 
       const fileBudget = CHARS_BUDGET - hostSection.length - 6000;
 
@@ -2762,7 +2762,7 @@ const GrokBridge: React.FC = () => {
         }
         active += `Status: ${isEmptyProject ? 'Brand new empty project — only initial package.json exists.' : `Active project with ${sourceFiles.length} source files.`}\n`;
         if (frameworkHint) {
-          active += `_framework hint: ${frameworkHint} (prefer ${frameworkHint === 'react' ? 'React + Vite' : frameworkHint} starters)\n`;
+          active += `Detected framework: ${frameworkHint} (based on package.json — for your awareness, not a restriction)\n`;
         }
         active += `\nCurrent file tree:\n`;
         for (const fp of flatPaths.slice(0, 80)) active += `- ${fp}\n`;
@@ -2794,9 +2794,9 @@ const GrokBridge: React.FC = () => {
         active += `${task}\n\n`;
       } else if (isEmptyProject) {
         active += `Select EXACTLY ONE public GitHub repo to clone as starter.\nCriteria:\n`;
-        active += `- Must use one of: React + Vite (top priority), Vue 3 + Vite, SvelteKit, Next.js, Nuxt, Vanilla JS/TS + Vite, Three.js + Vite/Webpack.\n`;
+        active += `- Choose whatever framework or tech stack best fits the user's request — there are no framework restrictions.\n`;
+        active += `- Must run in a browser and preview cleanly in a Vite dev server + iframe (no native deps, browser-only APIs).\n`;
         active += `- Prefer: TypeScript, Tailwind, high stars, active maintenance, MIT license.\n`;
-        active += `- Must preview cleanly in a Vite dev server + iframe (no heavy SSR unless Next/Nuxt, no native deps, browser-only APIs).\n`;
         active += `Output ONLY: "Clone this repo: https://github.com/owner/repo" + 1-2 sentences why it's optimal.\n\n`;
       } else if (errorLogs.length > 0 || lastErrors) {
         active += `Fix the errors shown above. The preview is broken or showing issues.\nAnalyze the errors, identify root cause, and provide corrected code.\n\n`;
