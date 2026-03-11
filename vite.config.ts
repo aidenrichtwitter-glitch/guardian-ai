@@ -1133,16 +1133,29 @@ function projectManagementPlugin(): Plugin {
             const missingPkgs = extractMissingPackages(startupOutput);
             if (missingPkgs.length > 0 && missingPkgs.length <= 5) {
               retried = true;
-              console.log(`[Preview] Detected missing packages: ${missingPkgs.join(", ")} — installing and retrying`);
+              let installDir = projectDir;
+              const subdirMatch = startupOutput.match(/[\/\\](frontend|client|web|app)[\/\\]/i);
+              if (subdirMatch) {
+                const subPath = path.join(projectDir, subdirMatch[1].toLowerCase());
+                if (fs.existsSync(path.join(subPath, "package.json"))) {
+                  installDir = subPath;
+                  if (!fs.existsSync(path.join(subPath, "node_modules"))) {
+                    try {
+                      console.log(`[Preview] Installing all deps in ${subdirMatch[1]}/ first...`);
+                      execSync("npm install --legacy-peer-deps", { cwd: subPath, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
+                    } catch {}
+                  }
+                }
+              }
+              console.log(`[Preview] Detected missing packages: ${missingPkgs.join(", ")} — installing in ${installDir === projectDir ? 'root' : path.basename(installDir)} and retrying`);
               try {
-                const { execFileSync: efs } = await import("child_process");
-                const installArgs = pm === "npm"
-                  ? ["install", "--save-dev", "--legacy-peer-deps", ...missingPkgs]
-                  : pm === "pnpm" ? ["add", "-D", ...missingPkgs]
-                  : pm === "yarn" ? ["add", "-D", ...missingPkgs]
-                  : ["add", "-D", ...missingPkgs];
-                const installBin = pm === "npm" ? "npm" : pm;
-                efs(installBin, installArgs, { cwd: projectDir, timeout: 60000, stdio: "pipe", windowsHide: true });
+                const installPkgList = missingPkgs.join(" ");
+                const installCmd = pm === "npm"
+                  ? `npm install --save-dev --legacy-peer-deps ${installPkgList}`
+                  : pm === "pnpm" ? `npx pnpm add -D ${installPkgList}`
+                  : pm === "yarn" ? `npx yarn add -D ${installPkgList}`
+                  : `npm install --save-dev --legacy-peer-deps ${installPkgList}`;
+                execSync(installCmd, { cwd: installDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true });
                 console.log(`[Preview] Installed ${missingPkgs.join(", ")} — retrying startup`);
 
                 const child2 = spawn(devCmd.cmd, devCmd.args, {
@@ -1981,6 +1994,20 @@ function projectManagementPlugin(): Plugin {
                 } catch (retryErr: any) {
                   installError = retryErr.stderr?.toString().slice(-300) || retryErr.message?.slice(0, 300) || "Retry failed";
                 }
+              }
+            }
+          }
+
+          const COMMON_SUBDIRS = ["frontend", "client", "web", "app", "packages/app", "packages/client", "packages/web"];
+          for (const subdir of COMMON_SUBDIRS) {
+            const subPkgPath = path.join(projectDir, subdir, "package.json");
+            if (fs.existsSync(subPkgPath) && !fs.existsSync(path.join(projectDir, subdir, "node_modules"))) {
+              try {
+                console.log(`[Import] Installing deps in subdirectory ${subdir}/...`);
+                execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: path.join(projectDir, subdir), timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
+                console.log(`[Import] Subdirectory ${subdir}/ deps installed`);
+              } catch (subErr: any) {
+                console.log(`[Import] Subdirectory ${subdir}/ install failed (non-critical): ${subErr.message?.slice(0, 100)}`);
               }
             }
           }
