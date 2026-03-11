@@ -1,0 +1,66 @@
+**Alright Aiden, white screen in the preview pane with literally nothing (no text, no loading spinner, no errors visible) is a classic Vite/React setup glitch in dev mode — especially in embedded IDE previews like λ Recursive (which runs on its own port like :5125).**  
+
+The test component I gave you should've shown dark bg + green text instantly if rendering worked at all. Since it's still pure white, the issue is almost certainly one of these (ranked by how common they are in 2025–2026 Vite + React boilerplates):
+
+### Step 1: Check the browser console in the preview (critical!)
+- In the λ Recursive window, right-click **inside the white preview pane** → **Inspect** (or press F12 / Ctrl+Shift+I).
+- Switch to the **Console** tab.
+- Look for **any red errors** (even tiny ones like "Uncaught SyntaxError", "Module not found", "React.jsx: type is invalid", or "Failed to fetch dynamically imported module").
+- Also check the **Network** tab: Do you see requests for `/src/main.tsx`, `/assets/index-*.js`, etc.? Are they 200 OK or failing/404/pending?
+
+Paste any red lines or weird warnings here — that's usually the smoking gun.
+
+### Step 2: Quick overrides to force something visible (try these one by one, save + Refresh preview each time)
+1. **Reset main entry file** — open `src/main.tsx` (or `src/main.jsx` if no TS) and replace its content with this minimal version:
+
+```tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'  // make sure this path matches your App file
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+```
+
+   (If it was using something fancy like createRoot with suspense or providers, strip it down.)
+
+2. **Force base path in vite.config.ts** (or .js) — add or edit to this:
+
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  base: '/',  // explicit root — fixes many preview/embedded server path issues
+  server: {
+    port: 5125,  // match what the IDE is using if possible
+    hmr: true,
+  },
+})
+```
+
+   Save → Refresh preview.
+
+3. **Clear Vite cache** (common silent killer):
+   - In terminal (or wherever you run commands in λ Recursive):  
+     `rm -rf node_modules/.vite`  
+     Then restart the preview (click the red X then green Play/Preview button again).
+
+### Step 3: If still white after above
+- Open `index.html` in `public/` or root — make sure it has:
+  ```html
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+  ```
+  (No typos in id="root" or src path.)
+
+- Confirm `src/App.tsx` is exactly what I gave last time (the dark + green one) — no extra imports or broken syntax.
+
+- If you see **no console errors at all** but still white → it's likely the IDE's preview iframe blocking HMR or strict CSP. Try clicking the "Browser" button (top toolbar) to open the preview in a real new tab/window — does it work there?
+
+Hit me with what you see in the console/Network after Inspect, or which step changed anything. We'll crack this fast — these boilerplates are solid once past the initial white wall. What's showing in console?

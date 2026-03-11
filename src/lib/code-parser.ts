@@ -193,13 +193,15 @@ export function isLikelySnippet(code: string, existingContent: string): boolean 
 }
 
 function extractFilePathFromPrecedingText(text: string, fenceIndex: number): string {
-  const preceding = text.substring(Math.max(0, fenceIndex - 600), fenceIndex);
+  const preceding = text.substring(Math.max(0, fenceIndex - 800), fenceIndex);
   const lines = preceding.split('\n').reverse();
   const fileExtRe = new RegExp(`(?:\`|\\*\\*|")((?:[\\w./-]+/)?${FILE_EXT_PATTERN})(?:\`|\\*\\*|")`, 'i');
   const headingFileRe = new RegExp(`^#{1,6}\\s+(?:\`|\\*\\*|")?\\s*((?:[\\w./-]+/)?${FILE_EXT_PATTERN})\\s*(?:\`|\\*\\*|")?\\s*$`, 'i');
   const createSaveRe = new RegExp(`(?:create|save|name|call|replace|update|modify|edit|add|put|write)\\s+(?:a\\s+)?(?:new\\s+)?(?:file\\s+)?(?:called|named|as|to)?\\s*\`?((?:[\\w./-]+/)?${FILE_EXT_PATTERN})\`?`, 'i');
+  const contextualRe = new RegExp(`(?:open|in|check|see|look at|force|reset|edit|update|replace|modify|confirm|ensure|make sure)\\s+(?:the\\s+)?(?:file\\s+)?(?:your\\s+)?(?:the\\s+)?\`?((?:[\\w./-]+/)?${FILE_EXT_PATTERN})\`?`, 'i');
+  const bareFileRe = new RegExp(`(?:^|\\s|\\*\\*|—|–|-|\\()((?:[\\w./-]+/)?${FILE_EXT_PATTERN})(?:\\s|\\*\\*|—|–|-|\\)|\\.|,|:|$)`, 'i');
 
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const line = lines[i].trim();
     if (!line) continue;
     if (line.startsWith('```')) break;
@@ -212,7 +214,91 @@ function extractFilePathFromPrecedingText(text: string, fenceIndex: number): str
 
     const createMatch = line.match(createSaveRe);
     if (createMatch && isValidFilePath(createMatch[1])) return createMatch[1];
+
+    const contextMatch = line.match(contextualRe);
+    if (contextMatch && isValidFilePath(contextMatch[1])) return contextMatch[1];
   }
+
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (line.startsWith('```')) break;
+    const bareMatch = line.match(bareFileRe);
+    if (bareMatch && isValidFilePath(bareMatch[1])) return bareMatch[1];
+  }
+  return '';
+}
+
+function normalizeLang(lang: string): string {
+  const l = lang.toLowerCase();
+  const map: Record<string, string> = {
+    javascript: 'js', js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+    typescript: 'ts', ts: 'ts', tsx: 'tsx', mts: 'ts',
+    shell: 'bash', sh: 'bash', bash: 'bash', terminal: 'bash', console: 'bash',
+    html: 'html', css: 'css', scss: 'scss', json: 'json', yaml: 'yaml', yml: 'yaml',
+    python: 'py', py: 'py', ruby: 'rb', rb: 'rb', rust: 'rs', rs: 'rs', go: 'go',
+    prisma: 'prisma', graphql: 'graphql', sql: 'sql', dockerfile: 'dockerfile',
+  };
+  return map[l] || l;
+}
+
+function inferFilePathFromContent(code: string, language: string): string {
+  const c = code.trim();
+  const lang = normalizeLang(language);
+  const isTS = lang === 'ts' || lang === 'tsx';
+  const isJSX = lang === 'jsx' || lang === 'tsx';
+  const hasTSImports = /from\s+['"][^'"]+\.tsx?['"]/.test(c) || /import\s+type\b/.test(c);
+  const useTS = isTS || hasTSImports;
+
+  if (/\bdefineConfig\b/.test(c) && /from\s+['"]vite['"]/i.test(c))
+    return useTS ? 'vite.config.ts' : 'vite.config.js';
+  if (/\bdefineConfig\b/.test(c) && /from\s+['"]vitest/i.test(c))
+    return useTS ? 'vitest.config.ts' : 'vitest.config.js';
+  if (/module\.exports\s*=/.test(c) && /tailwind/i.test(c))
+    return 'tailwind.config.js';
+  if (/(?:export\s+default|module\.exports)\s*/.test(c) && /content\s*:/.test(c) && /theme\s*:/.test(c))
+    return 'tailwind.config.js';
+  if (/\bdefineConfig\b/.test(c) && /from\s+['"]nuxt/i.test(c))
+    return 'nuxt.config.ts';
+  if (/\bnextConfig\b|module\.exports/.test(c) && /\b(?:reactStrictMode|images|webpack)\b/.test(c))
+    return 'next.config.js';
+  if (/\bnextConfig\b/.test(c) && /from\s+['"]next['"]/i.test(c))
+    return 'next.config.mjs';
+
+  if (/ReactDOM\.createRoot|ReactDOM\.render|createRoot\(/.test(c)) {
+    if (/\.tsx['"]/.test(c) || isJSX && useTS) return 'src/main.tsx';
+    if (/\.jsx['"]/.test(c) || isJSX) return 'src/main.jsx';
+    return useTS ? 'src/main.tsx' : 'src/main.jsx';
+  }
+  if (/createApp\(/.test(c) && /from\s+['"]vue['"]/i.test(c))
+    return useTS ? 'src/main.ts' : 'src/main.js';
+
+  if (/postcss/i.test(c) && /(?:module\.exports|plugins)/.test(c))
+    return 'postcss.config.js';
+
+  if (/<div\s+id=["']root["']/.test(c) && /<script\b/.test(c))
+    return 'index.html';
+  if (/<div\s+id=["'](?:root|app)["']/.test(c) && /<script\s+type=["']module["']/.test(c))
+    return 'index.html';
+
+  if (/^@tailwind\s/m.test(c) || /^@import\s+['"]tailwindcss/m.test(c))
+    return 'src/index.css';
+
+  if (/from\s+['"]express['"]/i.test(c) && /app\.listen|app\.use/.test(c))
+    return useTS ? 'server/index.ts' : 'server/index.js';
+
+  if (/\bprisma\b/i.test(c) && /datasource|generator|model\s+\w+\s*\{/.test(c))
+    return 'prisma/schema.prisma';
+
+  if (/^\s*\{/.test(c) && /"(?:name|version|scripts|dependencies)"/.test(c))
+    return 'package.json';
+
+  if (/^FROM\s+\w/m.test(c) && /\b(?:RUN|CMD|EXPOSE|COPY|WORKDIR)\b/.test(c))
+    return 'Dockerfile';
+
+  if (/"compilerOptions"/.test(c) && /"(?:jsx|module|target|strict|paths|baseUrl|outDir)"/.test(c))
+    return 'tsconfig.json';
+
   return '';
 }
 
@@ -486,6 +572,10 @@ export function parseCodeBlocks(text: string): ParsedBlock[] {
 
       if (!filePath) {
         filePath = extractFilePathFromPrecedingText(normalized, match.index);
+      }
+
+      if (!filePath) {
+        filePath = inferFilePathFromContent(code, language);
       }
 
       if (code.length > 0) blocks.push({ filePath, code, language });
