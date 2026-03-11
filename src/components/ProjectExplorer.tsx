@@ -87,11 +87,11 @@ const FileNode: React.FC<{
                 setTimeout(() => setCopied(false), 2000);
               } catch {}
             }}
-            className="p-0.5 hover:text-primary transition-all shrink-0"
-            style={{ visibility: copied ? 'visible' : 'hidden' }}
-            title="Copy file contents"
+            className={`p-0.5 transition-all shrink-0 ${copied ? 'text-green-500' : 'hover:text-primary'}`}
+            style={{ visibility: copied ? 'visible' : undefined }}
+            title="Copy file contents to clipboard"
           >
-            {copied ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
+            {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
           </span>
         )}
         {!isDir && onEdit && (
