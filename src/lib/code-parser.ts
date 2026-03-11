@@ -329,6 +329,20 @@ export function parseActionItems(text: string): ActionItem[] {
     positioned.push({ ...item, pos });
   }
 
+  const commandsBlockMatch = normalized.match(/===\s*COMMANDS\s*===\s*\n([\s\S]*?)(?:===\s*END_COMMANDS\s*===|(?=\n===\s)|\n\n\n)/);
+  if (commandsBlockMatch) {
+    const block = commandsBlockMatch[1];
+    const blockPos = normalized.indexOf(commandsBlockMatch[0]);
+    for (const line of block.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+      const DEV_SERVER_RE = /^(?:npm\s+(?:run\s+)?(?:dev|start)|yarn\s+(?:dev|start)|pnpm\s+(?:dev|start)|bun\s+(?:dev|start)|npx\s+vite(?:\s|$))/i;
+      if (DEV_SERVER_RE.test(trimmed)) continue;
+      if (/^(?:npm|yarn|pnpm|bun)\s+(?:install|i|add)\s+[^-]/i.test(trimmed) && !/(?:-g|--global)/.test(trimmed)) continue;
+      addItem({ type: 'command', description: `Run: ${trimmed}`, command: trimmed }, blockPos);
+    }
+  }
+
   const shellCmdRe = /```(?:bash|sh|shell|terminal|console|cmd|powershell)\n([\s\S]*?)```/g;
   let sm;
   while ((sm = shellCmdRe.exec(normalized)) !== null) {

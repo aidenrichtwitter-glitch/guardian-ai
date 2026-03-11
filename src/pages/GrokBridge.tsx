@@ -2704,14 +2704,33 @@ const GrokBridge: React.FC = () => {
         active += `Respond to the user's request below. Check current files, plan minimal changes, output code.\n\n`;
       }
 
-      active += `Code output rules:\n`;
+      active += `=== OUTPUT RULES (FOLLOW EXACTLY — THESE ARE HOW GUARDIAN APPLIES YOUR CODE) ===\n`;
       if (hasSourceFiles || !activeProject) {
-        active += `1. ALWAYS use \`// file: path/to/file.ext\` headers immediately before each fenced code block.\n`;
-        active += `2. Prefer minimal, targeted patches over full file rewrites. Only include files that need changes.\n`;
+        active += `PREFER STRUCTURED FORMAT: Always use the // file: headers, DEPENDENCIES block, and COMMANDS block whenever possible.\n`;
+        active += `If you need to explain, do it in normal text BEFORE the structured blocks. Never bury code inside paragraphs.\n\n`;
+        active += `FORMAT FOR CODE CHANGES — put a // file: header immediately before each fenced code block:\n`;
+        active += `// file: src/components/App.tsx\n`;
+        active += `\`\`\`tsx\n`;
+        active += `[full file content here]\n`;
+        active += `\`\`\`\n\n`;
+        active += `FORMAT FOR NEW DEPENDENCIES — use a structured block:\n`;
+        active += `=== DEPENDENCIES ===\n`;
+        active += `package-name\n`;
+        active += `dev: @types/whatever\n`;
+        active += `=== END_DEPENDENCIES ===\n\n`;
+        active += `FORMAT FOR SHELL COMMANDS — use a structured block:\n`;
+        active += `=== COMMANDS ===\n`;
+        active += `npm run build\n`;
+        active += `npx prisma generate\n`;
+        active += `=== END_COMMANDS ===\n\n`;
+        active += `RULES:\n`;
+        active += `1. Every code block MUST have a // file: header. No exceptions. Guardian auto-applies blocks with headers.\n`;
+        active += `2. Provide COMPLETE file content — Guardian replaces the entire file. Do NOT use "// ... rest unchanged" or partial snippets.\n`;
         active += `3. Only cite real, published npm packages — never invent package names.\n`;
-        active += `4. Keep explanations brief. Focus on what changed and why.\n`;
-        active += `5. The code extractor will automatically detect and apply these blocks.\n`;
-        active += `6. If your changes require new npm packages, mention them explicitly (e.g. "npm install package-name").\n\n`;
+        active += `4. Keep explanations brief BEFORE the code blocks. Focus on what changed and why.\n`;
+        active += `5. Do NOT show "old code vs new code" comparisons — just provide the final correct version with the // file: header.\n`;
+        active += `6. Do NOT wrap code in narrative like "here's what your file should look like". Just use the // file: header directly.\n`;
+        active += `7. If multiple files need changes, output multiple // file: blocks in sequence.\n\n`;
       } else {
         active += `1. Only cite real, published npm packages — never invent package names.\n`;
         active += `2. Suggest a GitHub repo URL instead of writing code from scratch.\n\n`;
