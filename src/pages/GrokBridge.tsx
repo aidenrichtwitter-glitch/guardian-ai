@@ -1523,7 +1523,7 @@ const GrokBridge: React.FC = () => {
         setTimeout(() => setPreviewKey(k => k + 1), isConfigFile ? 2500 : 500);
       }
       setStatusMessage(`Saved ${filePath}`);
-      await buildProjectContext();
+      buildProjectContext().catch(() => {});
     } else if (isElectron) {
       const { ipcRenderer } = (window as any).require('electron');
       await ipcRenderer.invoke('write-file', { filePath, content });
@@ -1848,7 +1848,7 @@ const GrokBridge: React.FC = () => {
 
       const hasConfigChanges = backups.some(b => ['vite.config.ts', 'tsconfig.json', 'tailwind.config.ts', 'package.json', 'postcss.config.js', 'postcss.config.cjs'].includes(b.filePath));
       if (previewPort) setTimeout(() => setPreviewKey(k => k + 1), hasConfigChanges ? 2500 : 500);
-      await buildProjectContext();
+      buildProjectContext().catch(() => {});
       refreshValidationContext();
       refreshQuickActions();
       return true;
@@ -2176,7 +2176,7 @@ const GrokBridge: React.FC = () => {
           newContent: b.code,
           timestamp: Date.now(),
         }))]);
-        await buildProjectContext();
+        buildProjectContext().catch(() => {});
         refreshQuickActions();
 
         const hasConfigChanges = blocks.some(b =>
@@ -2310,7 +2310,7 @@ const GrokBridge: React.FC = () => {
         await new Promise(r => setTimeout(r, 2000));
       }
 
-      await buildProjectContext();
+      buildProjectContext().catch(() => {});
       refreshQuickActions();
 
       setBatchStage('done');
