@@ -646,7 +646,7 @@ function projectManagementPlugin(): Plugin {
           };
           patchPortInEnvFiles();
 
-          const patchViteConfig = () => {
+          const patchViteConfig = async () => {
             const viteConfigNames = ["vite.config.ts", "vite.config.js", "vite.config.mjs"];
             for (const vcName of viteConfigNames) {
               const vcPath = path.join(projectDir, vcName);
@@ -654,27 +654,70 @@ function projectManagementPlugin(): Plugin {
               try {
                 let content = fs.readFileSync(vcPath, "utf-8");
                 let changed = false;
-                const portMatch = content.match(/port\s*:\s*(\d+)/);
-                if (portMatch && portMatch[1] !== String(port)) {
-                  content = content.replace(/port\s*:\s*\d+/, `port: ${port}`);
-                  changed = true;
+
+                const isLibraryMode = /build\s*:\s*\{[\s\S]*?lib\s*:/m.test(content);
+                if (isLibraryMode) {
+                  const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}), ...(pkg.peerDependencies || {}) };
+                  const hasReact = !!allDeps["react"];
+                  const hasVue = !!allDeps["vue"];
+                  const hasSvelte = !!allDeps["svelte"];
+                  const hasReactPlugin = content.includes("plugin-react");
+                  const hasVuePlugin = content.includes("plugin-vue");
+
+                  if (hasReact && !hasReactPlugin) {
+                    const pluginPkg = "@vitejs/plugin-react";
+                    try {
+                      const { execSync: es } = await import("child_process");
+                      const missingLibPkgs: string[] = [];
+                      if (!fs.existsSync(path.join(projectDir, "node_modules", "@vitejs/plugin-react"))) missingLibPkgs.push(pluginPkg);
+                      if (!fs.existsSync(path.join(projectDir, "node_modules", "react-dom"))) missingLibPkgs.push("react-dom");
+                      if (!fs.existsSync(path.join(projectDir, "node_modules", "react"))) missingLibPkgs.push("react");
+                      if (missingLibPkgs.length > 0) {
+                        console.log(`[Preview] Library-mode config for ${name}, installing: ${missingLibPkgs.join(", ")}`);
+                        const installCmd = pm === "pnpm" ? `pnpm add -D ${missingLibPkgs.join(" ")}` : pm === "yarn" ? `yarn add -D ${missingLibPkgs.join(" ")}` : pm === "bun" ? `bun add -D ${missingLibPkgs.join(" ")}` : `npm install --save-dev --legacy-peer-deps ${missingLibPkgs.join(" ")}`;
+                        es(installCmd, { cwd: projectDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true });
+                      }
+                    } catch (e: any) {
+                      console.log(`[Preview] Failed to install lib-mode deps: ${e.message?.slice(0, 150)}`);
+                    }
+                    content = `import { defineConfig } from 'vite'\nimport react from '${pluginPkg}'\n\nexport default defineConfig({\n  plugins: [react()],\n})\n`;
+                    changed = true;
+                    console.log(`[Preview] Rewrote library-mode ${vcName} to dev-mode with React plugin for ${name}`);
+                  } else if (hasVue && !hasVuePlugin) {
+                    content = `import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\n\nexport default defineConfig({\n  plugins: [vue()],\n})\n`;
+                    changed = true;
+                    console.log(`[Preview] Rewrote library-mode ${vcName} to dev-mode with Vue plugin for ${name}`);
+                  } else if (!hasReact && !hasVue && !hasSvelte) {
+                    content = `import { defineConfig } from 'vite'\n\nexport default defineConfig({})\n`;
+                    changed = true;
+                    console.log(`[Preview] Rewrote library-mode ${vcName} to dev-mode for ${name}`);
+                  }
                 }
-                if (/host\s*:\s*['"]localhost['"]/.test(content)) {
-                  content = content.replace(/host\s*:\s*['"]localhost['"]/, `host: '0.0.0.0'`);
-                  changed = true;
+
+                if (!changed) {
+                  const portMatch = content.match(/port\s*:\s*(\d+)/);
+                  if (portMatch && portMatch[1] !== String(port)) {
+                    content = content.replace(/port\s*:\s*\d+/, `port: ${port}`);
+                    changed = true;
+                  }
+                  if (/host\s*:\s*['"]localhost['"]/.test(content)) {
+                    content = content.replace(/host\s*:\s*['"]localhost['"]/, `host: '0.0.0.0'`);
+                    changed = true;
+                  }
+                  if (/open\s*:\s*true/.test(content)) {
+                    content = content.replace(/open\s*:\s*true/g, "open: false");
+                    changed = true;
+                  }
                 }
-                if (/open\s*:\s*true/.test(content)) {
-                  content = content.replace(/open\s*:\s*true/g, "open: false");
-                  changed = true;
-                }
+
                 if (changed) {
                   fs.writeFileSync(vcPath, content);
-                  console.log(`[Preview] Patched ${vcName} for ${name} (port/host/open)`);
+                  console.log(`[Preview] Patched ${vcName} for ${name}`);
                 }
               } catch {}
             }
           };
-          patchViteConfig();
+          await patchViteConfig();
 
           const fixPostCSSAndTailwind = async () => {
             const isESM = pkg.type === "module";
