@@ -1836,35 +1836,10 @@ const GrokBridge: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.openTerminal) {
-          if (isElectron) {
-            try {
-              const { ipcRenderer, shell } = (window as any).require('electron');
-              if (data.projectType === 'precompiled' && data.executables?.length > 0) {
-                const exe = data.executables[0];
-                try {
-                  await shell.openPath(exe.path);
-                  setStatusMessage(`Launched ${exe.name}`);
-                } catch {
-                  await ipcRenderer.invoke('open-terminal', { cwd: data.projectDir, command: data.runCommand });
-                  setStatusMessage(`Opening ${exe.name} via terminal`);
-                }
-              } else {
-                await ipcRenderer.invoke('open-terminal', { cwd: data.projectDir, command: data.runCommand });
-                setStatusMessage(`Opened terminal for ${data.projectType} project${data.runCommand ? ` — run: ${data.runCommand}` : ''}`);
-              }
-            } catch {
-              setStatusMessage(`${data.projectType === 'precompiled' ? 'Precompiled app' : data.projectType + ' project'} — ${data.runCommand || 'open the project folder to run'}`);
-            }
-          } else {
-            if (data.projectType === 'precompiled') {
-              setStatusMessage(`Precompiled app found: ${data.executables?.[0]?.name || 'unknown'} — run: ${data.runCommand || 'open the executable'}`);
-            } else {
-              setStatusMessage(`This is a ${data.projectType} project — run in terminal: ${data.runCommand || 'see project README'}`);
-            }
-          }
+          setStatusMessage(data.message || `${data.projectType} project detected`);
           setPreviewLogs(prev => [...prev, {
-            level: 'info',
-            args: [`[Project] ${data.message || 'Non-web project detected'}${data.executables ? ` — Files: ${data.executables.map((e: any) => e.name).join(', ')}` : ''} — Command: ${data.runCommand || 'N/A'}`],
+            level: data.launched ? 'info' : 'warn',
+            args: [`[Project] ${data.message || 'Non-web project detected'}${data.executables ? ` — Files: ${data.executables.map((e: any) => e.name).join(', ')}` : ''}${data.runCommand ? ` — Command: ${data.runCommand}` : ''}`],
             timestamp: Date.now(),
           }]);
         } else if (data.started === false && data.error) {

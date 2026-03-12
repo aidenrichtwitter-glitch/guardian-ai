@@ -703,21 +703,66 @@ function projectManagementPlugin(): Plugin {
             } catch {}
             return results;
           };
+          const os = await import("os");
+          const isWin = os.platform() === "win32";
+          const isMac = os.platform() === "darwin";
+          const isLinux = os.platform() === "linux";
+
+          const spawnTerminalWithCommand = (cwd: string, cmd: string, label: string) => {
+            try {
+              if (isWin) {
+                spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", `cd /d "${cwd}" && ${cmd}`], { detached: true, stdio: "ignore", windowsHide: false });
+              } else if (isMac) {
+                const script = `tell application "Terminal" to do script "cd '${cwd}' && ${cmd.replace(/'/g, "'\\''")}"`;
+                spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" });
+              } else {
+                const terminals = ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"];
+                let launched = false;
+                for (const term of terminals) {
+                  try {
+                    if (term === "gnome-terminal") {
+                      spawn(term, ["--", "bash", "-c", `cd '${cwd}' && ${cmd}; exec bash`], { detached: true, stdio: "ignore" });
+                    } else {
+                      spawn(term, ["-e", `bash -c "cd '${cwd}' && ${cmd}; exec bash"`], { detached: true, stdio: "ignore" });
+                    }
+                    launched = true;
+                    break;
+                  } catch {}
+                }
+                if (!launched) {
+                  spawn("bash", ["-c", cmd], { cwd, detached: true, stdio: "ignore" });
+                }
+              }
+              console.log(`[Preview] Spawned terminal for ${label}: ${cmd}`);
+              return true;
+            } catch (e: any) {
+              console.error(`[Preview] Failed to spawn terminal for ${label}:`, e.message?.slice(0, 200));
+              return false;
+            }
+          };
+
+          const launchExecutable = (exePath: string, label: string) => {
+            try {
+              if (isWin) {
+                spawn("cmd.exe", ["/c", "start", "", exePath], { detached: true, stdio: "ignore", windowsHide: false });
+              } else if (isMac) {
+                spawn("open", [exePath], { detached: true, stdio: "ignore" });
+              } else {
+                try { fs.chmodSync(exePath, 0o755); } catch {}
+                spawn(exePath, [], { cwd: path.dirname(exePath), detached: true, stdio: "ignore" });
+              }
+              console.log(`[Preview] Launched executable for ${label}: ${exePath}`);
+              return true;
+            } catch (e: any) {
+              console.error(`[Preview] Failed to launch executable for ${label}:`, e.message?.slice(0, 200));
+              return false;
+            }
+          };
+
           const executables = findExecutables(projectDir);
           if (executables.length > 0 && !hasPkg) {
             const best = executables.find(e => e.ext === ".exe") || executables.find(e => e.ext === ".appimage") || executables.find(e => e.ext === ".app") || executables[0];
-            const os = await import("os");
-            const isWin = os.platform() === "win32";
-            const isMac = os.platform() === "darwin";
-            const isLinux = os.platform() === "linux";
-            let runCmd = "";
-            if (isWin && best.ext === ".exe") runCmd = `"${best.fullPath}"`;
-            else if (isWin && best.ext === ".msi") runCmd = `msiexec /i "${best.fullPath}"`;
-            else if (isMac && best.ext === ".app") runCmd = `open "${best.fullPath}"`;
-            else if (isMac && best.ext === ".dmg") runCmd = `open "${best.fullPath}"`;
-            else if (isLinux && best.ext === ".appimage") runCmd = `chmod +x "${best.fullPath}" && "${best.fullPath}"`;
-            else if (isLinux && (best.ext === ".deb" || best.ext === ".rpm")) runCmd = `# Install: ${best.name}`;
-            else runCmd = `"${best.fullPath}"`;
+            const launched = launchExecutable(best.fullPath, name);
             const allExeNames = executables.map(e => e.name).slice(0, 10).join(", ");
             console.log(`[Preview] Precompiled binaries found for ${name}: ${allExeNames}`);
             res.setHeader("Content-Type", "application/json");
@@ -725,10 +770,11 @@ function projectManagementPlugin(): Plugin {
               started: false,
               projectType: "precompiled",
               openTerminal: true,
-              runCommand: runCmd,
+              launched,
+              runCommand: `"${best.fullPath}"`,
               projectDir: projectDir,
               executables: executables.map(e => ({ name: e.name, path: e.fullPath, ext: e.ext })).slice(0, 20),
-              message: `Found precompiled app: ${best.name}${executables.length > 1 ? ` (+${executables.length - 1} more)` : ""}`,
+              message: launched ? `Launched ${best.name}` : `Found precompiled app: ${best.name} — could not auto-launch`,
             }));
             return;
           }
@@ -767,15 +813,17 @@ function projectManagementPlugin(): Plugin {
             } else if (scripts.start) {
               runCmd = `npm run start`;
             }
-            console.log(`[Preview] Non-web project detected (${projectType}) for ${name} — suggesting terminal`);
+            console.log(`[Preview] Non-web project detected (${projectType}) for ${name} — auto-opening terminal`);
+            const launched = runCmd ? spawnTerminalWithCommand(projectDir, runCmd, name) : false;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({
               started: false,
               projectType,
               openTerminal: true,
+              launched,
               runCommand: runCmd,
               projectDir: projectDir,
-              message: `This is a ${projectType} project — opening in terminal instead of preview.`,
+              message: launched ? `Opened terminal and running: ${runCmd}` : `${projectType} project — run: ${runCmd || 'see README'}`,
             }));
             return;
           }
@@ -1243,7 +1291,6 @@ function projectManagementPlugin(): Plugin {
             try { if (fs.existsSync(nextLockPath)) { fs.unlinkSync(nextLockPath); console.log(`[Preview] Removed stale .next/dev/lock for ${name}`); } } catch {}
           }
 
-          const isWin = process.platform === "win32";
           const child = spawn(devCmd.cmd, devCmd.args, {
             cwd: effectiveProjectDir,
             stdio: "pipe",
