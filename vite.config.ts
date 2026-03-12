@@ -694,7 +694,7 @@ function projectManagementPlugin(): Plugin {
                     results.push({ name: entry.name, fullPath, ext });
                   }
                 } else if (entry.isDirectory() && depth < 2) {
-                  const sub = ["bin", "build", "dist", "release", "Release", "out", "output", "artifacts", "releases"];
+                  const sub = ["bin", "build", "dist", "release", "Release", "out", "output", "artifacts", "releases", "_releases"];
                   if (depth === 0 || sub.some(s => entry.name.toLowerCase() === s.toLowerCase())) {
                     results.push(...findExecutables(fullPath, depth + 1));
                   }
@@ -798,13 +798,16 @@ function projectManagementPlugin(): Plugin {
           if (isNonWebProject) {
             let projectType = isPythonProject ? "python" : isGoProject ? "go" : isRustProject ? "rust" : isCLI ? "cli" : "terminal";
             let runCmd = "";
+            let buildCmd = "";
             if (isPythonProject) {
               const mainPy = fs.existsSync(path.join(projectDir, "main.py")) ? "main.py" : fs.existsSync(path.join(projectDir, "app.py")) ? "app.py" : fs.readdirSync(projectDir).find((f: string) => f.endsWith(".py")) || "main.py";
               runCmd = `python3 ${mainPy}`;
             } else if (isGoProject) {
-              runCmd = "go run .";
+              buildCmd = "go build -o app .";
+              runCmd = "./app";
             } else if (isRustProject) {
-              runCmd = "cargo run";
+              buildCmd = "cargo build --release";
+              runCmd = "./target/release/" + (name || "app");
             } else if (isCLI && pkg.bin) {
               const binName = typeof pkg.bin === "string" ? pkg.name : Object.keys(pkg.bin)[0];
               runCmd = `node ${typeof pkg.bin === "string" ? pkg.bin : pkg.bin[binName]}`;
@@ -813,7 +816,7 @@ function projectManagementPlugin(): Plugin {
             } else if (scripts.start) {
               runCmd = `npm run start`;
             }
-            if (!runCmd) {
+            if (!runCmd && !buildCmd) {
               try {
                 const files = fs.readdirSync(projectDir);
                 const jsEntry = files.find((f: string) => /^(index|main|app|server|cli)\.(js|ts|mjs|cjs)$/.test(f));
@@ -826,29 +829,137 @@ function projectManagementPlugin(): Plugin {
                     if (shFile) { runCmd = `bash ${shFile}`; projectType = "shell"; }
                     else {
                       const makefile = files.find((f: string) => /^Makefile$/i.test(f));
-                      if (makefile) { runCmd = "make"; projectType = "make"; }
-                      else if (fs.existsSync(path.join(projectDir, "CMakeLists.txt"))) { runCmd = "cmake . && make"; projectType = "cmake"; }
-                      else if (fs.existsSync(path.join(projectDir, "Dockerfile"))) { runCmd = "docker build -t " + name + " . && docker run " + name; projectType = "docker"; }
+                      if (makefile) { buildCmd = "make"; projectType = "make"; }
+                      else if (fs.existsSync(path.join(projectDir, "CMakeLists.txt"))) {
+                        buildCmd = "mkdir -p build && cd build && cmake .. && cmake --build . --parallel";
+                        projectType = "cmake";
+                      }
+                      else if (fs.existsSync(path.join(projectDir, "Dockerfile"))) { buildCmd = "docker build -t " + name + " ."; runCmd = "docker run " + name; projectType = "docker"; }
                     }
                   }
                 }
               } catch {}
             }
-            console.log(`[Preview] Non-web project detected (${projectType}) for ${name}${runCmd ? ` — auto-running: ${runCmd}` : ' — no runnable entry found'}`);
-            const launched = runCmd ? spawnTerminalWithCommand(projectDir, runCmd, name) : false;
+
+            const releasesDir = path.join(projectDir, "_releases");
+            let releaseExe = "";
+            if (fs.existsSync(releasesDir)) {
+              const findExeInReleases = (dir: string, depth = 0): string => {
+                if (depth > 3) return "";
+                try {
+                  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                    const full = path.join(dir, entry.name);
+                    if (entry.isFile()) {
+                      const ext = path.extname(entry.name).toLowerCase();
+                      if ([".exe", ".appimage", ".app"].includes(ext)) return full;
+                    } else if (entry.isDirectory() && depth < 3) {
+                      const found = findExeInReleases(full, depth + 1);
+                      if (found) return found;
+                    }
+                  }
+                } catch {}
+                return "";
+              };
+              releaseExe = findExeInReleases(releasesDir);
+            }
+
+            if (releaseExe) {
+              console.log(`[Preview] Found downloaded release executable: ${releaseExe}`);
+              const launched = launchExecutable(releaseExe, name);
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({
+                started: false,
+                projectType: "precompiled",
+                openTerminal: true,
+                launched,
+                runCommand: `"${releaseExe}"`,
+                projectDir,
+                message: launched ? `Launched ${path.basename(releaseExe)}` : `Found release: ${path.basename(releaseExe)}`,
+              }));
+              return;
+            }
+
+            let buildOutput = "";
+            let buildSuccess = false;
+            if (buildCmd) {
+              console.log(`[Preview] Auto-building ${projectType} project ${name}: ${buildCmd}`);
+              try {
+                const result = execSync(buildCmd, {
+                  cwd: projectDir,
+                  timeout: 300000,
+                  stdio: "pipe",
+                  shell: true,
+                  windowsHide: true,
+                  env: { ...process.env, MAKEFLAGS: `-j${os.cpus().length || 2}` },
+                });
+                buildOutput = result.toString().slice(-2000);
+                buildSuccess = true;
+                console.log(`[Preview] Build succeeded for ${name}`);
+                if (!runCmd) {
+                  try {
+                    const builtExes = findExecutables(projectDir);
+                    if (builtExes.length > 0) {
+                      const best = builtExes.find(e => e.ext === ".exe") || builtExes[0];
+                      runCmd = `"${best.fullPath}"`;
+                    }
+                  } catch {}
+                  if (!runCmd && projectType === "cmake" && fs.existsSync(path.join(projectDir, "build"))) {
+                    try {
+                      const buildFiles = fs.readdirSync(path.join(projectDir, "build"));
+                      const builtBin = buildFiles.find((f: string) => {
+                        const fp = path.join(projectDir, "build", f);
+                        try { return fs.statSync(fp).isFile() && (fs.statSync(fp).mode & 0o111) !== 0; } catch { return false; }
+                      });
+                      if (builtBin) runCmd = `"${path.join(projectDir, "build", builtBin)}"`;
+                    } catch {}
+                  }
+                  if (!runCmd && projectType === "make") {
+                    try {
+                      const rootFiles = fs.readdirSync(projectDir);
+                      const builtBin = rootFiles.find((f: string) => {
+                        if (f === "Makefile" || f.endsWith(".c") || f.endsWith(".cpp") || f.endsWith(".h") || f.endsWith(".o")) return false;
+                        const fp = path.join(projectDir, f);
+                        try { return fs.statSync(fp).isFile() && (fs.statSync(fp).mode & 0o111) !== 0; } catch { return false; }
+                      });
+                      if (builtBin) runCmd = `./${builtBin}`;
+                    } catch {}
+                  }
+                }
+              } catch (buildErr: any) {
+                buildOutput = (buildErr.stderr?.toString() || buildErr.message || "").slice(-2000);
+                console.error(`[Preview] Build failed for ${name}: ${buildOutput.slice(0, 300)}`);
+              }
+            }
+
+            const fullCmd = buildCmd && runCmd && buildSuccess
+              ? runCmd
+              : buildCmd && !buildSuccess
+                ? buildCmd
+                : runCmd || buildCmd;
+            console.log(`[Preview] Non-web project ${name} (${projectType}) — cmd: ${fullCmd || 'none'}${buildCmd ? `, build: ${buildSuccess ? 'ok' : 'failed'}` : ''}`);
+            const launched = fullCmd ? spawnTerminalWithCommand(projectDir, fullCmd, name) : false;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({
               started: false,
               projectType,
               openTerminal: true,
               launched,
-              runCommand: runCmd,
-              projectDir: projectDir,
-              message: launched
-                ? `Opened terminal — running: ${runCmd}`
-                : runCmd
-                  ? `${projectType} project — opening terminal to run: ${runCmd}`
-                  : `No runnable entry point found. This project may need to be built first — check the project files for build instructions.`,
+              runCommand: fullCmd,
+              projectDir,
+              ...(buildCmd ? { buildCommand: buildCmd, buildSuccess, buildOutput: buildOutput.slice(0, 1000) } : {}),
+              message: releaseExe
+                ? `Launched ${path.basename(releaseExe)}`
+                : buildSuccess && runCmd
+                  ? `Build complete — running: ${runCmd}`
+                  : buildSuccess
+                    ? `Build complete${runCmd ? ` — running: ${runCmd}` : ''}`
+                    : buildCmd && !buildSuccess
+                      ? `Build failed — check build output for errors`
+                      : launched
+                        ? `Running: ${fullCmd}`
+                        : fullCmd
+                          ? `${projectType} project — run: ${fullCmd}`
+                          : `No runnable entry point found. This project may need dependencies installed first.`,
             }));
             return;
           }
@@ -2342,6 +2453,78 @@ function projectManagementPlugin(): Plugin {
             }
           }
 
+          let releaseAssets: { name: string; size: number; downloadUrl: string; downloaded: boolean }[] = [];
+          const hasPkgJson = fs.existsSync(pkgPath);
+          if (!hasPkgJson && apiAvailable) {
+            try {
+              console.log(`[Import] No package.json found — checking GitHub Releases for precompiled binaries...`);
+              const relResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, { headers: { ...headers, "Accept": "application/vnd.github.v3+json" } });
+              if (relResp.ok) {
+                const relData: any = await relResp.json();
+                const BINARY_EXTS = [".exe", ".msi", ".appimage", ".dmg", ".deb", ".rpm", ".zip", ".tar.gz", ".7z", ".snap", ".flatpak"];
+                const osPlatform = os.platform();
+                const osArch = os.arch();
+                const platformHints = osPlatform === "win32" ? ["win", "windows", "x64", "x86_64", "amd64"]
+                  : osPlatform === "darwin" ? ["mac", "macos", "darwin", "arm64", "x64", "universal"]
+                  : ["linux", "x64", "x86_64", "amd64", osArch];
+                const assets = (relData.assets || [])
+                  .filter((a: any) => BINARY_EXTS.some(ext => a.name.toLowerCase().endsWith(ext)))
+                  .sort((a: any, b: any) => {
+                    const aMatch = platformHints.some(h => a.name.toLowerCase().includes(h));
+                    const bMatch = platformHints.some(h => b.name.toLowerCase().includes(h));
+                    if (aMatch && !bMatch) return -1;
+                    if (!aMatch && bMatch) return 1;
+                    return 0;
+                  });
+                if (assets.length > 0) {
+                  const releasesDir = path.join(projectDir, "_releases");
+                  fs.mkdirSync(releasesDir, { recursive: true });
+                  const MAX_DOWNLOAD = 500 * 1024 * 1024;
+                  const toDownload = assets.filter((a: any) => a.size < MAX_DOWNLOAD).slice(0, 3);
+                  for (const asset of toDownload) {
+                    try {
+                      console.log(`[Import] Downloading release asset: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)}MB)...`);
+                      const dlResp = await fetch(asset.browser_download_url, { redirect: "follow" });
+                      if (dlResp.ok) {
+                        const buf = Buffer.from(await dlResp.arrayBuffer());
+                        const assetPath = path.join(releasesDir, asset.name);
+                        fs.writeFileSync(assetPath, buf);
+                        if (asset.name.toLowerCase().endsWith(".exe") || asset.name.toLowerCase().endsWith(".appimage")) {
+                          try { fs.chmodSync(assetPath, 0o755); } catch {}
+                        }
+                        if (asset.name.toLowerCase().endsWith(".zip")) {
+                          try {
+                            const extractDir = path.join(releasesDir, asset.name.replace(/\.zip$/i, ""));
+                            fs.mkdirSync(extractDir, { recursive: true });
+                            if (osPlatform === "win32") {
+                              execSync(`tar xf "${assetPath.replace(/\\/g, '/')}" -C "${extractDir.replace(/\\/g, '/')}"`, { timeout: 60000, stdio: "pipe", windowsHide: true });
+                            } else {
+                              execSync(`unzip -o -q "${assetPath}" -d "${extractDir}"`, { timeout: 60000, stdio: "pipe" });
+                            }
+                            console.log(`[Import] Extracted ${asset.name} to ${extractDir}`);
+                          } catch (unzipErr: any) {
+                            console.log(`[Import] Could not extract ${asset.name}: ${unzipErr.message?.slice(0, 100)}`);
+                          }
+                        }
+                        releaseAssets.push({ name: asset.name, size: asset.size, downloadUrl: asset.browser_download_url, downloaded: true });
+                        console.log(`[Import] Downloaded: ${asset.name}`);
+                      }
+                    } catch (dlErr: any) {
+                      console.log(`[Import] Failed to download ${asset.name}: ${dlErr.message?.slice(0, 100)}`);
+                      releaseAssets.push({ name: asset.name, size: asset.size, downloadUrl: asset.browser_download_url, downloaded: false });
+                    }
+                  }
+                  for (const asset of assets.slice(3)) {
+                    releaseAssets.push({ name: asset.name, size: asset.size, downloadUrl: asset.browser_download_url, downloaded: false });
+                  }
+                  console.log(`[Import] Release assets: ${releaseAssets.filter(a => a.downloaded).length} downloaded, ${releaseAssets.length} total`);
+                }
+              }
+            } catch (relErr: any) {
+              console.log(`[Import] Release check failed (non-critical): ${relErr.message?.slice(0, 100)}`);
+            }
+          }
+
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({
             success: true,
@@ -2353,6 +2536,7 @@ function projectManagementPlugin(): Plugin {
             sourceRepo: `https://github.com/${owner}/${repo}`,
             defaultBranch,
             ...(installError ? { installError: installError.slice(0, 500) } : {}),
+            ...(releaseAssets.length > 0 ? { releaseAssets } : {}),
           }));
           } finally {
             try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
