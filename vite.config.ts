@@ -1889,10 +1889,17 @@ function projectManagementPlugin(): Plugin {
             return;
           }
           if (targetProject && fs.existsSync(projectDir)) {
-            const existingFiles = fs.readdirSync(projectDir);
-            for (const f of existingFiles) {
-              if (f === "node_modules" || f === ".git") continue;
-              try { fs.rmSync(path.join(projectDir, f), { recursive: true, force: true }); } catch {}
+            try {
+              fs.rmSync(projectDir, { recursive: true, force: true });
+              console.log(`[Import] Removed existing project directory '${projectName}'`);
+            } catch (rmErr: any) {
+              console.log(`[Import] Full rm failed (${rmErr.message?.slice(0, 100)}), clearing contents instead`);
+              try {
+                const existingFiles = fs.readdirSync(projectDir);
+                for (const f of existingFiles) {
+                  try { fs.rmSync(path.join(projectDir, f), { recursive: true, force: true }); } catch {}
+                }
+              } catch {}
             }
             console.log(`[Import] Cleared existing project '${projectName}' for clone into`);
           }

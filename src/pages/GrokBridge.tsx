@@ -1782,9 +1782,7 @@ const GrokBridge: React.FC = () => {
       }
       try {
         await deleteProject(activeProject);
-      } catch (e: any) {
-        setStatusMessage(`⚠ Failed to remove old repo: ${e.message || 'Unknown error'}`);
-        return;
+      } catch {
       }
       setPreviewPort(null);
       setShowPreviewEmbed(false);
