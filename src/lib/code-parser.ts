@@ -138,7 +138,7 @@ export function parseDependencies(text: string): ParsedDependencies {
   };
 }
 
-const FILE_EXT_PATTERN = '\\S+\\.(?:tsx?|jsx?|css|scss|less|html|json|md|py|sh|sql|yaml|yml|toml|env|cfg|conf|xml|svg|vue|svelte|go|rs|rb|java|kt|swift|c|cpp|h|hpp|prisma|graphql|gql|glsl|vert|frag|proto|makefile|dockerfile|gitignore|lock|wasm|mjs|cjs)';
+const FILE_EXT_PATTERN = '(?:\\S+\\.(?:tsx?|jsx?|css|scss|less|html|json|md|py|sh|sql|yaml|yml|toml|env|cfg|conf|xml|svg|vue|svelte|go|rs|rb|java|kt|swift|c|cpp|h|hpp|prisma|graphql|gql|glsl|vert|frag|proto|makefile|dockerfile|gitignore|lock|wasm|mjs|cjs)|\\.(?:env(?:\\.\\w+)?|gitignore|prettierrc|eslintrc|editorconfig|npmrc|yarnrc|babelrc|browserslistrc))';
 
 function isValidFilePath(candidate: string): boolean {
   if (/^[a-z]+:\/\//i.test(candidate)) return false;
