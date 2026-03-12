@@ -679,6 +679,34 @@ function projectManagementPlugin(): Plugin {
             }
           }
 
+          const releasesCleanupDir = path.join(projectDir, "_releases");
+          if (fs.existsSync(releasesCleanupDir)) {
+            const sysArch = os.arch();
+            const wrongArchPatterns = sysArch === "arm64"
+              ? ["-x64-", "-x86_64-", "-amd64-", "-win64-", ".x64.", ".x86_64.", ".amd64."]
+              : ["-arm64-", "-aarch64-", ".arm64.", ".aarch64."];
+            try {
+              const releaseFiles = fs.readdirSync(releasesCleanupDir);
+              for (const rf of releaseFiles) {
+                const rfLower = rf.toLowerCase();
+                if (wrongArchPatterns.some(p => rfLower.includes(p))) {
+                  const rfPath = path.join(releasesCleanupDir, rf);
+                  try {
+                    const stat = fs.statSync(rfPath);
+                    if (stat.isDirectory()) {
+                      fs.rmSync(rfPath, { recursive: true, force: true });
+                    } else {
+                      fs.unlinkSync(rfPath);
+                    }
+                    console.log(`[Preview] Deleted wrong-arch file: ${rf} (system: ${sysArch})`);
+                  } catch (delErr: any) {
+                    console.log(`[Preview] Could not delete wrong-arch file ${rf}: ${delErr.message?.slice(0, 100)}`);
+                  }
+                }
+              }
+            } catch {}
+          }
+
           const EXECUTABLE_EXTS = [".exe", ".msi", ".appimage", ".app", ".dmg", ".deb", ".rpm", ".snap", ".flatpak"];
           const findExecutables = (dir: string, depth = 0): { name: string; fullPath: string; ext: string }[] => {
             if (depth > 2) return [];
