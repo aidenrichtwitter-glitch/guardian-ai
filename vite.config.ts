@@ -445,24 +445,36 @@ function projectManagementPlugin(): Plugin {
 
           const pm = detectPackageManager();
 
-          if (hasPkg && !fs.existsSync(path.join(effectiveProjectDir, "node_modules"))) {
+          const safeInstallEnv = { ...process.env, HUSKY: "0", npm_config_ignore_scripts: "", DISABLE_OPENCOLLECTIVE: "true", ADBLOCK: "1" };
+          const ensureGitDir = (dir: string) => {
+            const gitDir = path.join(dir, ".git");
+            if (!fs.existsSync(gitDir)) {
+              try { fs.mkdirSync(gitDir, { recursive: true }); console.log(`[Preview] Created placeholder .git in ${dir}`); }
+              catch {}
+            }
+          };
+          const safeExecInstall = (cmd: string, cwd: string, label: string, timeoutMs = 120000): boolean => {
             try {
-              const { execSync } = await import("child_process");
-              const installCmd = pm === "npm" ? "npm install --legacy-peer-deps"
-                : pm === "pnpm" ? "npx pnpm install --no-frozen-lockfile"
-                : pm === "yarn" ? "npx yarn install --ignore-engines"
-                : "npx bun install";
-              console.log(`[Preview] Installing deps for ${name} in ${effectiveProjectDir === projectDir ? 'root' : path.basename(effectiveProjectDir)} with: ${installCmd}`);
-              execSync(installCmd, { cwd: effectiveProjectDir, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
-              console.log(`[Preview] Deps installed for ${name}`);
-            } catch (installErr: any) {
-              console.error(`[Preview] Install failed for ${name}:`, installErr.message?.slice(0, 300));
-              try {
-                const { execSync } = await import("child_process");
-                console.log(`[Preview] Retrying with npm for ${name}`);
-                execSync("npm install --legacy-peer-deps", { cwd: effectiveProjectDir, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
-              } catch (retryErr: any) {
-                console.error(`[Preview] Retry also failed for ${name}:`, retryErr.message?.slice(0, 300));
+              console.log(`[Preview] ${label}: ${cmd}`);
+              execSync(cmd, { cwd, timeout: timeoutMs, stdio: "pipe", shell: true, windowsHide: true, env: safeInstallEnv });
+              console.log(`[Preview] ${label}: success`);
+              return true;
+            } catch (e: any) {
+              console.error(`[Preview] ${label} failed:`, e.message?.slice(0, 300));
+              return false;
+            }
+          };
+
+          if (hasPkg && !fs.existsSync(path.join(effectiveProjectDir, "node_modules"))) {
+            ensureGitDir(effectiveProjectDir);
+            if (effectiveProjectDir !== projectDir) ensureGitDir(projectDir);
+            const installCmd = pm === "npm" ? "npm install --legacy-peer-deps"
+              : pm === "pnpm" ? "npx pnpm install --no-frozen-lockfile"
+              : pm === "yarn" ? "npx yarn install --ignore-engines"
+              : "npx bun install";
+            if (!safeExecInstall(installCmd, effectiveProjectDir, `Install deps for ${name}`)) {
+              if (!safeExecInstall("npm install --legacy-peer-deps --ignore-scripts", effectiveProjectDir, `Retry (ignore-scripts) for ${name}`)) {
+                safeExecInstall("npm install --legacy-peer-deps --force --ignore-scripts", effectiveProjectDir, `Final retry (force+ignore-scripts) for ${name}`);
               }
             }
           }
@@ -1045,7 +1057,7 @@ function projectManagementPlugin(): Plugin {
                       if (fs.existsSync(path.join(projectDir, "pnpm-lock.yaml"))) installCmd = "npx pnpm add -D vite-tsconfig-paths";
                       else if (fs.existsSync(path.join(projectDir, "yarn.lock"))) installCmd = "yarn add -D vite-tsconfig-paths";
                       else if (fs.existsSync(path.join(projectDir, "bun.lockb")) || fs.existsSync(path.join(projectDir, "bun.lock"))) installCmd = "bun add -D vite-tsconfig-paths";
-                      execSync(installCmd, { cwd: viteDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true });
+                      execSync(installCmd, { cwd: viteDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true, env: safeInstallEnv });
                       console.log(`[Preview] Installed vite-tsconfig-paths for ${name}`);
                     } catch (installErr: any) {
                       console.log(`[Preview] Could not install vite-tsconfig-paths for ${name}: ${installErr.message?.slice(0, 100)}`);
@@ -1264,7 +1276,8 @@ function projectManagementPlugin(): Plugin {
                   if (!fs.existsSync(path.join(subPath, "node_modules"))) {
                     try {
                       console.log(`[Preview] Installing all deps in ${subdirMatch[1]}/ first...`);
-                      execSync("npm install --legacy-peer-deps", { cwd: subPath, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
+                      if (!fs.existsSync(path.join(subPath, ".git"))) { try { fs.mkdirSync(path.join(subPath, ".git"), { recursive: true }); } catch {} }
+                      execSync("npm install --legacy-peer-deps", { cwd: subPath, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true, env: { ...process.env, HUSKY: "0" } });
                     } catch {}
                   }
                 }
@@ -1277,7 +1290,7 @@ function projectManagementPlugin(): Plugin {
                   : pm === "pnpm" ? `npx pnpm add -D ${installPkgList}`
                   : pm === "yarn" ? `npx yarn add -D ${installPkgList}`
                   : `npm install --save-dev --legacy-peer-deps ${installPkgList}`;
-                execSync(installCmd, { cwd: installDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true });
+                execSync(installCmd, { cwd: installDir, timeout: 60000, stdio: "pipe", shell: true, windowsHide: true, env: safeInstallEnv });
                 console.log(`[Preview] Installed ${missingPkgs.join(", ")} — retrying startup`);
 
                 const child2 = spawn(devCmd.cmd, devCmd.args, {
@@ -1552,24 +1565,23 @@ function projectManagementPlugin(): Plugin {
             }
           };
 
+          const depsInstallEnv = { ...process.env, HUSKY: "0", DISABLE_OPENCOLLECTIVE: "true", ADBLOCK: "1" };
+          if (!fs.existsSync(path.join(projectDir, ".git"))) { try { fs.mkdirSync(path.join(projectDir, ".git"), { recursive: true }); } catch {} }
           const errors: string[] = [];
           const runInstall = (pkgs: string[], isDev: boolean): Promise<void> => new Promise((resolve) => {
             const cmd = buildInstallCmd(pkgs, isDev);
             console.log(`[Deps] Running: ${cmd} in ${name}`);
-            execAsync(cmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, _stdout, stderr) => {
+            execAsync(cmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true, env: depsInstallEnv }, (err, _stdout, stderr) => {
               if (err) {
                 console.error(`[Deps] Failed: ${cmd}`, stderr?.slice(0, 300) || err.message?.slice(0, 300));
-                if (pm !== "npm") {
-                  const npmFallback = `npm install --legacy-peer-deps${isDev ? " --save-dev" : ""} ${pkgs.join(" ")}`;
-                  console.log(`[Deps] Retrying with npm: ${npmFallback}`);
-                  execAsync(npmFallback, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err2) => {
-                    if (err2) errors.push(`Failed: Command failed: ${cmd}`);
-                    resolve();
-                  });
-                } else {
-                  errors.push(`Failed: Command failed: ${cmd}`);
+                const fallbackCmd = pm !== "npm"
+                  ? `npm install --legacy-peer-deps${isDev ? " --save-dev" : ""} ${pkgs.join(" ")}`
+                  : `${cmd} --ignore-scripts`;
+                console.log(`[Deps] Retrying: ${fallbackCmd}`);
+                execAsync(fallbackCmd, { cwd: projectDir, timeout: 120000, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true, env: depsInstallEnv }, (err2) => {
+                  if (err2) errors.push(`Failed: Command failed: ${cmd}`);
                   resolve();
-                }
+                });
               } else {
                 resolve();
               }
@@ -1720,6 +1732,14 @@ function projectManagementPlugin(): Plugin {
           const isWin = os.platform() === "win32";
           let actualCmd = trimmed === "npm install" ? "npm install --legacy-peer-deps" : trimmed;
 
+          const isInstallCmd = /^(npm\s+install|npm\s+i\b|yarn\s*(install)?$|pnpm\s+install|bun\s+install|npx\s+(pnpm|yarn|bun)\s+install)/i.test(trimmed);
+          if (isInstallCmd) {
+            const gitDir = path.join(projectDir, ".git");
+            if (!fs.existsSync(gitDir)) {
+              try { fs.mkdirSync(gitDir, { recursive: true }); } catch {}
+            }
+          }
+
           const nodeHandled = await (async () => {
             if (/^rm\s+(-rf?\s+)?/i.test(actualCmd)) {
               const targets = actualCmd.replace(/^rm\s+(-rf?\s+)?/i, "").trim().split(/\s+/);
@@ -1792,8 +1812,27 @@ function projectManagementPlugin(): Plugin {
             actualCmd = `npx ${actualCmd}`;
           }
 
+          const cmdEnv = isInstallCmd
+            ? { ...process.env, HUSKY: "0", npm_config_ignore_scripts: "", DISABLE_OPENCOLLECTIVE: "true", ADBLOCK: "1" }
+            : undefined;
+          const cmdTimeout = isInstallCmd ? 180000 : 60000;
+
           await new Promise<void>((resolve) => {
-            execAsync(actualCmd, { cwd: projectDir, timeout: 60000, shell: true, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+            execAsync(actualCmd, { cwd: projectDir, timeout: cmdTimeout, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true, ...(cmdEnv ? { env: cmdEnv } : {}) }, (err, stdout, stderr) => {
+              if (err && isInstallCmd) {
+                console.log(`[RunCmd] Install failed, retrying with --ignore-scripts: ${err.message?.slice(0, 200)}`);
+                const retryCmd = actualCmd.includes("--ignore-scripts") ? actualCmd + " --force" : actualCmd + " --ignore-scripts";
+                execAsync(retryCmd, { cwd: projectDir, timeout: cmdTimeout, shell: true, maxBuffer: 2 * 1024 * 1024, windowsHide: true, env: cmdEnv }, (retryErr, retryStdout, retryStderr) => {
+                  res.setHeader("Content-Type", "application/json");
+                  if (retryErr) {
+                    res.end(JSON.stringify({ success: false, error: retryErr.message?.slice(0, 500), output: (retryStdout || "").slice(0, 4000), stderr: (retryStderr || "").slice(0, 2000), retried: true }));
+                  } else {
+                    res.end(JSON.stringify({ success: true, output: (retryStdout || "").slice(0, 4000), retried: true, note: "Installed with --ignore-scripts (some post-install steps were skipped)" }));
+                  }
+                  resolve();
+                });
+                return;
+              }
               res.setHeader("Content-Type", "application/json");
               if (err) {
                 res.end(JSON.stringify({ success: false, error: err.message?.slice(0, 500), output: (stdout || "").slice(0, 4000), stderr: (stderr || "").slice(0, 2000) }));
@@ -2129,9 +2168,11 @@ function projectManagementPlugin(): Plugin {
               : detectedPM === "bun" ? "npx bun install --ignore-scripts"
               : "npm install --legacy-peer-deps --ignore-scripts";
 
+            const importInstallEnv = { ...process.env, HUSKY: "0", DISABLE_OPENCOLLECTIVE: "true", ADBLOCK: "1" };
+            if (!fs.existsSync(path.join(projectDir, ".git"))) { try { fs.mkdirSync(path.join(projectDir, ".git"), { recursive: true }); } catch {} }
             console.log(`[Import] Installing deps for ${projectName} with: ${installCmd} (pm: ${detectedPM}, monorepo: ${isMonorepo})`);
             try {
-              execSync(installCmd, { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true, windowsHide: true });
+              execSync(installCmd, { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true, windowsHide: true, env: importInstallEnv });
               npmInstalled = true;
               console.log(`[Import] Deps installed for ${projectName}`);
               try {
@@ -2147,7 +2188,7 @@ function projectManagementPlugin(): Plugin {
               if (detectedPM !== "npm") {
                 try {
                   console.log(`[Import] Retrying with npm for ${projectName}`);
-                  execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true, windowsHide: true });
+                  execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: projectDir, timeout: 180000, stdio: "pipe", shell: true, windowsHide: true, env: importInstallEnv });
                   npmInstalled = true;
                   installError = "";
                   console.log(`[Import] Deps installed for ${projectName} (npm fallback)`);
@@ -2165,7 +2206,9 @@ function projectManagementPlugin(): Plugin {
             if (fs.existsSync(subPkgPath) && !fs.existsSync(path.join(projectDir, subdir, "node_modules"))) {
               try {
                 console.log(`[Import] Installing deps in subdirectory ${subdir}/...`);
-                execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: path.join(projectDir, subdir), timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
+                const subInstDir = path.join(projectDir, subdir);
+                if (!fs.existsSync(path.join(subInstDir, ".git"))) { try { fs.mkdirSync(path.join(subInstDir, ".git"), { recursive: true }); } catch {} }
+                execSync("npm install --legacy-peer-deps --ignore-scripts", { cwd: subInstDir, timeout: 120000, stdio: "pipe", shell: true, windowsHide: true, env: { ...process.env, HUSKY: "0" } });
                 console.log(`[Import] Subdirectory ${subdir}/ deps installed`);
               } catch (subErr: any) {
                 console.log(`[Import] Subdirectory ${subdir}/ install failed (non-critical): ${subErr.message?.slice(0, 100)}`);

@@ -1,0 +1,65 @@
+The preview errors indicate a classic Vite + React setup mismatch after cloning:
+
+- The error `The requested module '/src/App.tsx' does not provide an export named 'App'` means `main.tsx` (or equivalent entry file) is trying to do `import { App } from './App.tsx'` (named import), but `App.tsx` uses `export default function App() { ... }` (or similar default export). Vite/ES modules are strict about this.
+- The blank screen warning follows from the failed mount: React never renders because the import fails.
+
+This repo (EthanStandel/react-three-audio-visualizer) has `src/main.tsx` and `src/App.tsx`, which is standard Vite + React structure. `main.tsx` likely imports incorrectly (named instead of default), or a HMR/temp file glitch occurred during initial Guardian clone/preview (common in Vite dev).
+
+### Fix 1: Change the import in main.tsx to default (most likely needed)
+Check `src/main.tsx` — it probably has:
+```tsx
+import { App } from './App.tsx';  // ← wrong if App.tsx is default export
+```
+
+Change it to:
+```tsx
+import App from './App.tsx';
+```
+
+### Fix 2: If main.tsx already uses default import, force re-export named in App.tsx (alternative)
+
+Here are the corrected files assuming standard Vite-React defaults (apply the one that matches your current code; start with Fix 1 as it's cleaner).
+
+// file: src/main.tsx
+```tsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.tsx';  // ← changed to default import (remove curly braces)
+import './index.css';         // or style.ts / whatever styling entry
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+```
+
+// file: src/App.tsx
+```tsx
+// No change needed if already default export, but ensure it looks like this:
+// (this is just confirmation — replace only if yours is named export)
+
+import { Canvas } from '@react-three/fiber';
+// ... other imports (store, components, etc.)
+
+export default function App() {
+  // Your existing App content: player UI, <Canvas>, audio logic, etc.
+  return (
+    <>
+      {/* file input + controls UI here or in child component */}
+      <Canvas>{/* your 3D scene/visualizer */}</Canvas>
+      {/* audio element, etc. */}
+    </>
+  );
+}
+```
+
+### Quick steps in Guardian:
+1. After applying the above (use search/replace or edit directly), save files.
+2. If deps aren't installed yet → Guardian should auto-run `npm install` (or trigger it via command palette if needed).
+3. Restart preview (or wait for HMR).
+4. If still blank: Check console for new errors (e.g. missing deps like @react-three/fiber, three, stitches — but repo should have them in package.json).
+
+This should get the app rendering (you'll see the base visualizer/player UI). Then we can add/enhance the song selector `<input type="file">` UI on top.
+
+If the error persists after this, paste the current content of `src/main.tsx` and `src/App.tsx` (or the import line causing it), and I'll refine the fix!
