@@ -714,15 +714,19 @@ function projectManagementPlugin(): Plugin {
             const safeCwd = normPath(path.resolve(cwd));
             try {
               if (isWin) {
-                const batchContent = `@echo off\r\ncd /d "${safeCwd}"\r\n${cmd}\r\npause\r\n`;
                 const batchPath = path.join(safeCwd, "__guardian_run.bat");
-                try { fs.writeFileSync(batchPath, batchContent); } catch {}
+                const batchContent = `@echo off\r\ntitle ${label.replace(/[&|<>^%"]/g, "")}\r\ncd /d "${safeCwd}"\r\necho.\r\necho [Guardian AI] Running: ${cmd.replace(/[&|<>^%]/g, " ")}\r\necho.\r\n${cmd}\r\necho.\r\necho [Guardian AI] Command finished. Press any key to close.\r\npause >nul\r\n`;
+                fs.writeFileSync(batchPath, batchContent);
                 try {
-                  spawn("cmd.exe", ["/c", "start", `"${label}"`, "cmd.exe", "/k", `cd /d "${safeCwd}" && ${cmd}`], {
-                    cwd: safeCwd, detached: true, stdio: "ignore", windowsHide: false,
-                  });
+                  execSync(`start "" "${batchPath}"`, { cwd: safeCwd, shell: true, windowsHide: false, stdio: "ignore", timeout: 5000 });
                 } catch {
-                  spawn("cmd.exe", ["/c", batchPath], { cwd: safeCwd, detached: true, stdio: "ignore", windowsHide: false });
+                  try {
+                    spawn("cmd.exe", ["/c", batchPath], { cwd: safeCwd, detached: true, stdio: "ignore", windowsHide: false });
+                  } catch {
+                    spawn("cmd.exe", ["/c", "start", '""', "cmd.exe", "/k", `cd /d "${safeCwd}" && ${cmd}`], {
+                      cwd: safeCwd, detached: true, stdio: "ignore", windowsHide: false,
+                    });
+                  }
                 }
               } else if (isMac) {
                 const escaped = cmd.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/'/g, "'\\''");
