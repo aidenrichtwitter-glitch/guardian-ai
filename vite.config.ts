@@ -1833,7 +1833,13 @@ function projectManagementPlugin(): Plugin {
             try {
               execSync(mapping.check, { timeout: 10000, stdio: "pipe", shell: true, windowsHide: true });
               alreadyInstalled = true;
-            } catch {}
+            } catch {
+              const whichCmd = isWin ? `where ${key}` : `which ${key}`;
+              try {
+                execSync(whichCmd, { timeout: 5000, stdio: "pipe", shell: true, windowsHide: true });
+                alreadyInstalled = true;
+              } catch {}
+            }
 
             if (alreadyInstalled) {
               results.push({ program: prog, label: mapping.label, alreadyInstalled: true, installed: true });
@@ -1850,7 +1856,11 @@ function projectManagementPlugin(): Plugin {
               execSync(installCmd, { timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
               results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: true, command: installCmd });
             } catch (err: any) {
-              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: false, error: err.message?.slice(0, 200), command: installCmd });
+              const errMsg = err.message?.slice(0, 200) || "Install failed";
+              const hint = isWin
+                ? `If ${mapping.label} is already installed, ensure it's in your system PATH. Or install manually and restart.`
+                : `Install failed — you may need admin privileges. Try running: ${installCmd}`;
+              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: false, error: `${errMsg}`, command: installCmd, hint });
             }
           }
 

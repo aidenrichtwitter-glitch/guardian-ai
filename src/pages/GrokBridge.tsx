@@ -736,7 +736,10 @@ function ClipboardExtractor({ onApply, onApplyAll, onResponseCaptured, activePro
                         <span className="text-foreground/80">{item.description}</span>
                         {progResult && (
                           <span className={`ml-2 text-[8px] ${progResult.installed || progResult.alreadyInstalled ? 'text-green-400' : 'text-red-400'}`}>
-                            {progResult.alreadyInstalled ? '✓ already installed' : progResult.installed ? '✓ installed' : `✗ ${progResult.error || 'failed'}`}
+                            {progResult.alreadyInstalled ? '✓ already installed' : progResult.installed ? '✓ installed' : `✗ Command failed: ${progResult.command || progResult.error || 'failed'}`}
+                            {!progResult.installed && !progResult.alreadyInstalled && (progResult as any).hint && (
+                              <span className="block text-amber-400/70 mt-0.5">{(progResult as any).hint}</span>
+                            )}
                           </span>
                         )}
                         {item.command && !progResult && (
