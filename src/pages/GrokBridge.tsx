@@ -1838,18 +1838,33 @@ const GrokBridge: React.FC = () => {
         if (data.openTerminal) {
           if (isElectron) {
             try {
-              const { ipcRenderer } = (window as any).require('electron');
-              await ipcRenderer.invoke('open-terminal', { cwd: data.projectDir, command: data.runCommand });
-              setStatusMessage(`Opened terminal for ${data.projectType} project${data.runCommand ? ` — run: ${data.runCommand}` : ''}`);
+              const { ipcRenderer, shell } = (window as any).require('electron');
+              if (data.projectType === 'precompiled' && data.executables?.length > 0) {
+                const exe = data.executables[0];
+                try {
+                  await shell.openPath(exe.path);
+                  setStatusMessage(`Launched ${exe.name}`);
+                } catch {
+                  await ipcRenderer.invoke('open-terminal', { cwd: data.projectDir, command: data.runCommand });
+                  setStatusMessage(`Opening ${exe.name} via terminal`);
+                }
+              } else {
+                await ipcRenderer.invoke('open-terminal', { cwd: data.projectDir, command: data.runCommand });
+                setStatusMessage(`Opened terminal for ${data.projectType} project${data.runCommand ? ` — run: ${data.runCommand}` : ''}`);
+              }
             } catch {
-              setStatusMessage(`${data.projectType} project — open a terminal in the project folder and run: ${data.runCommand || 'the appropriate command'}`);
+              setStatusMessage(`${data.projectType === 'precompiled' ? 'Precompiled app' : data.projectType + ' project'} — ${data.runCommand || 'open the project folder to run'}`);
             }
           } else {
-            setStatusMessage(`This is a ${data.projectType} project — run in terminal: ${data.runCommand || 'see project README'}`);
+            if (data.projectType === 'precompiled') {
+              setStatusMessage(`Precompiled app found: ${data.executables?.[0]?.name || 'unknown'} — run: ${data.runCommand || 'open the executable'}`);
+            } else {
+              setStatusMessage(`This is a ${data.projectType} project — run in terminal: ${data.runCommand || 'see project README'}`);
+            }
           }
           setPreviewLogs(prev => [...prev, {
             level: 'info',
-            args: [`[Project] ${data.message || 'Non-web project detected'} — Command: ${data.runCommand || 'N/A'}`],
+            args: [`[Project] ${data.message || 'Non-web project detected'}${data.executables ? ` — Files: ${data.executables.map((e: any) => e.name).join(', ')}` : ''} — Command: ${data.runCommand || 'N/A'}`],
             timestamp: Date.now(),
           }]);
         } else if (data.started === false && data.error) {

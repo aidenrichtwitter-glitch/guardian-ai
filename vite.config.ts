@@ -679,6 +679,60 @@ function projectManagementPlugin(): Plugin {
             }
           }
 
+          const EXECUTABLE_EXTS = [".exe", ".msi", ".appimage", ".app", ".dmg", ".deb", ".rpm", ".snap", ".flatpak"];
+          const findExecutables = (dir: string, depth = 0): { name: string; fullPath: string; ext: string }[] => {
+            if (depth > 2) return [];
+            const results: { name: string; fullPath: string; ext: string }[] = [];
+            try {
+              const entries = fs.readdirSync(dir, { withFileTypes: true });
+              for (const entry of entries) {
+                if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isFile()) {
+                  const ext = path.extname(entry.name).toLowerCase();
+                  if (EXECUTABLE_EXTS.includes(ext)) {
+                    results.push({ name: entry.name, fullPath, ext });
+                  }
+                } else if (entry.isDirectory() && depth < 2) {
+                  const sub = ["bin", "build", "dist", "release", "Release", "out", "output", "artifacts", "releases"];
+                  if (depth === 0 || sub.some(s => entry.name.toLowerCase() === s.toLowerCase())) {
+                    results.push(...findExecutables(fullPath, depth + 1));
+                  }
+                }
+              }
+            } catch {}
+            return results;
+          };
+          const executables = findExecutables(projectDir);
+          if (executables.length > 0 && !hasPkg) {
+            const best = executables.find(e => e.ext === ".exe") || executables.find(e => e.ext === ".appimage") || executables.find(e => e.ext === ".app") || executables[0];
+            const os = await import("os");
+            const isWin = os.platform() === "win32";
+            const isMac = os.platform() === "darwin";
+            const isLinux = os.platform() === "linux";
+            let runCmd = "";
+            if (isWin && best.ext === ".exe") runCmd = `"${best.fullPath}"`;
+            else if (isWin && best.ext === ".msi") runCmd = `msiexec /i "${best.fullPath}"`;
+            else if (isMac && best.ext === ".app") runCmd = `open "${best.fullPath}"`;
+            else if (isMac && best.ext === ".dmg") runCmd = `open "${best.fullPath}"`;
+            else if (isLinux && best.ext === ".appimage") runCmd = `chmod +x "${best.fullPath}" && "${best.fullPath}"`;
+            else if (isLinux && (best.ext === ".deb" || best.ext === ".rpm")) runCmd = `# Install: ${best.name}`;
+            else runCmd = `"${best.fullPath}"`;
+            const allExeNames = executables.map(e => e.name).slice(0, 10).join(", ");
+            console.log(`[Preview] Precompiled binaries found for ${name}: ${allExeNames}`);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({
+              started: false,
+              projectType: "precompiled",
+              openTerminal: true,
+              runCommand: runCmd,
+              projectDir: projectDir,
+              executables: executables.map(e => ({ name: e.name, path: e.fullPath, ext: e.ext })).slice(0, 20),
+              message: `Found precompiled app: ${best.name}${executables.length > 1 ? ` (+${executables.length - 1} more)` : ""}`,
+            }));
+            return;
+          }
+
           const WEB_FRAMEWORKS = ["react", "react-dom", "vue", "svelte", "@sveltejs/kit", "next", "nuxt", "@angular/core", "preact", "solid-js", "astro", "gatsby", "remix", "@remix-run/react", "lit", "ember-source", "qwik", "@builder.io/qwik", "vite", "webpack-dev-server", "parcel", "@rspack/core", "react-scripts"];
           const hasIndexHtml = (() => {
             const dirs = [projectDir, effectiveProjectDir, path.join(projectDir, "public"), path.join(projectDir, "src"), ...["frontend", "client", "web", "app"].flatMap(d => [path.join(projectDir, d), path.join(projectDir, d, "public"), path.join(projectDir, d, "src")])];
