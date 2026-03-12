@@ -1784,42 +1784,46 @@ function projectManagementPlugin(): Plugin {
           const isWin = process.platform === "win32";
           const isMac = process.platform === "darwin";
 
-          const programInstallMap: Record<string, { check: string; win?: string; mac?: string; linux?: string; label: string }> = {
-            "g++": { check: "g++ --version", win: "choco install mingw -y", mac: "xcode-select --install", linux: "sudo apt-get install -y g++", label: "G++ (C++ Compiler)" },
-            "gcc": { check: "gcc --version", win: "choco install mingw -y", mac: "xcode-select --install", linux: "sudo apt-get install -y gcc", label: "GCC (C Compiler)" },
-            "clang": { check: "clang --version", win: "choco install llvm -y", mac: "xcode-select --install", linux: "sudo apt-get install -y clang", label: "Clang" },
-            "cmake": { check: "cmake --version", win: "choco install cmake -y", mac: "brew install cmake", linux: "sudo apt-get install -y cmake", label: "CMake" },
-            "make": { check: "make --version", win: "choco install make -y", mac: "xcode-select --install", linux: "sudo apt-get install -y make", label: "Make" },
-            "python": { check: "python3 --version", win: "choco install python -y", mac: "brew install python3", linux: "sudo apt-get install -y python3", label: "Python 3" },
-            "python3": { check: "python3 --version", win: "choco install python -y", mac: "brew install python3", linux: "sudo apt-get install -y python3", label: "Python 3" },
-            "pip": { check: "pip3 --version", win: "python -m ensurepip", mac: "python3 -m ensurepip", linux: "sudo apt-get install -y python3-pip", label: "Pip" },
-            "pip3": { check: "pip3 --version", win: "python -m ensurepip", mac: "python3 -m ensurepip", linux: "sudo apt-get install -y python3-pip", label: "Pip 3" },
-            "node": { check: "node --version", win: "choco install nodejs -y", mac: "brew install node", linux: "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs", label: "Node.js" },
-            "nodejs": { check: "node --version", win: "choco install nodejs -y", mac: "brew install node", linux: "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs", label: "Node.js" },
-            "node.js": { check: "node --version", win: "choco install nodejs -y", mac: "brew install node", linux: "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs", label: "Node.js" },
-            "rust": { check: "rustc --version", win: "choco install rust -y", mac: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", linux: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", label: "Rust" },
-            "rustc": { check: "rustc --version", win: "choco install rust -y", mac: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", linux: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", label: "Rust" },
-            "cargo": { check: "cargo --version", win: "choco install rust -y", mac: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", linux: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y", label: "Cargo (Rust)" },
-            "go": { check: "go version", win: "choco install golang -y", mac: "brew install go", linux: "sudo apt-get install -y golang", label: "Go" },
-            "golang": { check: "go version", win: "choco install golang -y", mac: "brew install go", linux: "sudo apt-get install -y golang", label: "Go" },
-            "java": { check: "java -version", win: "choco install openjdk -y", mac: "brew install openjdk", linux: "sudo apt-get install -y default-jdk", label: "Java (JDK)" },
-            "jdk": { check: "java -version", win: "choco install openjdk -y", mac: "brew install openjdk", linux: "sudo apt-get install -y default-jdk", label: "Java (JDK)" },
-            "docker": { check: "docker --version", win: "choco install docker-desktop -y", mac: "brew install --cask docker", linux: "sudo apt-get install -y docker.io", label: "Docker" },
-            "git": { check: "git --version", win: "choco install git -y", mac: "brew install git", linux: "sudo apt-get install -y git", label: "Git" },
-            "curl": { check: "curl --version", win: "choco install curl -y", mac: "brew install curl", linux: "sudo apt-get install -y curl", label: "cURL" },
-            "wget": { check: "wget --version", win: "choco install wget -y", mac: "brew install wget", linux: "sudo apt-get install -y wget", label: "Wget" },
-            "ffmpeg": { check: "ffmpeg -version", win: "choco install ffmpeg -y", mac: "brew install ffmpeg", linux: "sudo apt-get install -y ffmpeg", label: "FFmpeg" },
-            "imagemagick": { check: "convert --version", win: "choco install imagemagick -y", mac: "brew install imagemagick", linux: "sudo apt-get install -y imagemagick", label: "ImageMagick" },
-            "sqlite3": { check: "sqlite3 --version", win: "choco install sqlite -y", mac: "brew install sqlite", linux: "sudo apt-get install -y sqlite3", label: "SQLite" },
-            "postgresql": { check: "psql --version", win: "choco install postgresql -y", mac: "brew install postgresql", linux: "sudo apt-get install -y postgresql", label: "PostgreSQL" },
-            "redis": { check: "redis-server --version", win: "choco install redis -y", mac: "brew install redis", linux: "sudo apt-get install -y redis-server", label: "Redis" },
-            "deno": { check: "deno --version", win: "choco install deno -y", mac: "brew install deno", linux: "curl -fsSL https://deno.land/install.sh | sh", label: "Deno" },
-            "bun": { check: "bun --version", win: "powershell -c \"irm bun.sh/install.ps1|iex\"", mac: "curl -fsSL https://bun.sh/install | bash", linux: "curl -fsSL https://bun.sh/install | bash", label: "Bun" },
-            "ruby": { check: "ruby --version", win: "choco install ruby -y", mac: "brew install ruby", linux: "sudo apt-get install -y ruby", label: "Ruby" },
-            "php": { check: "php --version", win: "choco install php -y", mac: "brew install php", linux: "sudo apt-get install -y php", label: "PHP" },
+          const programInstallMap: Record<string, { check: string; winCmds: string[]; macCmds: string[]; linuxCmds: string[]; label: string; altChecks?: string[] }> = {
+            "g++": { check: "g++ --version", winCmds: ["winget install -e --id GnuWin32.Make --accept-source-agreements --accept-package-agreements", "scoop install gcc", "choco install mingw -y"], macCmds: ["xcode-select --install"], linuxCmds: ["sudo apt-get install -y g++"], label: "G++ (C++ Compiler)" },
+            "gcc": { check: "gcc --version", winCmds: ["scoop install gcc", "choco install mingw -y"], macCmds: ["xcode-select --install"], linuxCmds: ["sudo apt-get install -y gcc"], label: "GCC (C Compiler)" },
+            "clang": { check: "clang --version", winCmds: ["winget install -e --id LLVM.LLVM --accept-source-agreements --accept-package-agreements", "scoop install llvm", "choco install llvm -y"], macCmds: ["xcode-select --install"], linuxCmds: ["sudo apt-get install -y clang"], label: "Clang" },
+            "cmake": { check: "cmake --version", winCmds: ["winget install -e --id Kitware.CMake --accept-source-agreements --accept-package-agreements", "scoop install cmake", "choco install cmake -y"], macCmds: ["brew install cmake"], linuxCmds: ["sudo apt-get install -y cmake"], label: "CMake" },
+            "make": { check: "make --version", winCmds: ["scoop install make", "choco install make -y"], macCmds: ["xcode-select --install"], linuxCmds: ["sudo apt-get install -y make"], label: "Make" },
+            "python": { check: "python3 --version", winCmds: ["winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements", "scoop install python", "choco install python -y"], macCmds: ["brew install python3"], linuxCmds: ["sudo apt-get install -y python3"], label: "Python 3", altChecks: ["python --version"] },
+            "python3": { check: "python3 --version", winCmds: ["winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements", "scoop install python", "choco install python -y"], macCmds: ["brew install python3"], linuxCmds: ["sudo apt-get install -y python3"], label: "Python 3", altChecks: ["python --version"] },
+            "pip": { check: "pip3 --version", winCmds: ["python -m ensurepip", "python3 -m ensurepip"], macCmds: ["python3 -m ensurepip"], linuxCmds: ["sudo apt-get install -y python3-pip"], label: "Pip", altChecks: ["pip --version"] },
+            "pip3": { check: "pip3 --version", winCmds: ["python -m ensurepip", "python3 -m ensurepip"], macCmds: ["python3 -m ensurepip"], linuxCmds: ["sudo apt-get install -y python3-pip"], label: "Pip 3", altChecks: ["pip --version"] },
+            "node": { check: "node --version", winCmds: ["winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements", "scoop install nodejs-lts", "choco install nodejs -y"], macCmds: ["brew install node"], linuxCmds: ["curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs"], label: "Node.js" },
+            "nodejs": { check: "node --version", winCmds: ["winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements", "scoop install nodejs-lts", "choco install nodejs -y"], macCmds: ["brew install node"], linuxCmds: ["curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs"], label: "Node.js" },
+            "node.js": { check: "node --version", winCmds: ["winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements", "scoop install nodejs-lts", "choco install nodejs -y"], macCmds: ["brew install node"], linuxCmds: ["curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs"], label: "Node.js" },
+            "rust": { check: "rustc --version", winCmds: ["winget install -e --id Rustlang.Rustup --accept-source-agreements --accept-package-agreements", "scoop install rustup", "choco install rust -y"], macCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], linuxCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], label: "Rust" },
+            "rustc": { check: "rustc --version", winCmds: ["winget install -e --id Rustlang.Rustup --accept-source-agreements --accept-package-agreements", "scoop install rustup", "choco install rust -y"], macCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], linuxCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], label: "Rust" },
+            "cargo": { check: "cargo --version", winCmds: ["winget install -e --id Rustlang.Rustup --accept-source-agreements --accept-package-agreements", "scoop install rustup", "choco install rust -y"], macCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], linuxCmds: ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"], label: "Cargo (Rust)" },
+            "go": { check: "go version", winCmds: ["winget install -e --id GoLang.Go --accept-source-agreements --accept-package-agreements", "scoop install go", "choco install golang -y"], macCmds: ["brew install go"], linuxCmds: ["sudo apt-get install -y golang"], label: "Go" },
+            "golang": { check: "go version", winCmds: ["winget install -e --id GoLang.Go --accept-source-agreements --accept-package-agreements", "scoop install go", "choco install golang -y"], macCmds: ["brew install go"], linuxCmds: ["sudo apt-get install -y golang"], label: "Go" },
+            "java": { check: "java -version", winCmds: ["winget install -e --id Microsoft.OpenJDK.21 --accept-source-agreements --accept-package-agreements", "scoop install openjdk", "choco install openjdk -y"], macCmds: ["brew install openjdk"], linuxCmds: ["sudo apt-get install -y default-jdk"], label: "Java (JDK)" },
+            "jdk": { check: "java -version", winCmds: ["winget install -e --id Microsoft.OpenJDK.21 --accept-source-agreements --accept-package-agreements", "scoop install openjdk", "choco install openjdk -y"], macCmds: ["brew install openjdk"], linuxCmds: ["sudo apt-get install -y default-jdk"], label: "Java (JDK)" },
+            "docker": { check: "docker --version", winCmds: ["winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements", "choco install docker-desktop -y"], macCmds: ["brew install --cask docker"], linuxCmds: ["sudo apt-get install -y docker.io"], label: "Docker" },
+            "git": { check: "git --version", winCmds: ["winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements", "scoop install git", "choco install git -y"], macCmds: ["brew install git"], linuxCmds: ["sudo apt-get install -y git"], label: "Git" },
+            "curl": { check: "curl --version", winCmds: ["scoop install curl", "choco install curl -y"], macCmds: ["brew install curl"], linuxCmds: ["sudo apt-get install -y curl"], label: "cURL" },
+            "wget": { check: "wget --version", winCmds: ["scoop install wget", "choco install wget -y"], macCmds: ["brew install wget"], linuxCmds: ["sudo apt-get install -y wget"], label: "Wget" },
+            "ffmpeg": { check: "ffmpeg -version", winCmds: ["winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements", "scoop install ffmpeg", "choco install ffmpeg -y"], macCmds: ["brew install ffmpeg"], linuxCmds: ["sudo apt-get install -y ffmpeg"], label: "FFmpeg" },
+            "imagemagick": { check: "convert --version", winCmds: ["winget install -e --id ImageMagick.ImageMagick --accept-source-agreements --accept-package-agreements", "scoop install imagemagick", "choco install imagemagick -y"], macCmds: ["brew install imagemagick"], linuxCmds: ["sudo apt-get install -y imagemagick"], label: "ImageMagick", altChecks: ["magick --version"] },
+            "sqlite3": { check: "sqlite3 --version", winCmds: ["scoop install sqlite", "choco install sqlite -y"], macCmds: ["brew install sqlite"], linuxCmds: ["sudo apt-get install -y sqlite3"], label: "SQLite" },
+            "postgresql": { check: "psql --version", winCmds: ["winget install -e --id PostgreSQL.PostgreSQL --accept-source-agreements --accept-package-agreements", "scoop install postgresql", "choco install postgresql -y"], macCmds: ["brew install postgresql"], linuxCmds: ["sudo apt-get install -y postgresql"], label: "PostgreSQL" },
+            "redis": { check: "redis-server --version", winCmds: ["scoop install redis", "choco install redis -y"], macCmds: ["brew install redis"], linuxCmds: ["sudo apt-get install -y redis-server"], label: "Redis" },
+            "deno": { check: "deno --version", winCmds: ["winget install -e --id DenoLand.Deno --accept-source-agreements --accept-package-agreements", "scoop install deno", "choco install deno -y"], macCmds: ["brew install deno"], linuxCmds: ["curl -fsSL https://deno.land/install.sh | sh"], label: "Deno" },
+            "bun": { check: "bun --version", winCmds: ["powershell -c \"irm bun.sh/install.ps1|iex\"", "scoop install bun"], macCmds: ["curl -fsSL https://bun.sh/install | bash"], linuxCmds: ["curl -fsSL https://bun.sh/install | bash"], label: "Bun" },
+            "ruby": { check: "ruby --version", winCmds: ["winget install -e --id RubyInstallerTeam.Ruby.3.2 --accept-source-agreements --accept-package-agreements", "scoop install ruby", "choco install ruby -y"], macCmds: ["brew install ruby"], linuxCmds: ["sudo apt-get install -y ruby"], label: "Ruby" },
+            "php": { check: "php --version", winCmds: ["scoop install php", "choco install php -y"], macCmds: ["brew install php"], linuxCmds: ["sudo apt-get install -y php"], label: "PHP" },
           };
 
           const results: { program: string; label: string; alreadyInstalled: boolean; installed: boolean; error?: string; command?: string }[] = [];
+
+          function tryExec(cmd: string, timeout = 10000): boolean {
+            try { execSync(cmd, { timeout, stdio: "pipe", shell: true, windowsHide: true }); return true; } catch { return false; }
+          }
 
           for (const prog of programs) {
             const key = prog.toLowerCase().replace(/[^a-z0-9.+]/g, "");
@@ -1829,16 +1833,13 @@ function projectManagementPlugin(): Plugin {
               continue;
             }
 
-            let alreadyInstalled = false;
-            try {
-              execSync(mapping.check, { timeout: 10000, stdio: "pipe", shell: true, windowsHide: true });
-              alreadyInstalled = true;
-            } catch {
+            let alreadyInstalled = tryExec(mapping.check);
+            if (!alreadyInstalled && mapping.altChecks) {
+              alreadyInstalled = mapping.altChecks.some(c => tryExec(c));
+            }
+            if (!alreadyInstalled) {
               const whichCmd = isWin ? `where ${key}` : `which ${key}`;
-              try {
-                execSync(whichCmd, { timeout: 5000, stdio: "pipe", shell: true, windowsHide: true });
-                alreadyInstalled = true;
-              } catch {}
+              alreadyInstalled = tryExec(whichCmd, 5000);
             }
 
             if (alreadyInstalled) {
@@ -1846,21 +1847,31 @@ function projectManagementPlugin(): Plugin {
               continue;
             }
 
-            const installCmd = isWin ? mapping.win : isMac ? mapping.mac : mapping.linux;
-            if (!installCmd) {
+            const installCmds = isWin ? mapping.winCmds : isMac ? mapping.macCmds : mapping.linuxCmds;
+            if (!installCmds || installCmds.length === 0) {
               results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: false, error: `No install command for this platform` });
               continue;
             }
 
-            try {
-              execSync(installCmd, { timeout: 120000, stdio: "pipe", shell: true, windowsHide: true });
-              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: true, command: installCmd });
-            } catch (err: any) {
-              const errMsg = err.message?.slice(0, 200) || "Install failed";
-              const hint = isWin
-                ? `If ${mapping.label} is already installed, ensure it's in your system PATH. Or install manually and restart.`
-                : `Install failed — you may need admin privileges. Try running: ${installCmd}`;
-              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: false, error: `${errMsg}`, command: installCmd, hint });
+            let installed = false;
+            let lastErr = "";
+            let usedCmd = "";
+            for (const cmd of installCmds) {
+              try {
+                execSync(cmd, { timeout: 180000, stdio: "pipe", shell: true, windowsHide: true });
+                installed = true;
+                usedCmd = cmd;
+                break;
+              } catch (err: any) {
+                lastErr = err.message?.slice(0, 150) || "failed";
+                console.log(`[Programs] ${mapping.label}: '${cmd}' failed, trying next...`);
+              }
+            }
+
+            if (installed) {
+              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: true, command: usedCmd });
+            } else {
+              results.push({ program: prog, label: mapping.label, alreadyInstalled: false, installed: false, error: `All install methods failed. Last: ${lastErr}`, command: installCmds[installCmds.length - 1] });
             }
           }
 
