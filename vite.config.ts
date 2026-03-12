@@ -796,7 +796,7 @@ function projectManagementPlugin(): Plugin {
           const isNonWebProject = !hasIndexHtml && !hasWebFramework && (isCLI || isPythonProject || isGoProject || isRustProject || (!hasStartScript && !hasOnlyBackend));
 
           if (isNonWebProject) {
-            const projectType = isPythonProject ? "python" : isGoProject ? "go" : isRustProject ? "rust" : isCLI ? "cli" : "terminal";
+            let projectType = isPythonProject ? "python" : isGoProject ? "go" : isRustProject ? "rust" : isCLI ? "cli" : "terminal";
             let runCmd = "";
             if (isPythonProject) {
               const mainPy = fs.existsSync(path.join(projectDir, "main.py")) ? "main.py" : fs.existsSync(path.join(projectDir, "app.py")) ? "app.py" : fs.readdirSync(projectDir).find((f: string) => f.endsWith(".py")) || "main.py";
@@ -813,7 +813,28 @@ function projectManagementPlugin(): Plugin {
             } else if (scripts.start) {
               runCmd = `npm run start`;
             }
-            console.log(`[Preview] Non-web project detected (${projectType}) for ${name} — auto-opening terminal`);
+            if (!runCmd) {
+              try {
+                const files = fs.readdirSync(projectDir);
+                const jsEntry = files.find((f: string) => /^(index|main|app|server|cli)\.(js|ts|mjs|cjs)$/.test(f));
+                if (jsEntry) { runCmd = `node ${jsEntry}`; projectType = "node"; }
+                else {
+                  const pyFile = files.find((f: string) => f.endsWith(".py"));
+                  if (pyFile) { runCmd = `python3 ${pyFile}`; projectType = "python"; }
+                  else {
+                    const shFile = files.find((f: string) => f.endsWith(".sh"));
+                    if (shFile) { runCmd = `bash ${shFile}`; projectType = "shell"; }
+                    else {
+                      const makefile = files.find((f: string) => /^Makefile$/i.test(f));
+                      if (makefile) { runCmd = "make"; projectType = "make"; }
+                      else if (fs.existsSync(path.join(projectDir, "CMakeLists.txt"))) { runCmd = "cmake . && make"; projectType = "cmake"; }
+                      else if (fs.existsSync(path.join(projectDir, "Dockerfile"))) { runCmd = "docker build -t " + name + " . && docker run " + name; projectType = "docker"; }
+                    }
+                  }
+                }
+              } catch {}
+            }
+            console.log(`[Preview] Non-web project detected (${projectType}) for ${name}${runCmd ? ` — auto-running: ${runCmd}` : ' — no runnable entry found'}`);
             const launched = runCmd ? spawnTerminalWithCommand(projectDir, runCmd, name) : false;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({
@@ -823,7 +844,11 @@ function projectManagementPlugin(): Plugin {
               launched,
               runCommand: runCmd,
               projectDir: projectDir,
-              message: launched ? `Opened terminal and running: ${runCmd}` : `${projectType} project — run: ${runCmd || 'see README'}`,
+              message: launched
+                ? `Opened terminal — running: ${runCmd}`
+                : runCmd
+                  ? `${projectType} project — opening terminal to run: ${runCmd}`
+                  : `No runnable entry point found. This project may need to be built first — check the project files for build instructions.`,
             }));
             return;
           }
