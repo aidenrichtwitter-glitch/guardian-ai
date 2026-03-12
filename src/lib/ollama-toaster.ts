@@ -310,73 +310,62 @@ export async function cleanGrokResponse(
   if (!availability.available) return null;
 
   const { parseCodeBlocks } = await import('./code-parser');
-  const regexBlocks = parseCodeBlocks(rawResponse);
 
-  if (regexBlocks.length === 0) return null;
+  const truncated = rawResponse.slice(0, 8000);
 
-  const unpathedBlocks = regexBlocks.filter(b => !b.filePath);
-  let pathMap: Record<number, string> = {};
+  const prompt = `Reformat this AI response so every code block has a file path comment on the first line and is wrapped in a fenced code block with the language tag.
 
-  if (unpathedBlocks.length > 0) {
-    const snippetSummaries = unpathedBlocks.map((b, i) => {
-      const idx = regexBlocks.indexOf(b);
-      const preview = b.code.slice(0, 200).replace(/\n/g, '\\n');
-      return `Block ${idx}: [${b.language || 'unknown'}] ${preview}`;
-    }).join('\n');
+Rules:
+- Each code block must start with a comment like: // file: src/App.tsx
+- Use the correct comment style for the language (// for JS/TS, # for Python/bash/env, <!-- --> for HTML)
+- Wrap each block in triple backticks with the language: \`\`\`tsx ... \`\`\`
+- Keep the original code exactly as-is, only add the file path comment if missing
+- If you can tell what file a block belongs to from context, add the path
+- Output ONLY the reformatted code blocks, no other commentary
 
-    const prompt = `Given these code snippets, guess the file path for each. Reply ONLY with JSON like {"0":"src/App.tsx","2":"styles.css"} where keys are block numbers.
+${truncated}`;
 
-${snippetSummaries}`;
+  try {
+    const cfg = config || loadToasterConfig();
+    const model = await getResolvedModel(cfg);
+    const resp = await fetch(`${cfg.endpoint}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        options: { temperature: 0.0, num_predict: 4096 },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
 
-    try {
-      const cfg = config || loadToasterConfig();
-      const model = await getResolvedModel(cfg);
-      const resp = await fetch(`${cfg.endpoint}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          stream: false,
-          options: { temperature: 0.0, num_predict: 256 },
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const reply = (data.message?.content || '').trim();
-        const parsed = extractJSON<Record<string, string>>(reply);
-        if (parsed) {
-          for (const [key, val] of Object.entries(parsed)) {
-            const idx = parseInt(key, 10);
-            if (!isNaN(idx) && typeof val === 'string' && val.length > 0) {
-              pathMap[idx] = val;
-            }
-          }
-        }
-      }
-    } catch {}
-  }
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const cleaned = (data.message?.content || '').trim();
+    if (!cleaned) return null;
 
-  const files: CleanedFile[] = regexBlocks
-    .filter(b => b.code.length > 0)
-    .map((b, _i) => {
-      const origIdx = regexBlocks.indexOf(b);
-      const resolvedPath = b.filePath || pathMap[origIdx] || '';
-      return {
-        path: resolvedPath,
+    const ollamaBlocks = parseCodeBlocks(cleaned);
+    if (ollamaBlocks.length === 0) return null;
+
+    const files: CleanedFile[] = ollamaBlocks
+      .filter(b => b.code.length > 0)
+      .map(b => ({
+        path: b.filePath || '',
         action: 'update' as const,
         content: b.code,
         diff: '',
         original_block: '',
-      };
-    });
+      }));
 
-  return {
-    reasoning: `Regex found ${regexBlocks.length} blocks, Ollama resolved ${Object.keys(pathMap).length} paths`,
-    files,
-    unparsed_text: '',
-  };
+    return {
+      reasoning: `Toaster reformatted → ${ollamaBlocks.length} blocks, ${ollamaBlocks.filter(b => b.filePath).length} with paths`,
+      files,
+      unparsed_text: '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function cleanedResponseToBlocks(cleaned: CleanedResponse): import('./code-parser').ParsedBlock[] {
