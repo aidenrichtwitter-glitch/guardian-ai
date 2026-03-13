@@ -106,7 +106,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     renderer.domElement.style.left = '0';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
-    renderer.domElement.style.pointerEvents = 'none';
     renderer.domElement.style.zIndex = '0';
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
@@ -128,6 +127,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       mountPoint.style.top = '0';
       mountPoint.style.left = '0';
       mountPoint.style.overflow = 'auto';
+      mountPoint.style.pointerEvents = 'auto';
       wallEl.appendChild(mountPoint);
 
       wallMountRefs.current[spec.wall] = mountPoint;
@@ -266,6 +266,8 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
           willChange: 'transform',
           position: 'relative',
           zIndex: 1,
+          pointerEvents: 'none',
+          opacity: 0,
         }}
       >
         {children}

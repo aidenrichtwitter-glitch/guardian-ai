@@ -58,6 +58,7 @@ import {
 import ProjectExplorer from '@/components/ProjectExplorer';
 import FileEditor from '@/components/FileEditor';
 import LogsPanel, { type LogEntry, formatLogsForGrok } from '@/components/LogsPanel';
+import { ParallaxPortal } from '@/lib/parallax-context';
 
 const MAX_LOG_ENTRIES = 200;
 
@@ -4172,11 +4173,14 @@ const GrokBridge: React.FC = () => {
             )}
 
             {/* Code extractor — shared across both modes */}
-            <ClipboardExtractor onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} onGithubImport={handleGitHubImport} onReplaceRepo={handleReplaceRepo} toasterConfig={toasterConfig} toasterAvailable={toasterAvailability?.available} userTask={userTask} setUserTask={setUserTask} onGenerateContext={async (task?: string) => { const ctx = await buildProjectContext(task); if (ctx) copyContextToClipboard(ctx); }} onEditContext={() => { setEditableContext(projectContext); setShowContextEditor(true); setTimeout(() => contextEditorRef.current?.focus(), 100); }} contextLoading={contextLoading} projectContext={projectContext} />
+            <ParallaxPortal wall="bottom">
+              <ClipboardExtractor onApply={applyBlock} onApplyAll={batchApplyAll} onResponseCaptured={(text) => { lastFullResponseRef.current = text; }} activeProject={activeProject} onGithubImport={handleGitHubImport} onReplaceRepo={handleReplaceRepo} toasterConfig={toasterConfig} toasterAvailable={toasterAvailability?.available} userTask={userTask} setUserTask={setUserTask} onGenerateContext={async (task?: string) => { const ctx = await buildProjectContext(task); if (ctx) copyContextToClipboard(ctx); }} onEditContext={() => { setEditableContext(projectContext); setShowContextEditor(true); setTimeout(() => contextEditorRef.current?.focus(), 100); }} contextLoading={contextLoading} projectContext={projectContext} />
+            </ParallaxPortal>
           </div>
 
           {/* Preview panel — shared across both modes */}
           {showPreviewEmbed && previewPort && (
+            <ParallaxPortal wall="right">
             <div className="border-l border-border/30 flex flex-col" style={{ flex: '1 1 50%' }}>
               <div className="flex items-center gap-2 px-2 py-1 bg-card/50 border-b border-border/30 shrink-0">
                 <Monitor className="w-3 h-3 text-[hsl(150_60%_55%)]" />
@@ -4263,6 +4267,7 @@ const GrokBridge: React.FC = () => {
                 alwaysShowBar
               />
             </div>
+            </ParallaxPortal>
           )}
         </div>
       </div>
