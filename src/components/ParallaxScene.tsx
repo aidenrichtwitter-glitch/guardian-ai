@@ -70,13 +70,13 @@ function NavArrow({ dir, label, active, onClick }: { dir: string; label: string;
   );
 }
 
-const FOCUS_OFFSETS: Record<FocusTarget, { x: number; y: number; z: number; lookX: number; lookY: number }> = {
-  center: { x: 0, y: 0, z: 0, lookX: 0, lookY: 0 },
-  back:   { x: 0, y: 0, z: -120, lookX: 0, lookY: 0 },
-  left:   { x: -250, y: 0, z: -60, lookX: -400, lookY: 0 },
-  right:  { x: 250, y: 0, z: -60, lookX: 400, lookY: 0 },
-  top:    { x: 0, y: 180, z: -60, lookX: 0, lookY: 300 },
-  bottom: { x: 0, y: -180, z: -60, lookX: 0, lookY: -300 },
+const FOCUS_OFFSETS: Record<FocusTarget, { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number }> = {
+  center: { x: 0, y: 0, z: 0, lookX: 0, lookY: 0, lookZ: -(DEPTH / 2) },
+  back:   { x: 0, y: 0, z: -200, lookX: 0, lookY: 0, lookZ: -(DEPTH / 2) },
+  left:   { x: -500, y: 0, z: -120, lookX: -800, lookY: 0, lookZ: -(DEPTH / 2) + 100 },
+  right:  { x: 500, y: 0, z: -120, lookX: 800, lookY: 0, lookZ: -(DEPTH / 2) + 100 },
+  top:    { x: 0, y: 300, z: -100, lookX: 0, lookY: 600, lookZ: -(DEPTH / 2) },
+  bottom: { x: 0, y: -300, z: -100, lookX: 0, lookY: -600, lookZ: -(DEPTH / 2) },
 };
 
 export default function ParallaxScene({ children }: { children: React.ReactNode }) {
@@ -254,7 +254,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         cam.lookAt(
           invertX * lerp.headX * 300 + fo.lookX,
           invertY * lerp.headY * 225 + fo.lookY,
-          -(DEPTH / 2)
+          fo.lookZ
         );
         rendererRef.current.render(sceneRef.current, cam);
       }
