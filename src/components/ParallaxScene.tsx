@@ -147,6 +147,11 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
+      [data-wall] > * {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+      }
       [data-wall="left"] [data-side="left"] > div:last-child {
         left: auto !important;
         right: 0 !important;
@@ -169,6 +174,9 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       wallEl.style.overflow = 'hidden';
       wallEl.style.contain = 'layout style paint';
       wallEl.style.position = 'relative';
+      wallEl.style.display = 'flex';
+      const flex = WALL_FLEX[spec.wall];
+      Object.entries(flex).forEach(([k, v]) => { (wallEl.style as Record<string, string>)[k] = v; });
       wallEl.setAttribute('data-wall', spec.wall);
 
       const obj = new CSS3DObject(wallEl);
