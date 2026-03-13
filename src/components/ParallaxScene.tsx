@@ -21,7 +21,7 @@ function buildWallSpecs(vw: number, vh: number) {
   const rightCX = rightW / 2 * Math.cos(SIDE_ANGLE);
   const rightCZ = rightW / 2 * Math.sin(SIDE_ANGLE);
 
-  const bottomAngle = -Math.PI / 3;
+  const bottomAngle = -Math.PI / 4;
   const bottomCY = vh / 2 * Math.cos(bottomAngle);
   const bottomCZ = vh / 2 * Math.sin(bottomAngle);
 
