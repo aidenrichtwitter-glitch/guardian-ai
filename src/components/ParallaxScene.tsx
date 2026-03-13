@@ -145,70 +145,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       }
     }
 
-    const styleEl = document.createElement('style');
-    styleEl.textContent = `
-      [data-wall] {
-        display: flex !important;
-      }
-      [data-wall="left"] {
-        flex-direction: row !important;
-        justify-content: flex-end !important;
-        align-items: stretch !important;
-      }
-      [data-wall="right"] {
-        flex-direction: row !important;
-        justify-content: flex-start !important;
-        align-items: stretch !important;
-      }
-      [data-wall] > * {
-        min-height: 0 !important;
-        max-height: 100% !important;
-        height: 100% !important;
-      }
-      [data-wall="left"] > * {
-        flex-shrink: 0 !important;
-      }
-      [data-wall="right"] > * {
-        flex: 1 1 100% !important;
-        min-width: 0 !important;
-        width: 100% !important;
-      }
-
-      /* Fix sidebar inside left wall: override fixed positioning */
-      [data-wall="left"] [data-side="left"] {
-        height: 100% !important;
-        min-height: 0 !important;
-      }
-      [data-wall="left"] [data-side="left"] > div {
-        height: 100% !important;
-        min-height: 0 !important;
-      }
-      [data-wall="left"] [data-side="left"] > div:last-child {
-        position: relative !important;
-        inset: unset !important;
-        left: unset !important;
-        right: unset !important;
-        top: unset !important;
-        bottom: unset !important;
-        z-index: auto !important;
-        display: flex !important;
-      }
-      [data-wall="left"] .h-svh,
-      [data-wall="left"] .min-h-svh,
-      [data-wall="left"] [class*="h-svh"],
-      [data-wall="left"] [class*="min-h-svh"] {
-        height: 100% !important;
-        min-height: 0 !important;
-      }
-
-      /* Wrapper inside sidebar uses min-h-svh too */
-      [data-wall="left"] .group\\/sidebar-wrapper {
-        min-height: 0 !important;
-        height: 100% !important;
-      }
-    `;
-    document.head.appendChild(styleEl);
-
     const wallSpecs = buildWallSpecs(w, h);
     wallSpecs.forEach(spec => {
       const colors = WALL_COLORS[spec.wall];
@@ -238,7 +174,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     setSceneReady(true);
 
     return () => {
-      if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
