@@ -2,7 +2,7 @@ import { useParallax } from '@/lib/parallax-context';
 import { Layers, Mouse, Eye } from 'lucide-react';
 
 export default function ParallaxControls() {
-  const { enabled, setEnabled, trackingMode, setTrackingMode, statusText, cameraActive, lerpRef, faceDetected } = useParallax();
+  const { enabled, setEnabled, trackingMode, setTrackingMode, statusText, cameraActive, faceDetected, fps } = useParallax();
 
   return (
     <div className="flex items-center gap-1.5" data-testid="parallax-controls">
@@ -47,7 +47,7 @@ export default function ParallaxControls() {
             data-testid="text-parallax-status"
             title={statusText}
           >
-            {statusText}
+            {statusText} | {fps} FPS
           </div>
 
           {cameraActive && (
@@ -58,7 +58,7 @@ export default function ParallaxControls() {
           )}
 
           {trackingMode === 'head' && faceDetected && (
-            <span className="text-[9px] text-green-400">✓ Face</span>
+            <span className="text-[9px] text-green-400" data-testid="text-face-detected">✓ Face</span>
           )}
         </>
       )}
