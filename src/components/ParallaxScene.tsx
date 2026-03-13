@@ -100,6 +100,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
+    renderer.domElement.style.pointerEvents = 'auto';
     const viewEl = renderer.domElement.firstElementChild as HTMLElement;
     if (viewEl) {
       viewEl.style.pointerEvents = 'auto';
@@ -114,6 +115,10 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       [data-wall] {
         display: flex !important;
         align-items: stretch !important;
+        pointer-events: auto !important;
+      }
+      [data-wall] * {
+        pointer-events: auto;
       }
       [data-wall="back"], [data-wall="top"], [data-wall="bottom"] {
         flex-direction: column !important;
