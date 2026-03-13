@@ -940,7 +940,7 @@ const Index = () => {
   const activeGoal = goals.find(g => g.status === 'active' || g.status === 'in-progress');
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden">
+    <div className="h-full flex bg-background overflow-hidden">
       {/* ═══ Left Icon Rail ═══ */}
       <nav className="w-12 border-r border-border bg-card/20 flex flex-col items-center py-3 gap-1 shrink-0">
         {/* Logo */}

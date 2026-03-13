@@ -486,7 +486,7 @@ const Evolution: React.FC = () => {
   }, [stats]);
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-full flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-card/50 shrink-0">
         <div className="flex items-center gap-3">

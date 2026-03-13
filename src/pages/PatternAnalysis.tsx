@@ -146,7 +146,7 @@ const PatternAnalysis: React.FC = () => {
   const activeIndex = activePhase ? PROCESSES.findIndex(p => p.id === activePhase) : -1;
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+    <div className="h-full flex flex-col bg-background text-foreground overflow-hidden">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
         <div className="px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
