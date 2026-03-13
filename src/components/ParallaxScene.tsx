@@ -82,6 +82,15 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      [data-wall="left"] > * { margin-left: auto !important; }
+      [data-wall="right"] > * { margin-right: auto !important; }
+      [data-wall="top"] > * { margin-top: auto !important; }
+      [data-wall="bottom"] > * { margin-bottom: auto !important; }
+    `;
+    document.head.appendChild(styleEl);
+
     WALL_SPECS.forEach(spec => {
       const colors = WALL_COLORS[spec.wall];
       const wallEl = document.createElement('div');
@@ -91,13 +100,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       wallEl.style.border = `1px solid ${colors.border}`;
       wallEl.style.boxSizing = 'border-box';
       wallEl.style.overflow = 'auto';
-      wallEl.style.display = 'flex';
       wallEl.setAttribute('data-wall', spec.wall);
-
-      const flex = WALL_FLEX[spec.wall];
-      Object.entries(flex).forEach(([prop, val]) => {
-        (wallEl.style as Record<string, string>)[prop] = val;
-      });
 
       const obj = new CSS3DObject(wallEl);
       obj.position.set(...spec.position);
@@ -111,6 +114,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     setSceneReady(true);
 
     return () => {
+      if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
