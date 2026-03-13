@@ -11,7 +11,6 @@ const SIDE_ANGLE = Math.PI / 3;
 function buildWallSpecs(vw: number, vh: number) {
   const halfD = DEPTH / 2;
   const topH = Math.max(120, Math.round(vh * 0.15));
-  const bottomH = Math.max(250, Math.round(vh * 0.30));
 
   const leftW = Math.max(240, Math.round(vw * 0.2));
   const rightW = Math.max(300, Math.round(vw * 0.25));
@@ -22,12 +21,16 @@ function buildWallSpecs(vw: number, vh: number) {
   const rightCX = rightW / 2 * Math.cos(SIDE_ANGLE);
   const rightCZ = rightW / 2 * Math.sin(SIDE_ANGLE);
 
+  const bottomAngle = -Math.PI / 3;
+  const bottomCY = vh / 2 * Math.cos(bottomAngle);
+  const bottomCZ = vh / 2 * Math.sin(bottomAngle);
+
   return [
     { wall: 'back' as CubeWall,   position: [0, 0, -halfD] as [number,number,number],  rotation: [0, 0, 0] as [number,number,number], width: vw, height: vh },
     { wall: 'left' as CubeWall,   position: [-(halfW + leftCX), 0, -halfD + leftCZ] as [number,number,number],  rotation: [0, SIDE_ANGLE, 0] as [number,number,number], width: leftW, height: vh },
     { wall: 'right' as CubeWall,  position: [halfW + rightCX, 0, -halfD + rightCZ] as [number,number,number],   rotation: [0, -SIDE_ANGLE, 0] as [number,number,number], width: rightW, height: vh },
     { wall: 'top' as CubeWall,    position: [0, vh / 2 + topH / 2, -halfD] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: topH },
-    { wall: 'bottom' as CubeWall, position: [0, -(vh / 2 + bottomH / 2), -halfD] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: bottomH },
+    { wall: 'bottom' as CubeWall, position: [0, -(vh / 2 + bottomCY), -halfD - bottomCZ] as [number,number,number], rotation: [bottomAngle, 0, 0] as [number,number,number], width: vw, height: vh },
   ];
 }
 
