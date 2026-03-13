@@ -41,13 +41,6 @@ const WALL_COLORS: Record<CubeWall, { bg: string; border: string }> = {
   bottom: { bg: 'rgba(148, 0, 211, 0.04)',  border: 'rgba(148, 0, 211, 0.1)' },
 };
 
-const WALL_FLEX: Record<CubeWall, Record<string, string>> = {
-  back: { flexDirection: 'column' },
-  left: { flexDirection: 'row', justifyContent: 'flex-end' },
-  right: { flexDirection: 'row', justifyContent: 'flex-start' },
-  top: { flexDirection: 'column', justifyContent: 'flex-start' },
-  bottom: { flexDirection: 'column', justifyContent: 'flex-start' },
-};
 
 type FocusTarget = CubeWall | 'center';
 
@@ -148,23 +141,20 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
-      [data-wall] > * {
-        flex: 1 1 0%;
-        width: 100% !important;
-        height: 100% !important;
-        min-width: 0;
-        min-height: 0;
-        max-width: 100%;
-        max-height: 100%;
-        overflow: hidden;
-        box-sizing: border-box;
+      [data-wall] {
+        display: flex !important;
+        align-items: stretch !important;
       }
-      [data-wall="left"] [data-side="left"] > div:last-child {
-        left: auto !important;
-        right: 0 !important;
+      [data-wall="back"], [data-wall="top"], [data-wall="bottom"] {
+        flex-direction: column !important;
       }
-      [data-wall="left"] [data-side="left"] > div:first-child {
-        margin-left: auto !important;
+      [data-wall="left"] {
+        flex-direction: row !important;
+        justify-content: flex-end !important;
+      }
+      [data-wall="right"] {
+        flex-direction: row !important;
+        justify-content: flex-start !important;
       }
     `;
     document.head.appendChild(styleEl);
@@ -181,9 +171,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       wallEl.style.overflow = 'hidden';
       wallEl.style.contain = 'layout style paint';
       wallEl.style.position = 'relative';
-      wallEl.style.display = 'flex';
-      const flex = WALL_FLEX[spec.wall];
-      Object.entries(flex).forEach(([k, v]) => { (wallEl.style as Record<string, string>)[k] = v; });
       wallEl.setAttribute('data-wall', spec.wall);
 
       const obj = new CSS3DObject(wallEl);
