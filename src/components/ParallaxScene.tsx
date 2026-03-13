@@ -3,7 +3,6 @@ import { useParallax } from '@/lib/parallax-context';
 import type { CubeWall } from '@/lib/parallax-types';
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
-import ParallaxControls from '@/components/ParallaxControls';
 
 const DEPTH = 400;
 const SIDE_ANGLE = Math.PI / 3;
@@ -41,34 +40,6 @@ const WALL_COLORS: Record<CubeWall, { bg: string; border: string }> = {
 
 
 type FocusTarget = CubeWall | 'center';
-
-function NavArrow({ dir, label, active, onClick }: { dir: string; label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      data-testid={`nav-arrow-${dir}`}
-      onClick={onClick}
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-        border: `1px solid ${active ? 'rgba(160,32,240,0.6)' : 'rgba(255,255,255,0.15)'}`,
-        background: active ? 'rgba(160,32,240,0.3)' : 'rgba(0,0,0,0.5)',
-        color: active ? '#d4a0ff' : 'rgba(255,255,255,0.6)',
-        fontSize: 16,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backdropFilter: 'blur(4px)',
-        transition: 'all 0.2s',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.background = active ? 'rgba(160,32,240,0.45)' : 'rgba(255,255,255,0.1)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(160,32,240,0.3)' : 'rgba(0,0,0,0.5)'; }}
-    >
-      {label}
-    </button>
-  );
-}
 
 const FOCUS_OFFSETS: Record<FocusTarget, { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number }> = {
   center: { x: 0, y: 0, z: 0, lookX: 0, lookY: 0, lookZ: -(DEPTH / 2) },
@@ -171,20 +142,13 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       wallEl.style.position = 'relative';
       wallEl.setAttribute('data-wall', spec.wall);
 
-      let hoverTimer: ReturnType<typeof setTimeout> | null = null;
       const wall = spec.wall as CubeWall;
-      wallEl.addEventListener('mouseenter', () => {
+      wallEl.addEventListener('click', () => {
         if (wall === 'back') {
-          if (focusedWallRef.current !== 'center') {
-            hoverTimer = setTimeout(() => { setFocusedWall('center'); }, 1500);
-          }
+          setFocusedWall('center');
         } else {
-          if (focusedWallRef.current === wall) return;
-          hoverTimer = setTimeout(() => { setFocusedWall(wall); }, 1500);
+          setFocusedWall(focusedWallRef.current === wall ? 'center' : wall);
         }
-      });
-      wallEl.addEventListener('mouseleave', () => {
-        if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
       });
 
       const obj = new CSS3DObject(wallEl);
@@ -326,50 +290,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         }}
       >
         {children}
-      </div>
-
-      <div
-        data-testid="parallax-controls-overlay"
-        style={{
-          position: 'fixed',
-          top: 12,
-          right: 16,
-          zIndex: 10001,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          background: 'rgba(0,0,0,0.7)',
-          borderRadius: 8,
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(160,32,240,0.3)',
-        }}
-      >
-        <ParallaxControls />
-      </div>
-
-      <div
-        data-testid="parallax-nav-arrows"
-        style={{
-          position: 'fixed',
-          bottom: 80,
-          right: 24,
-          zIndex: 10001,
-          display: 'grid',
-          gridTemplateColumns: '40px 40px 40px',
-          gridTemplateRows: '40px 40px 40px',
-          gap: 4,
-        }}
-      >
-        <div />
-        <NavArrow dir="top" label="▲" active={focusedWall === 'top'} onClick={() => setFocusedWall(focusedWall === 'top' ? 'center' : 'top')} />
-        <div />
-        <NavArrow dir="left" label="◀" active={focusedWall === 'left'} onClick={() => setFocusedWall(focusedWall === 'left' ? 'center' : 'left')} />
-        <NavArrow dir="back" label="●" active={focusedWall === 'center' || focusedWall === 'back'} onClick={() => setFocusedWall('center')} />
-        <NavArrow dir="right" label="▶" active={focusedWall === 'right'} onClick={() => setFocusedWall(focusedWall === 'right' ? 'center' : 'right')} />
-        <div />
-        <NavArrow dir="bottom" label="▼" active={focusedWall === 'bottom'} onClick={() => setFocusedWall(focusedWall === 'bottom' ? 'center' : 'bottom')} />
-        <div />
       </div>
 
       <video
