@@ -9,6 +9,8 @@ import type {
   MediaPipeCameraConstructor,
 } from '@/lib/parallax-types';
 
+type FocusTarget = CubeWall | 'center';
+
 interface ParallaxState {
   enabled: boolean;
   trackingMode: TrackingMode;
@@ -16,11 +18,13 @@ interface ParallaxState {
   cameraActive: boolean;
   statusText: string;
   fps: number;
+  focusedWall: FocusTarget;
 }
 
 interface ParallaxContextValue extends ParallaxState {
   setEnabled: (v: boolean) => void;
   setTrackingMode: (m: TrackingMode) => void;
+  setFocusedWall: (w: FocusTarget) => void;
   lerpRef: React.MutableRefObject<{ headX: number; headY: number }>;
   targetRef: React.MutableRefObject<{ x: number; y: number }>;
   fpsRef: React.MutableRefObject<{ frames: number; lastTime: number; fps: number }>;
@@ -66,6 +70,7 @@ export function ParallaxProvider({ children }: { children: React.ReactNode }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [statusText, setStatusText] = useState('Mode: Mouse');
   const [fps, setFps] = useState(0);
+  const [focusedWall, setFocusedWall] = useState<FocusTarget>('center');
   const [wallMountPoints, setWallMountPoints] = useState<Record<CubeWall, HTMLDivElement | null>>({
     back: null, left: null, right: null, top: null, bottom: null,
   });
@@ -202,6 +207,7 @@ export function ParallaxProvider({ children }: { children: React.ReactNode }) {
   return (
     <ParallaxContext.Provider value={{
       enabled, trackingMode, faceDetected, cameraActive, statusText, fps,
+      focusedWall, setFocusedWall,
       setEnabled, setTrackingMode,
       lerpRef, targetRef, fpsRef,
       wallMountPoints, registerWallMount,

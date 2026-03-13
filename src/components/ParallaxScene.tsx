@@ -44,6 +44,45 @@ const WALL_FLEX: Record<CubeWall, Record<string, string>> = {
   bottom: { flexDirection: 'column', justifyContent: 'flex-start' },
 };
 
+type FocusTarget = CubeWall | 'center';
+
+function NavArrow({ dir, label, active, onClick }: { dir: string; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      data-testid={`nav-arrow-${dir}`}
+      onClick={onClick}
+      style={{
+        width: 40,
+        height: 40,
+        borderRadius: 8,
+        border: `1px solid ${active ? 'rgba(160,32,240,0.6)' : 'rgba(255,255,255,0.15)'}`,
+        background: active ? 'rgba(160,32,240,0.3)' : 'rgba(0,0,0,0.5)',
+        color: active ? '#d4a0ff' : 'rgba(255,255,255,0.6)',
+        fontSize: 16,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backdropFilter: 'blur(4px)',
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = active ? 'rgba(160,32,240,0.45)' : 'rgba(255,255,255,0.1)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(160,32,240,0.3)' : 'rgba(0,0,0,0.5)'; }}
+    >
+      {label}
+    </button>
+  );
+}
+
+const FOCUS_OFFSETS: Record<FocusTarget, { x: number; y: number; z: number; lookX: number; lookY: number }> = {
+  center: { x: 0, y: 0, z: 0, lookX: 0, lookY: 0 },
+  back:   { x: 0, y: 0, z: -120, lookX: 0, lookY: 0 },
+  left:   { x: -250, y: 0, z: -60, lookX: -400, lookY: 0 },
+  right:  { x: 250, y: 0, z: -60, lookX: 400, lookY: 0 },
+  top:    { x: 0, y: 180, z: -60, lookX: 0, lookY: 300 },
+  bottom: { x: 0, y: -180, z: -60, lookX: 0, lookY: -300 },
+};
+
 export default function ParallaxScene({ children }: { children: React.ReactNode }) {
   const {
     enabled, trackingMode,
@@ -51,7 +90,11 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     registerWallMount,
     videoRef, faceDotRef,
     fps, cameraActive,
+    focusedWall, setFocusedWall,
   } = useParallax();
+
+  const focusedWallRef = useRef(focusedWall);
+  focusedWallRef.current = focusedWall;
 
   const sceneContainerRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number>(0);
@@ -194,11 +237,17 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
 
       if (cameraRef.current && rendererRef.current && sceneRef.current) {
         const cam = cameraRef.current;
-        cam.position.x = invertX * lerp.headX * 80;
-        cam.position.y = invertY * lerp.headY * 60;
+        const fo = FOCUS_OFFSETS[focusedWallRef.current];
+        const baseZ = DEPTH * 0.65;
+        const targetPosX = invertX * lerp.headX * 80 + fo.x;
+        const targetPosY = invertY * lerp.headY * 60 + fo.y;
+        const targetPosZ = baseZ + fo.z;
+        cam.position.x += (targetPosX - cam.position.x) * 0.08;
+        cam.position.y += (targetPosY - cam.position.y) * 0.08;
+        cam.position.z += (targetPosZ - cam.position.z) * 0.08;
         cam.lookAt(
-          invertX * lerp.headX * 200,
-          invertY * lerp.headY * 150,
+          invertX * lerp.headX * 200 + fo.lookX,
+          invertY * lerp.headY * 150 + fo.lookY,
           -(DEPTH / 2)
         );
         rendererRef.current.render(sceneRef.current, cam);
@@ -275,6 +324,30 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         }}
       >
         <ParallaxControls />
+      </div>
+
+      <div
+        data-testid="parallax-nav-arrows"
+        style={{
+          position: 'fixed',
+          bottom: 80,
+          right: 24,
+          zIndex: 10001,
+          display: 'grid',
+          gridTemplateColumns: '40px 40px 40px',
+          gridTemplateRows: '40px 40px 40px',
+          gap: 4,
+        }}
+      >
+        <div />
+        <NavArrow dir="top" label="▲" active={focusedWall === 'top'} onClick={() => setFocusedWall(focusedWall === 'top' ? 'center' : 'top')} />
+        <div />
+        <NavArrow dir="left" label="◀" active={focusedWall === 'left'} onClick={() => setFocusedWall(focusedWall === 'left' ? 'center' : 'left')} />
+        <NavArrow dir="back" label="●" active={focusedWall === 'center' || focusedWall === 'back'} onClick={() => setFocusedWall('center')} />
+        <NavArrow dir="right" label="▶" active={focusedWall === 'right'} onClick={() => setFocusedWall(focusedWall === 'right' ? 'center' : 'right')} />
+        <div />
+        <NavArrow dir="bottom" label="▼" active={focusedWall === 'bottom'} onClick={() => setFocusedWall(focusedWall === 'bottom' ? 'center' : 'bottom')} />
+        <div />
       </div>
 
       <div
