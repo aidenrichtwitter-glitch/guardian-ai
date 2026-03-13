@@ -148,9 +148,15 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
       [data-wall] > * {
-        flex: 1 1 auto;
+        flex: 1 1 0%;
+        width: 100% !important;
+        height: 100% !important;
         min-width: 0;
         min-height: 0;
+        max-width: 100%;
+        max-height: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
       }
       [data-wall="left"] [data-side="left"] > div:last-child {
         left: auto !important;
