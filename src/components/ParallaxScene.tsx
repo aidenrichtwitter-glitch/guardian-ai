@@ -238,25 +238,19 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         const fo = FOCUS_OFFSETS[focusedWallRef.current] || FOCUS_OFFSETS.center;
         const baseZ = DEPTH * 0.65;
         const smooth = 0.04;
-        const targetPosX = invertX * lerp.headX * 120 + fo.x;
-        const targetPosY = invertY * lerp.headY * 90 + fo.y;
+        const targetPosX = invertX * lerp.headX * 400 + fo.x;
+        const targetPosY = invertY * lerp.headY * 200 + fo.y;
         const targetPosZ = baseZ + fo.z + zoomOffsetRef.current;
         cam.position.x += (targetPosX - cam.position.x) * smooth;
         cam.position.y += (targetPosY - cam.position.y) * smooth;
         cam.position.z += (targetPosZ - cam.position.z) * smooth;
-        const targetLookX = invertX * lerp.headX * 300 + fo.lookX;
-        const targetLookY = invertY * lerp.headY * 225 + fo.lookY;
+        const targetLookX = invertX * lerp.headX * 600 + fo.lookX;
+        const targetLookY = invertY * lerp.headY * 400 + fo.lookY;
         const targetLookZ = fo.lookZ;
         lerpLookRef.current.x += (targetLookX - lerpLookRef.current.x) * smooth;
         lerpLookRef.current.y += (targetLookY - lerpLookRef.current.y) * smooth;
         lerpLookRef.current.z += (targetLookZ - lerpLookRef.current.z) * smooth;
         cam.lookAt(lerpLookRef.current.x, lerpLookRef.current.y, lerpLookRef.current.z);
-
-        const headX = lerp.headX;
-        const leftEl = wallElsRef.current.left;
-        const rightEl = wallElsRef.current.right;
-        if (leftEl) leftEl.style.visibility = (invertX * headX < -0.08) ? 'hidden' : 'visible';
-        if (rightEl) rightEl.style.visibility = (invertX * headX > 0.08) ? 'hidden' : 'visible';
 
         rendererRef.current.render(sceneRef.current, cam);
       }
