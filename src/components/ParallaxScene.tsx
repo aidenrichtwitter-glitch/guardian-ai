@@ -146,6 +146,16 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
   const overlayRefs = useRef<Record<CubeWall, HTMLDivElement | null>>({
     back: null, left: null, right: null, top: null, bottom: null,
   });
+  const registerWallMountRef = useRef(registerWallMount);
+  registerWallMountRef.current = registerWallMount;
+
+  const overlayRefCallbacks = useRef<Record<CubeWall, (el: HTMLDivElement | null) => void>>({
+    back: (el) => { if (overlayRefs.current.back !== el) { overlayRefs.current.back = el; registerWallMountRef.current('back', el); } },
+    left: (el) => { if (overlayRefs.current.left !== el) { overlayRefs.current.left = el; registerWallMountRef.current('left', el); } },
+    right: (el) => { if (overlayRefs.current.right !== el) { overlayRefs.current.right = el; registerWallMountRef.current('right', el); } },
+    top: (el) => { if (overlayRefs.current.top !== el) { overlayRefs.current.top = el; registerWallMountRef.current('top', el); } },
+    bottom: (el) => { if (overlayRefs.current.bottom !== el) { overlayRefs.current.bottom = el; registerWallMountRef.current('bottom', el); } },
+  });
 
   const [sceneReady, setSceneReady] = useState(false);
 
@@ -212,11 +222,6 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     cameraRef.current = null;
     setSceneReady(false);
   }, []);
-
-  const registerOverlayRef = useCallback((wall: CubeWall) => (el: HTMLDivElement | null) => {
-    overlayRefs.current[wall] = el;
-    registerWallMount(wall, el);
-  }, [registerWallMount]);
 
   useEffect(() => {
     if (!enabled) {
@@ -335,7 +340,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         {(['back', 'top', 'bottom', 'left', 'right'] as CubeWall[]).map(wall => (
           <div
             key={wall}
-            ref={registerOverlayRef(wall)}
+            ref={overlayRefCallbacks.current[wall]}
             data-testid={`parallax-overlay-${wall}`}
             style={{
               ...OVERLAY_STYLES[wall],
