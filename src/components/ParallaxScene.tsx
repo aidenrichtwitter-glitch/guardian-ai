@@ -25,8 +25,8 @@ function buildWallSpecs(vw: number, vh: number) {
     { wall: 'back' as CubeWall,   position: [0, 0, -halfD] as [number,number,number],  rotation: [0, 0, 0] as [number,number,number], width: vw, height: vh },
     { wall: 'left' as CubeWall,   position: [-(halfW + leftCX), 0, -halfD + leftCZ] as [number,number,number],  rotation: [0, SIDE_ANGLE, 0] as [number,number,number], width: leftW, height: vh },
     { wall: 'right' as CubeWall,  position: [halfW + rightCX, 0, -halfD + rightCZ] as [number,number,number],   rotation: [0, -SIDE_ANGLE, 0] as [number,number,number], width: rightW, height: vh },
-    { wall: 'top' as CubeWall,    position: [0, vh / 2 - topH / 2, -halfD + 1] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: topH },
-    { wall: 'bottom' as CubeWall, position: [0, -(vh / 2 - bottomH / 2), -halfD + 1] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: bottomH },
+    { wall: 'top' as CubeWall,    position: [0, vh / 2 + topH / 2, -halfD] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: topH },
+    { wall: 'bottom' as CubeWall, position: [0, -(vh / 2 + bottomH / 2), -halfD] as [number,number,number], rotation: [0, 0, 0] as [number,number,number], width: vw, height: bottomH },
   ];
 }
 
