@@ -251,6 +251,13 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
         lerpLookRef.current.y += (targetLookY - lerpLookRef.current.y) * smooth;
         lerpLookRef.current.z += (targetLookZ - lerpLookRef.current.z) * smooth;
         cam.lookAt(lerpLookRef.current.x, lerpLookRef.current.y, lerpLookRef.current.z);
+
+        const headX = lerp.headX;
+        const leftEl = wallElsRef.current.left;
+        const rightEl = wallElsRef.current.right;
+        if (leftEl) leftEl.style.visibility = (invertX * headX < -0.08) ? 'hidden' : 'visible';
+        if (rightEl) rightEl.style.visibility = (invertX * headX > 0.08) ? 'hidden' : 'visible';
+
         rendererRef.current.render(sceneRef.current, cam);
       }
 
