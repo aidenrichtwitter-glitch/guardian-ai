@@ -3,6 +3,7 @@ import { useParallax } from '@/lib/parallax-context';
 import type { CubeWall } from '@/lib/parallax-types';
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
+import ParallaxControls from '@/components/ParallaxControls';
 
 const DEPTH = 400;
 
@@ -255,10 +256,30 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       </div>
 
       <div
+        data-testid="parallax-controls-overlay"
+        style={{
+          position: 'fixed',
+          top: 12,
+          right: 16,
+          zIndex: 10001,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 12px',
+          background: 'rgba(0,0,0,0.7)',
+          borderRadius: 8,
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(160,32,240,0.3)',
+        }}
+      >
+        <ParallaxControls />
+      </div>
+
+      <div
         data-testid="parallax-status-overlay"
         style={{
           position: 'fixed',
-          top: 50,
+          top: 60,
           left: 20,
           padding: '8px 12px',
           background: 'rgba(0,0,0,0.6)',
