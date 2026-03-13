@@ -133,6 +133,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     renderer.domElement.style.left = '0';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
+    renderer.domElement.style.pointerEvents = 'auto';
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
@@ -247,6 +248,8 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
           -(DEPTH / 2)
         );
         rendererRef.current.render(sceneRef.current, cam);
+        const vEl = rendererRef.current.domElement.firstElementChild as HTMLElement;
+        if (vEl) vEl.style.pointerEvents = 'auto';
       }
 
       animFrameRef.current = requestAnimationFrame(animate);
