@@ -84,10 +84,20 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
-      [data-wall="left"] > * { margin-left: auto !important; }
-      [data-wall="right"] > * { margin-right: auto !important; }
-      [data-wall="top"] > * { margin-top: auto !important; }
-      [data-wall="bottom"] > * { margin-bottom: auto !important; }
+      [data-wall="left"] [data-side="left"] > div:last-child {
+        left: auto !important;
+        right: 0 !important;
+      }
+      [data-wall="left"] [data-side="left"] > div:first-child {
+        margin-left: auto !important;
+      }
+      [data-wall="top"] > header {
+        position: absolute !important;
+        bottom: 0 !important;
+        top: auto !important;
+        left: 0 !important;
+        right: 0 !important;
+      }
     `;
     document.head.appendChild(styleEl);
 
