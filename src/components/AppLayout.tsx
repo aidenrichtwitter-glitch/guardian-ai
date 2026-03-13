@@ -2,6 +2,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ParallaxProvider, ParallaxPortal } from "@/lib/parallax-context";
 import ParallaxScene from "@/components/ParallaxScene";
+import ParallaxControls from "@/components/ParallaxControls";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -26,6 +27,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </ParallaxScene>
+        <div
+          data-testid="parallax-controls-overlay"
+          style={{
+            position: 'fixed',
+            top: 12,
+            right: 16,
+            zIndex: 10001,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 12px',
+            background: 'rgba(0,0,0,0.7)',
+            borderRadius: 8,
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(160,32,240,0.3)',
+            pointerEvents: 'auto',
+          }}
+        >
+          <ParallaxControls />
+        </div>
       </SidebarProvider>
     </ParallaxProvider>
   );
