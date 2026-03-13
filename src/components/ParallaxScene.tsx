@@ -67,7 +67,7 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, w / h, 1, 5000);
-    camera.position.set(0, 0, 0);
+    camera.position.set(0, 0, DEPTH * 0.65);
     cameraRef.current = camera;
 
     const renderer = new CSS3DRenderer();
