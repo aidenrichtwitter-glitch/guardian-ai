@@ -10,13 +10,13 @@ const SIDE_ANGLE = Math.PI / 3;
 
 function buildWallSpecs(vw: number, vh: number) {
   const halfD = DEPTH / 2;
-  const topH = Math.round(vh * 0.07);
-  const bottomH = Math.round(vh * 0.06);
+  const topH = Math.max(120, Math.round(vh * 0.15));
+  const bottomH = Math.max(80, Math.round(vh * 0.10));
   const mainH = vh - topH - bottomH;
   const mainCenterY = -topH / 2 + bottomH / 2;
 
-  const leftW = Math.round(vw * 0.2);
-  const rightW = Math.round(vw * 0.25);
+  const leftW = Math.max(240, Math.round(vw * 0.2));
+  const rightW = Math.max(300, Math.round(vw * 0.25));
   const halfW = vw / 2;
 
   const leftCX = leftW / 2 * Math.cos(SIDE_ANGLE);

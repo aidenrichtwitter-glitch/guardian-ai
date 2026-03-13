@@ -20,10 +20,17 @@ A self-evolving, self-recursive development environment with AI-powered code evo
 ## Parallax Mode
 - Toggle in header (top-right) enables/disables 3D parallax effect on entire IDE
 - Two tracking modes: **Mouse** (cursor position) and **Head** (webcam + MediaPipe face detection)
-- Uses CSS `perspective()` + `rotateX/Y` + `translate` transforms with lerp smoothing (0.85/0.15 blend)
+- Uses CSS3DRenderer with viewport-proportional room walls (back, left, right, top, bottom)
 - Head tracking loads MediaPipe Face Detection scripts on-demand from CDN
 - State persisted in localStorage (`parallax-enabled`, `parallax-tracking-mode`)
 - Files: `src/lib/parallax-context.tsx` (provider), `src/components/ParallaxScene.tsx` (3D layer), `src/components/ParallaxControls.tsx` (UI)
+
+## PROTECTED FILES — DO NOT MODIFY
+The following toolbar/button sections are critical and must NOT be removed or altered during parallax/layout changes:
+- **GrokBridge top toolbar** (lines ~3540-3640 in `src/pages/GrokBridge.tsx`): Contains AI Bridge, Main App, Browser, API, Auto, Context, Evolve buttons and the AI provider tabs (Grok, X, ChatGPT, Claude, GitHub, Perplexity)
+- **GrokBridge bottom bar** (lines ~4140-4185 in `src/pages/GrokBridge.tsx`): Contains CODE EXTRACTOR, Paste Response, Copy Context, Edit buttons
+- **AppLayout header** (`src/components/AppLayout.tsx` lines 17-24): Contains SidebarTrigger and ParallaxControls
+- When modifying parallax wall sizing or layout, NEVER remove or clip these toolbar sections
 
 ## Project Structure
 ```
