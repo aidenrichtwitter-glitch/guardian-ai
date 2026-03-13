@@ -162,7 +162,9 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
       wallEl.style.background = colors.bg;
       wallEl.style.border = `1px solid ${colors.border}`;
       wallEl.style.boxSizing = 'border-box';
-      wallEl.style.overflow = 'visible';
+      wallEl.style.overflow = 'hidden';
+      wallEl.style.contain = 'layout style paint';
+      wallEl.style.position = 'relative';
       wallEl.setAttribute('data-wall', spec.wall);
 
       const obj = new CSS3DObject(wallEl);
