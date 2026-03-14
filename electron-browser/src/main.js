@@ -312,12 +312,18 @@ function createWindow() {
   // Ensure shortcuts work when focus is on the main window UI
   try { attachShortcutHandlers(mainWindow.webContents); } catch (_) {}
 
-  // In dev mode, load the React app from Vite; in production, load the built files
+  // In dev mode, load the React app from Vite; in production, use local server
   const isDev = !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL('http://localhost:5000');
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const { startLocalServer } = require('./local-server');
+    startLocalServer(4999).then(({ port }) => {
+      mainWindow.loadURL(`http://127.0.0.1:${port}`);
+    }).catch((err) => {
+      console.error('Failed to start local server:', err);
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    });
   }
 
   // Configure spellchecker languages for default session and webview partition
