@@ -1273,8 +1273,7 @@ const PreviewFrame = React.forwardRef<HTMLIFrameElement, PreviewFrameProps>(
         if (!gotContentRef.current) {
           const logs = logsRef.current;
           const hasErrors = logs.some(l => l.level === 'error');
-          const hasAnyLog = logs.length > 0;
-          if (hasErrors || !hasAnyLog) {
+          if (hasErrors) {
             setBlankDetected(true);
           }
         }
@@ -1309,7 +1308,7 @@ const PreviewFrame = React.forwardRef<HTMLIFrameElement, PreviewFrameProps>(
             <div className="pointer-events-auto flex flex-col items-center gap-2 px-4 py-3 rounded-lg bg-background/95 border border-amber-500/30 shadow-lg max-w-sm text-center backdrop-blur-sm">
               <AlertTriangle className="w-5 h-5 text-amber-400" />
               <span className="text-xs text-amber-300 font-medium">
-                {errorCount > 0 ? `Preview loaded with ${errorCount} error${errorCount > 1 ? 's' : ''}` : 'Preview appears blank'}
+                {`Preview loaded with ${errorCount} error${errorCount > 1 ? 's' : ''}`}
               </span>
               {lastError && (
                 <span className="text-[10px] text-red-400/80 font-mono break-all line-clamp-3">
@@ -1317,7 +1316,7 @@ const PreviewFrame = React.forwardRef<HTMLIFrameElement, PreviewFrameProps>(
                 </span>
               )}
               <span className="text-[10px] text-muted-foreground/60">
-                {errorCount > 0 ? 'Check console below for details — click "Send Logs to Grok" for help' : 'The app may still be loading, or it may have a rendering issue. Check console below.'}
+                {'Check console below for details — click "Send Logs to Grok" for help'}
               </span>
               <button
                 onClick={() => setBlankDetected(false)}
