@@ -1,0 +1,52 @@
+Microsoft Windows [Version 10.0.26200.8037]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\Aiden\Desktop\guardian-ai\electron-browser>npm run electron:package-win
+npm error Missing script: "electron:package-win"
+npm error
+npm error To see a list of scripts, run:
+npm error   npm run
+npm error A complete log of this run can be found in: C:\Users\Aiden\AppData\Roaming\npm-cache\_logs\2026-03-14T01_43_10_579Z-debug-0.log
+
+C:\Users\Aiden\Desktop\guardian-ai\electron-browser>npm run electron:package
+npm error Missing script: "electron:package"
+npm error
+npm error To see a list of scripts, run:
+npm error   npm run
+npm error A complete log of this run can be found in: C:\Users\Aiden\AppData\Roaming\npm-cache\_logs\2026-03-14T01_43_19_755Z-debug-0.log
+
+C:\Users\Aiden\Desktop\guardian-ai\electron-browser>npm run
+Lifecycle scripts included in guardian-ai-browser@1.0.0:
+  start
+    electron .
+available via `npm run`:
+  build
+    npx --yes electron-builder@latest --win --x64
+  build-linux
+    npx --yes electron-builder@latest --linux
+  build-all
+    npx --yes electron-builder@latest --win --x64 --linux
+
+C:\Users\Aiden\Desktop\guardian-ai\electron-browser>npx --yes electron-builder@latest --win --x64
+  • electron-builder  version=26.8.1 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • writing effective config  file=build\builder-effective-config.yaml
+  • executing @electron/rebuild  electronVersion=39.8.2 arch=x64 buildFromSource=false workspaceRoot=C:\Users\Aiden\Desktop\guardian-ai\electron-browser projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=39.8.2 appOutDir=build\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\Users\Aiden\Desktop\guardian-ai\electron-browser
+(node:9724) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  • updating asar integrity executable resource  executablePath=build\win-unpacked\Guardian AI Browser.exe
+  • default Electron icon is used  reason=application icon is not set
+  • signing with signtool.exe  path=build\win-unpacked\Guardian AI Browser.exe
+  • building        target=nsis file=build\Guardian AI Browser Setup 1.0.0.exe archs=x64 oneClick=true perMachine=false
+  • signing with signtool.exe  path=build\win-unpacked\resources\elevate.exe
+  • signing with signtool.exe  path=build\Guardian AI Browser Setup 1.0.0.__uninstaller.exe
+  • signing with signtool.exe  path=build\Guardian AI Browser Setup 1.0.0.exe
+  • building block map  blockMapFile=build\Guardian AI Browser Setup 1.0.0.exe.blockmap
+  • building        target=portable file=build\Guardian AI Browser 1.0.0.exe archs=x64
+  • signing with signtool.exe  path=build\Guardian AI Browser 1.0.0.exe
+
+C:\Users\Aiden\Desktop\guardian-ai\electron-browser>
