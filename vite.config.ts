@@ -349,14 +349,16 @@ function projectManagementPlugin(): Plugin {
 
           if (previewProcesses.has(name)) {
             const existing = previewProcesses.get(name)!;
-            const processAlive = existing.process && !existing.process.killed && existing.process.exitCode === null;
-            if (processAlive) {
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ port: existing.port, reused: true }));
-              return;
-            }
+            console.log(`[Preview] Killing existing preview for ${name} (port ${existing.port})`);
+            try {
+              if (process.platform === "win32") {
+                try { const { execSync: es } = await import("child_process"); es(`taskkill /pid ${existing.process.pid} /T /F`, { stdio: "pipe", windowsHide: true }); } catch {}
+              } else {
+                try { process.kill(-existing.process.pid, 9); } catch {}
+              }
+              try { existing.process.kill("SIGKILL"); } catch {}
+            } catch {}
             previewProcesses.delete(name);
-            console.log(`[Preview] Cleaned up dead process entry for ${name}`);
           }
 
           let port = projectPort(name);
@@ -365,6 +367,36 @@ function projectManagementPlugin(): Plugin {
           const { spawn, execSync } = await import("child_process");
 
           const net = await import("net");
+
+          const killPortProcs = async (p: number) => {
+            try {
+              if (process.platform === "win32") {
+                try {
+                  const out = execSync(`netstat -ano | findstr :${p}`, { stdio: "pipe", encoding: "utf-8", windowsHide: true });
+                  const pids = new Set(out.split("\n").map((l: string) => l.trim().split(/\s+/).pop()).filter((pp: any) => pp && /^\d+$/.test(pp) && pp !== "0"));
+                  for (const pid of pids) { try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: "pipe", windowsHide: true }); } catch {} }
+                } catch {}
+              } else {
+                try { execSync(`fuser -k ${p}/tcp`, { stdio: "pipe", timeout: 5000 }); } catch {}
+              }
+            } catch (e: any) { console.log(`[Preview] Port cleanup error: ${e.message}`); }
+          };
+
+          const waitForPortFree = async (p: number, maxWait: number) => {
+            const startW = Date.now();
+            while (Date.now() - startW < maxWait) {
+              const inUse = await new Promise<boolean>(resolve => {
+                const s = net.createServer();
+                s.once("error", () => resolve(true));
+                s.once("listening", () => { s.close(); resolve(false); });
+                s.listen(p, "0.0.0.0");
+              });
+              if (!inUse) return true;
+              await new Promise(r => setTimeout(r, 200));
+            }
+            return false;
+          };
+
           const portInUse = await new Promise<boolean>((resolve) => {
             const tester = net.createServer().once("error", (err: any) => {
               resolve(err.code === "EADDRINUSE");
@@ -374,41 +406,13 @@ function projectManagementPlugin(): Plugin {
           });
           if (portInUse) {
             console.log(`[Preview] Port ${port} still in use — killing`);
-            try {
-              if (process.platform === "win32") {
-                try {
-                  const out = execSync(`netstat -ano | findstr :${port}`, { stdio: "pipe", encoding: "utf-8", windowsHide: true });
-                  const pids = new Set(out.split("\n").map((l: string) => l.trim().split(/\s+/).pop()).filter((p: any) => p && /^\d+$/.test(p) && p !== "0"));
-                  for (const pid of pids) { console.log(`[Preview] Killing PID ${pid} on port ${port}`); try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: "pipe", windowsHide: true }); } catch {} }
-                } catch {}
-              } else {
-                const netTcp = fs.readFileSync("/proc/net/tcp", "utf-8") + fs.readFileSync("/proc/net/tcp6", "utf-8");
-                const portHex = port.toString(16).toUpperCase().padStart(4, "0");
-                const lines = netTcp.split("\n").filter(l => l.includes(`:${portHex} `) && l.includes("0A"));
-                for (const line of lines) {
-                  const cols = line.trim().split(/\s+/);
-                  const inode = cols[9];
-                  if (!inode || inode === "0") continue;
-                  const procDirs = fs.readdirSync("/proc").filter((d: string) => /^\d+$/.test(d));
-                  for (const pid of procDirs) {
-                    try {
-                      const fds = fs.readdirSync(`/proc/${pid}/fd`);
-                      for (const fd of fds) {
-                        try {
-                          const link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
-                          if (link === `socket:[${inode}]`) {
-                            console.log(`[Preview] Killing PID ${pid} on port ${port}`);
-                            try { process.kill(-parseInt(pid), 9); } catch {}
-                            try { process.kill(parseInt(pid), 9); } catch {}
-                          }
-                        } catch {}
-                      }
-                    } catch {}
-                  }
-                }
-              }
-            } catch (e: any) { console.log(`[Preview] Port cleanup error: ${e.message}`); }
-            await new Promise(r => setTimeout(r, 800));
+            await killPortProcs(port);
+            const freed = await waitForPortFree(port, 3000);
+            if (!freed) {
+              console.log(`[Preview] Port ${port} still occupied after 3s — picking new port`);
+              port++;
+              while (usedPorts.has(port)) port++;
+            }
           }
 
           let hasPkg = fs.existsSync(path.join(projectDir, "package.json"));

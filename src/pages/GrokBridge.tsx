@@ -1810,6 +1810,16 @@ const GrokBridge: React.FC = () => {
     if (!activeProject) return;
     setPreviewLoading(true);
     try {
+      try {
+        await fetch('/api/projects/stop-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: activeProject }),
+        });
+      } catch {}
+      setPreviewPort(null);
+      setPreviewLogs([]);
+      setPreviewKey(k => k + 1);
       if (isElectron) {
         try {
           const { ipcRenderer } = (window as any).require('electron');

@@ -723,16 +723,50 @@ async function handleApi(req, res) {
 
       if (previewProcesses.has(name)) {
         const existing = previewProcesses.get(name);
-        const processAlive = existing.process && !existing.process.killed && existing.process.exitCode === null;
-        if (processAlive) {
-          return sendJson(res, { port: existing.port, reused: true });
-        }
+        console.log(`[Preview] Killing existing preview for ${name} (port ${existing.port})`);
+        try {
+          if (process.platform === 'win32') {
+            try { execSync(`taskkill /pid ${existing.process.pid} /T /F`, { stdio: 'pipe', windowsHide: true }); } catch {}
+          } else {
+            try { process.kill(-existing.process.pid, 9); } catch {}
+          }
+          try { existing.process.kill('SIGKILL'); } catch {}
+        } catch {}
         previewProcesses.delete(name);
       }
 
       let port = projectPort(name);
       const usedPorts = new Set([...previewProcesses.values()].map(e => e.port));
       while (usedPorts.has(port)) port++;
+
+      const killPort = async (p) => {
+        try {
+          if (process.platform === 'win32') {
+            try {
+              const out = execSync(`netstat -ano | findstr :${p}`, { stdio: 'pipe', encoding: 'utf-8', windowsHide: true });
+              const pids = new Set(out.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(pp => pp && /^\d+$/.test(pp) && pp !== '0'));
+              for (const pid of pids) { try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'pipe', windowsHide: true }); } catch {} }
+            } catch {}
+          } else {
+            try { execSync(`fuser -k ${p}/tcp`, { stdio: 'pipe', timeout: 5000 }); } catch {}
+          }
+        } catch {}
+      };
+
+      const waitForPortFree = async (p, maxWait) => {
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+          const inUse = await new Promise(resolve => {
+            const s = net.createServer();
+            s.once('error', () => resolve(true));
+            s.once('listening', () => { s.close(); resolve(false); });
+            s.listen(p, '0.0.0.0');
+          });
+          if (!inUse) return true;
+          await new Promise(r => setTimeout(r, 200));
+        }
+        return false;
+      };
 
       const portInUse = await new Promise((resolve) => {
         const tester = net.createServer().once('error', (err) => {
@@ -743,18 +777,13 @@ async function handleApi(req, res) {
       });
       if (portInUse) {
         console.log(`[Preview] Port ${port} still in use — killing`);
-        try {
-          if (process.platform === 'win32') {
-            try {
-              const out = execSync(`netstat -ano | findstr :${port}`, { stdio: 'pipe', encoding: 'utf-8', windowsHide: true });
-              const pids = new Set(out.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(p => p && /^\d+$/.test(p) && p !== '0'));
-              for (const pid of pids) { try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'pipe', windowsHide: true }); } catch {} }
-            } catch {}
-          } else {
-            try { execSync(`fuser -k ${port}/tcp`, { stdio: 'pipe', timeout: 5000 }); } catch {}
-          }
-        } catch {}
-        await new Promise(r => setTimeout(r, 800));
+        await killPort(port);
+        const freed = await waitForPortFree(port, 3000);
+        if (!freed) {
+          console.log(`[Preview] Port ${port} still occupied after 3s — picking new port`);
+          port++;
+          while (usedPorts.has(port)) port++;
+        }
       }
 
       let hasPkg = fs.existsSync(path.join(projectDir, 'package.json'));
@@ -1203,14 +1232,26 @@ async function handleApi(req, res) {
       const entry = previewProcesses.get(name);
       if (entry) {
         const pid = entry.process.pid;
+        const portToFree = entry.port;
         if (process.platform === 'win32') {
           try { execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'pipe', windowsHide: true }); } catch {}
         } else {
           try { process.kill(-pid, 9); } catch {}
         }
         try { entry.process.kill('SIGKILL'); } catch {}
-        if (activePreviewPort === entry.port) activePreviewPort = null;
+        if (activePreviewPort === portToFree) activePreviewPort = null;
         previewProcesses.delete(name);
+        try {
+          if (process.platform === 'win32') {
+            try {
+              const out = execSync(`netstat -ano | findstr :${portToFree}`, { stdio: 'pipe', encoding: 'utf-8', windowsHide: true });
+              const pids = new Set(out.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(p => p && /^\d+$/.test(p) && p !== '0' && p !== String(pid)));
+              for (const p of pids) { try { execSync(`taskkill /pid ${p} /T /F`, { stdio: 'pipe', windowsHide: true }); } catch {} }
+            } catch {}
+          } else {
+            try { execSync(`fuser -k ${portToFree}/tcp`, { stdio: 'pipe', timeout: 5000 }); } catch {}
+          }
+        } catch {}
       }
       return sendJson(res, { stopped: true });
     } catch (err) {
