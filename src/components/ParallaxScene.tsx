@@ -268,7 +268,24 @@ export default function ParallaxScene({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (!enabled) return;
+
+    const isInsideScrollable = (target: EventTarget | null): boolean => {
+      if (!target || !(target instanceof HTMLElement)) return false;
+      let el: HTMLElement | null = target;
+      while (el) {
+        if (el.tagName === 'IFRAME' || el.tagName === 'WEBVIEW') return true;
+        const ov = getComputedStyle(el).overflowY;
+        if ((ov === 'auto' || ov === 'scroll') && el.scrollHeight > el.clientHeight) {
+          return true;
+        }
+        if (el.hasAttribute('data-wall')) break;
+        el = el.parentElement;
+      }
+      return false;
+    };
+
     const handleWheel = (e: WheelEvent) => {
+      if (isInsideScrollable(e.target)) return;
       const step = e.deltaY > 0 ? 30 : -30;
       zoomOffsetRef.current = Math.max(-200, Math.min(400, zoomOffsetRef.current + step));
       if (e.deltaY > 0 && zoomOffsetRef.current > 200 && focusedWallRef.current !== 'center') {
