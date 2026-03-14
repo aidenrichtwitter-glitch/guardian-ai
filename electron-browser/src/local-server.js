@@ -97,6 +97,83 @@ function detectPackageManager(projectDir) {
   return 'npm';
 }
 
+function findExecutables(dir, depth = 0) {
+  if (depth > 2) return [];
+  const EXECUTABLE_EXTS = ['.exe', '.msi', '.appimage', '.app', '.dmg', '.deb', '.rpm', '.snap', '.flatpak'];
+  const results = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (EXECUTABLE_EXTS.includes(ext)) {
+          results.push({ name: entry.name, fullPath, ext });
+        }
+      } else if (entry.isDirectory() && depth < 2) {
+        const sub = ['bin', 'build', 'dist', 'release', 'out', 'output', 'artifacts', 'releases', '_releases'];
+        if (depth === 0 || sub.some(s => entry.name.toLowerCase() === s.toLowerCase())) {
+          results.push(...findExecutables(fullPath, depth + 1));
+        }
+      }
+    }
+  } catch {}
+  return results;
+}
+
+function launchExecutable(exePath, label) {
+  const isWin = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
+  const exeDir = path.dirname(exePath);
+  try {
+    if (isWin) {
+      const child = spawn('cmd.exe', ['/c', 'start', '""', exePath], { cwd: exeDir, detached: true, stdio: 'ignore', windowsHide: false, shell: true });
+      child.unref();
+    } else if (isMac) {
+      const child = spawn('open', [exePath], { detached: true, stdio: 'ignore' });
+      child.unref();
+    } else {
+      try { fs.chmodSync(exePath, 0o755); } catch {}
+      const child = spawn(exePath, [], { cwd: exeDir, detached: true, stdio: 'ignore' });
+      child.unref();
+    }
+    console.log(`[Preview] Launched executable for ${label}: ${exePath}`);
+    return true;
+  } catch (e) {
+    console.error(`[Preview] Failed to launch executable for ${label}:`, (e.message || '').slice(0, 200));
+    return false;
+  }
+}
+
+function detectProjectType(projectDir, pkg, hasPkg) {
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const scripts = pkg.scripts || {};
+  const WEB_FRAMEWORKS = ['react', 'react-dom', 'vue', 'svelte', '@sveltejs/kit', 'next', 'nuxt', '@angular/core', 'preact', 'solid-js', 'astro', 'gatsby', 'remix', '@remix-run/react', 'lit', 'vite', 'webpack-dev-server', 'parcel', '@rspack/core', 'react-scripts'];
+
+  const hasIndexHtml = (() => {
+    const dirs = [projectDir, path.join(projectDir, 'public'), path.join(projectDir, 'src'),
+      ...['frontend', 'client', 'web', 'app'].flatMap(d => [path.join(projectDir, d), path.join(projectDir, d, 'public')])];
+    return dirs.some(d => { try { return fs.existsSync(path.join(d, 'index.html')); } catch { return false; } });
+  })();
+  const hasWebFramework = WEB_FRAMEWORKS.some(fw => fw in deps);
+  const isCLI = !!(pkg.bin);
+  const hasOnlyBackend = !hasWebFramework && !hasIndexHtml && (deps['express'] || deps['fastify'] || deps['koa'] || deps['@nestjs/core']);
+  const isPythonProject = !hasPkg && (fs.existsSync(path.join(projectDir, 'requirements.txt')) || fs.existsSync(path.join(projectDir, 'setup.py')) || fs.existsSync(path.join(projectDir, 'pyproject.toml')));
+  const isGoProject = !hasPkg && (fs.existsSync(path.join(projectDir, 'go.mod')) || fs.existsSync(path.join(projectDir, 'main.go')));
+  const isRustProject = !hasPkg && fs.existsSync(path.join(projectDir, 'Cargo.toml'));
+  const isCppProject = !hasPkg && (
+    fs.existsSync(path.join(projectDir, 'CMakeLists.txt')) ||
+    (() => { try { return fs.readdirSync(projectDir).some(f => /\.(sln|vcxproj)$/i.test(f)); } catch { return false; } })() ||
+    fs.existsSync(path.join(projectDir, 'meson.build')) ||
+    (() => { try { return fs.readdirSync(projectDir).some(f => /^Makefile$/i.test(f)); } catch { return false; } })()
+  );
+  const hasStartScript = scripts.dev || scripts.start || scripts.serve;
+  const isNonWeb = !hasIndexHtml && !hasWebFramework && (isCLI || isPythonProject || isGoProject || isRustProject || isCppProject || (!hasStartScript && !hasOnlyBackend));
+
+  return { isNonWeb, isPythonProject, isGoProject, isRustProject, isCppProject, isCLI, hasIndexHtml, hasWebFramework };
+}
+
 function detectDevCommand(projectDir, pkg, port, pm) {
   const scripts = pkg.scripts || {};
   const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
@@ -698,6 +775,220 @@ async function handleApi(req, res) {
             break;
           }
         }
+      }
+
+      const executables = findExecutables(projectDir);
+      if (executables.length > 0 && !hasPkg) {
+        const isWin = process.platform === 'win32';
+        const archHints = os.arch() === 'arm64' ? ['arm64', 'aarch64'] : ['x64', 'x86_64', 'amd64', 'win64'];
+        const wrongArchHints = os.arch() === 'arm64' ? ['x64', 'x86_64', 'amd64', 'win64'] : ['arm64', 'aarch64'];
+        const INSTALLER_HINTS = ['installer', 'setup', 'install', 'uninstall', '-web-', 'update'];
+        const scored = executables.map(e => {
+          let score = 0;
+          const lname = e.name.toLowerCase();
+          if (wrongArchHints.some(h => lname.includes(h))) score -= 1000;
+          if (INSTALLER_HINTS.some(h => lname.includes(h))) score -= 100;
+          if (e.ext === '.msi') score -= 50;
+          if (archHints.some(h => lname.includes(h))) score += 10;
+          if (e.ext === '.exe') score += 5;
+          else if (e.ext === '.appimage') score += 4;
+          if (lname.includes('portable')) score += 15;
+          return { ...e, score };
+        }).sort((a, b) => b.score - a.score);
+        const compatible = scored.filter(e => e.score > -1000);
+        const best = compatible.length > 0 ? compatible[0] : null;
+        if (best) {
+          const bestLower = best.name.toLowerCase();
+          const isInstaller = INSTALLER_HINTS.some(h => bestLower.includes(h)) || best.ext === '.msi';
+          const launched = launchExecutable(best.fullPath, name);
+          return sendJson(res, {
+            started: false,
+            projectType: isInstaller ? 'installer' : 'precompiled',
+            openTerminal: true,
+            launched,
+            isInstaller,
+            runCommand: `"${best.fullPath}"`,
+            projectDir,
+            executables: scored.map(e => ({ name: e.name, path: e.fullPath, ext: e.ext, score: e.score })).slice(0, 20),
+            message: launched
+              ? isInstaller ? `Launching installer: ${best.name}` : `Launched ${best.name}`
+              : `Found: ${best.name} — could not auto-launch`,
+          });
+        }
+      }
+
+      const projType = detectProjectType(projectDir, pkg, hasPkg);
+      if (projType.isNonWeb) {
+        const isWin = process.platform === 'win32';
+        let projectType = projType.isPythonProject ? 'python' : projType.isGoProject ? 'go' : projType.isRustProject ? 'rust' : projType.isCppProject ? 'cpp' : projType.isCLI ? 'cli' : 'terminal';
+        let runCmd = '';
+        let buildCmd = '';
+
+        let guardianMeta = {};
+        const metaPath = path.join(projectDir, '.guardian-meta.json');
+        try { if (fs.existsSync(metaPath)) guardianMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+        const repoName = guardianMeta.repo || name;
+
+        if (projType.isPythonProject) {
+          const mainPy = fs.existsSync(path.join(projectDir, 'main.py')) ? 'main.py' : fs.existsSync(path.join(projectDir, 'app.py')) ? 'app.py' : ((() => { try { return fs.readdirSync(projectDir).find(f => f.endsWith('.py')); } catch { return null; } })() || 'main.py');
+          runCmd = isWin ? `python ${mainPy}` : `python3 ${mainPy}`;
+        } else if (projType.isGoProject) {
+          const goExeName = isWin ? `${repoName}.exe` : repoName;
+          buildCmd = `go build -o ${goExeName} .`;
+          runCmd = isWin ? goExeName : `./${goExeName}`;
+        } else if (projType.isRustProject) {
+          buildCmd = 'cargo build --release';
+          let rustBin = repoName;
+          try {
+            const cargoToml = fs.readFileSync(path.join(projectDir, 'Cargo.toml'), 'utf-8');
+            const nameMatch = cargoToml.match(/^\s*name\s*=\s*"([^"]+)"/m);
+            if (nameMatch) rustBin = nameMatch[1];
+          } catch {}
+          runCmd = isWin ? `target\\release\\${rustBin}.exe` : `./target/release/${rustBin}`;
+        } else if (projType.isCppProject) {
+          if (fs.existsSync(path.join(projectDir, 'CMakeLists.txt'))) {
+            buildCmd = isWin
+              ? 'if not exist build mkdir build && cd build && cmake .. && cmake --build . --config Release --parallel'
+              : 'mkdir -p build && cd build && cmake .. && cmake --build . --parallel';
+            projectType = 'cmake';
+          } else if ((() => { try { return fs.readdirSync(projectDir).some(f => f.endsWith('.sln')); } catch { return false; } })()) {
+            const slnFile = fs.readdirSync(projectDir).find(f => f.endsWith('.sln'));
+            buildCmd = isWin ? `msbuild "${slnFile}" /p:Configuration=Release /m` : 'echo "Visual Studio .sln requires Windows with MSBuild"';
+            projectType = 'msbuild';
+          } else {
+            const makefile = (() => { try { return fs.readdirSync(projectDir).find(f => /^Makefile$/i.test(f)); } catch { return null; } })();
+            if (makefile) { buildCmd = 'make'; projectType = 'make'; }
+          }
+        } else if (projType.isCLI && pkg.bin) {
+          const binName = typeof pkg.bin === 'string' ? pkg.name : Object.keys(pkg.bin)[0];
+          runCmd = `node ${typeof pkg.bin === 'string' ? pkg.bin : pkg.bin[binName]}`;
+        } else if (pkg.main) {
+          runCmd = `node ${pkg.main}`;
+        }
+
+        let buildOutput = '';
+        let buildSuccess = false;
+        if (buildCmd) {
+          console.log(`[Preview] Auto-building ${projectType} project ${name}: ${buildCmd}`);
+          try {
+            const result = execSync(buildCmd, {
+              cwd: projectDir, timeout: 300000, stdio: 'pipe', shell: true, windowsHide: true,
+              env: { ...process.env, MAKEFLAGS: `-j${os.cpus().length || 2}` },
+            });
+            buildOutput = result.toString().slice(-2000);
+            buildSuccess = true;
+            if (!runCmd) {
+              const builtExes = findExecutables(projectDir);
+              if (builtExes.length > 0) {
+                const best = builtExes.find(e => e.ext === '.exe') || builtExes[0];
+                runCmd = isWin ? `"${best.fullPath}"` : `"${best.fullPath}"`;
+              }
+            }
+          } catch (buildErr) {
+            buildOutput = ((buildErr.stderr ? buildErr.stderr.toString() : '') || buildErr.message || '').slice(-2000);
+            console.error(`[Preview] Build failed for ${name}: ${buildOutput.slice(0, 300)}`);
+          }
+        }
+
+        if (!buildSuccess && !runCmd && guardianMeta.owner && guardianMeta.repo) {
+          console.log(`[Preview] Build failed — trying GitHub Releases for ${guardianMeta.owner}/${guardianMeta.repo}...`);
+          try {
+            const ghToken = process.env.GITHUB_TOKEN || '';
+            const relHeaders = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Guardian-AI' };
+            if (ghToken) relHeaders['Authorization'] = `token ${ghToken}`;
+            const relResp = await fetch(`https://api.github.com/repos/${guardianMeta.owner}/${guardianMeta.repo}/releases/latest`, { headers: relHeaders });
+            if (relResp.ok) {
+              const relData = await relResp.json();
+              const BINARY_EXTS = ['.exe', '.msi', '.appimage', '.dmg', '.zip', '.tar.gz'];
+              const platformHints = isWin ? ['win', 'windows'] : process.platform === 'darwin' ? ['mac', 'macos', 'darwin'] : ['linux'];
+              const goodArchHints = os.arch() === 'arm64' ? ['arm64', 'aarch64'] : ['x64', 'x86_64', 'amd64'];
+              const assets = (relData.assets || [])
+                .filter(a => BINARY_EXTS.some(ext => a.name.toLowerCase().endsWith(ext)))
+                .map(a => {
+                  const ln = a.name.toLowerCase();
+                  let score = 0;
+                  if (platformHints.some(h => ln.includes(h))) score += 20;
+                  if (goodArchHints.some(h => ln.includes(h))) score += 10;
+                  if (ln.includes('portable')) score += 25;
+                  return { ...a, _score: score };
+                })
+                .sort((a, b) => b._score - a._score);
+              if (assets.length > 0) {
+                const relDir = path.join(projectDir, '_releases');
+                fs.mkdirSync(relDir, { recursive: true });
+                const best = assets[0];
+                if (best.size < 500 * 1024 * 1024) {
+                  console.log(`[Preview] Downloading release: ${best.name} (${(best.size / 1024 / 1024).toFixed(1)}MB)...`);
+                  const dlResp = await fetch(best.browser_download_url, { redirect: 'follow' });
+                  if (dlResp.ok) {
+                    const buf = Buffer.from(await dlResp.arrayBuffer());
+                    const assetPath = path.join(relDir, best.name);
+                    fs.writeFileSync(assetPath, buf);
+                    if (best.name.toLowerCase().endsWith('.exe') || best.name.toLowerCase().endsWith('.appimage')) {
+                      try { fs.chmodSync(assetPath, 0o755); } catch {}
+                    }
+                    if (best.name.toLowerCase().endsWith('.zip')) {
+                      try {
+                        const extractDir = path.join(relDir, best.name.replace(/\.zip$/i, ''));
+                        fs.mkdirSync(extractDir, { recursive: true });
+                        execSync(isWin ? `tar xf "${assetPath.replace(/\\/g, '/')}" -C "${extractDir.replace(/\\/g, '/')}"` : `unzip -o -q "${assetPath}" -d "${extractDir}"`, { timeout: 60000, stdio: 'pipe' });
+                      } catch {}
+                    }
+                    const newExes = findExecutables(relDir);
+                    if (newExes.length > 0) {
+                      const exeBest = newExes.find(e => e.ext === '.exe') || newExes[0];
+                      const launched = launchExecutable(exeBest.fullPath, name);
+                      return sendJson(res, {
+                        started: false, projectType: 'precompiled', openTerminal: true, launched,
+                        runCommand: `"${exeBest.fullPath}"`, projectDir,
+                        executables: newExes.map(e => ({ name: e.name, path: e.fullPath, ext: e.ext })),
+                        message: launched ? `Downloaded and launched ${exeBest.name}` : `Downloaded ${exeBest.name} — could not auto-launch`,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (relErr) {
+            console.log(`[Preview] Release check failed: ${(relErr.message || '').slice(0, 100)}`);
+          }
+        }
+
+        if (buildSuccess && runCmd) {
+          const spawnTerminal = (cmd) => {
+            try {
+              if (isWin) {
+                const batPath = path.join(projectDir, '__guardian_run.bat');
+                fs.writeFileSync(batPath, `@echo off\r\ncd /d "${projectDir}"\r\necho [Guardian AI] Running: ${cmd}\r\n${cmd}\r\necho.\r\necho Press any key to close.\r\npause >nul\r\n`);
+                const child = spawn('cmd.exe', ['/c', 'start', '""', batPath], { cwd: projectDir, detached: true, stdio: 'ignore', shell: true });
+                child.unref();
+              } else if (process.platform === 'darwin') {
+                const escaped = cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                spawn('osascript', ['-e', `tell application "Terminal" to do script "cd '${projectDir}' && ${escaped}"`], { detached: true, stdio: 'ignore' });
+              } else {
+                const child = spawn('bash', ['-c', cmd], { cwd: projectDir, detached: true, stdio: 'ignore' });
+                child.unref();
+              }
+              return true;
+            } catch { return false; }
+          };
+          const launched = spawnTerminal(runCmd);
+          return sendJson(res, {
+            started: false, projectType, openTerminal: true, launched,
+            runCommand: runCmd, buildCommand: buildCmd, projectDir,
+            message: launched ? `Built and running: ${runCmd}` : `Built successfully. Run: ${runCmd}`,
+            buildOutput: buildOutput.slice(0, 1000),
+          });
+        }
+
+        return sendJson(res, {
+          started: false, projectType, openTerminal: true, launched: false,
+          runCommand: runCmd || '', buildCommand: buildCmd || '', projectDir,
+          message: buildCmd
+            ? (buildSuccess ? `Built. Run: ${runCmd || 'check build output'}` : `Build failed for ${projectType} project`)
+            : `Non-web ${projectType} project — run manually: ${runCmd || 'see project files'}`,
+          ...(buildOutput ? { buildOutput: buildOutput.slice(0, 1000) } : {}),
+        });
       }
 
       const pm = detectPackageManager(effectiveProjectDir);
